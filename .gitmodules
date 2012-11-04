@@ -1,0 +1,3 @@
+[submodule "minimal"]
+	path = minimal
+	url = git://git.saurik.com/minimal.git
