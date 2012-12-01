@@ -995,7 +995,7 @@ int main(int argc, const char *argv[]) {
         if (flag_p)
             printf("path%zu='%s'\n", filei, file.c_str());
 
-        FatHeader fat_header(Map(temp == NULL ? path : temp, !(flag_R | flag_T | flag_s | flag_S | flag_O | flag_D)));
+        FatHeader fat_header(Map(temp == NULL ? path : temp, !(flag_R || flag_T || flag_s || flag_S || flag_O || flag_D)));
         struct linkedit_data_command *signature(NULL);
 
         _foreach (mach_header, fat_header.GetMachHeaders()) {
