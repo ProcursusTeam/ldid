@@ -6,7 +6,7 @@ cycc -i2.0 -m10.5 -oldid.arm -- ldid.cpp sha1.c -x c lookup2.c -I .
 
 rm -rf _
 mkdir -p _/usr/bin
-cp -a ldid.arm _/usr/bin
+cp -a ldid.arm _/usr/bin/ldid
 mkdir -p _/DEBIAN
 ./control.sh _ >_/DEBIAN/control
 mkdir -p debs
