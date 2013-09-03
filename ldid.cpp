@@ -946,13 +946,37 @@ int main(int argc, const char *argv[]) {
                 args.push_back(path);
 
                 _foreach (allocation, allocations) {
-                    args.push_back("-A");
+                    if (allocation.type_ == 12 && (
+                        allocation.subtype_ == 0 ||
+                        allocation.subtype_ == 6 ||
+                    false)) {
+                        // Telesphoreo codesign_allocate
+                        args.push_back("-a");
 
-                    asprintf(&arg, "%u", allocation.type_);
-                    args.push_back(arg);
+                        const char *arch;
+                        switch (allocation.subtype_) {
+                            case 0:
+                                arch = "arm";
+                                break;
+                            case 6:
+                                arch = "armv6";
+                                break;
+                            default:
+                                arch = NULL;
+                                break;
+                        }
 
-                    asprintf(&arg, "%u", allocation.subtype_);
-                    args.push_back(arg);
+                        _assert(arch != NULL);
+                        args.push_back(arch);
+                    } else {
+                        args.push_back("-A");
+
+                        asprintf(&arg, "%u", allocation.type_);
+                        args.push_back(arg);
+
+                        asprintf(&arg, "%u", allocation.subtype_);
+                        args.push_back(arg);
+                    }
 
                     size_t alloc(0);
                     alloc += sizeof(struct SuperBlob);
