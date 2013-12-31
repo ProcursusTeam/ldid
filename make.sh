@@ -9,7 +9,7 @@ if [[ -e $sdk ]]; then
     flags+=(-mmacosx-version-min=10.4 -isysroot "$sdk")
 fi
 
-for arch in i386 x86_64 ppc armv6; do
+for arch in i386 x86_64; do
     if g++ -arch "${arch}" --version &>/dev/null; then
         flags+=(-arch "${arch}")
     fi

@@ -23,7 +23,9 @@
 #include "minimal/string.h"
 #include "minimal/mapping.h"
 
+extern "C" {
 #include "sha1.h"
+}
 
 #include <cstring>
 #include <string>
