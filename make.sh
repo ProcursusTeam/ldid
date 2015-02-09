@@ -2,18 +2,16 @@
 
 set -e
 
-flags=()
+if which xcrun &>/dev/null; then
+    flags=(xcrun -sdk macosx g++)
+    flags+=(-mmacosx-version-min=10.4)
 
-sdk=/Developer/SDKs/MacOSX10.4u.sdk
-if [[ -e $sdk ]]; then
-    flags+=(-mmacosx-version-min=10.4 -isysroot "$sdk")
+    for arch in i386 x86_64; do
+        flags+=(-arch "${arch}")
+    done
+else
+    flags=(g++)
 fi
 
-for arch in i386 x86_64; do
-    if g++ -arch "${arch}" --version &>/dev/null; then
-        flags+=(-arch "${arch}")
-    fi
-done
-
 set -x
-g++ "${flags[@]}" -o ldid ldid.cpp -I. -x c lookup2.c sha1.c
+"${flags[@]}" -o ldid ldid.cpp -I. -x c lookup2.c -x c sha1.c
