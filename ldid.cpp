@@ -31,10 +31,6 @@ extern "C" {
 #include <string>
 #include <vector>
 
-#include <sys/wait.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-
 struct fat_header {
     uint32_t magic;
     uint32_t nfat_arch;
