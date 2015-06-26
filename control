@@ -8,5 +8,4 @@ Description: pseudo-codesign Mach-O files
 Name: Link Identity Editor
 Author: Jay Freeman (saurik) <saurik@saurik.com>
 Depiction: http://cydia.saurik.com/info/ldid/
-Depends: odcctools
 Tag: purpose::console, role::developer

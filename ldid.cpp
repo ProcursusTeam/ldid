@@ -296,6 +296,14 @@ struct encryption_info_command {
 #define BIND_OPCODE_DO_BIND_ADD_ADDR_IMM_SCALED      0xb0
 #define BIND_OPCODE_DO_BIND_ULEB_TIMES_SKIPPING_ULEB 0xc0
 
+template <typename Type_>
+Type_ Align(Type_ value, size_t align) {
+    value += align - 1;
+    value /= align;
+    value *= align;
+    return value;
+}
+
 uint16_t Swap_(uint16_t value) {
     return
         ((value >>  8) & 0x00ff) |
@@ -310,12 +318,23 @@ uint32_t Swap_(uint32_t value) {
     return value;
 }
 
+uint64_t Swap_(uint64_t value) {
+    value = (value & 0x00000000ffffffff) << 32 | (value & 0xffffffff00000000) >> 32;
+    value = (value & 0x0000ffff0000ffff) << 16 | (value & 0xffff0000ffff0000) >> 16;
+    value = (value & 0x00ff00ff00ff00ff) << 8  | (value & 0xff00ff00ff00ff00) >> 8;
+    return value;
+}
+
 int16_t Swap_(int16_t value) {
     return Swap_(static_cast<uint16_t>(value));
 }
 
 int32_t Swap_(int32_t value) {
     return Swap_(static_cast<uint32_t>(value));
+}
+
+int64_t Swap_(int64_t value) {
+    return Swap_(static_cast<uint64_t>(value));
 }
 
 bool little_(true);
@@ -328,12 +347,20 @@ uint32_t Swap(uint32_t value) {
     return little_ ? Swap_(value) : value;
 }
 
+uint64_t Swap(uint64_t value) {
+    return little_ ? Swap_(value) : value;
+}
+
 int16_t Swap(int16_t value) {
     return Swap(static_cast<uint16_t>(value));
 }
 
 int32_t Swap(int32_t value) {
     return Swap(static_cast<uint32_t>(value));
+}
+
+int64_t Swap(int64_t value) {
+    return Swap(static_cast<uint64_t>(value));
 }
 
 template <typename Target_>
@@ -363,12 +390,20 @@ class Data {
         return swapped_ ? Swap_(value) : value;
     }
 
+    uint64_t Swap(uint64_t value) const {
+        return swapped_ ? Swap_(value) : value;
+    }
+
     int16_t Swap(int16_t value) const {
         return Swap(static_cast<uint16_t>(value));
     }
 
     int32_t Swap(int32_t value) const {
         return Swap(static_cast<uint32_t>(value));
+    }
+
+    int64_t Swap(int64_t value) const {
+        return Swap(static_cast<uint64_t>(value));
     }
 
     void *GetBase() const {
@@ -428,12 +463,20 @@ class MachHeader :
         return mach_header_;
     }
 
+    operator struct mach_header *() const {
+        return mach_header_;
+    }
+
     uint32_t GetCPUType() const {
         return Swap(mach_header_->cputype);
     }
 
-    uint16_t GetCPUSubtype() const {
+    uint32_t GetCPUSubtype() const {
         return Swap(mach_header_->cpusubtype) & 0xff;
+    }
+
+    struct load_command *GetLoadCommand() const {
+        return load_command_;
     }
 
     std::vector<struct load_command *> GetLoadCommands() const {
@@ -462,7 +505,7 @@ class MachHeader :
         return segment_commands;
     }
 
-    std::vector<segment_command_64 *> GetSegments64(const char *segment_name) {
+    std::vector<segment_command_64 *> GetSegments64(const char *segment_name) const {
         std::vector<struct segment_command_64 *> segment_commands;
 
         _foreach (load_command, GetLoadCommands()) {
@@ -591,6 +634,10 @@ class FatHeader :
     struct fat_header *operator ->() const {
         return fat_header_;
     }
+
+    operator struct fat_header *() const {
+        return fat_header_;
+    }
 };
 
 FatHeader Map(const char *path, bool ro = false) {
@@ -681,14 +728,16 @@ void sha1(uint8_t *hash, uint8_t *data, size_t size) {
 }
 
 struct CodesignAllocation {
-    uint32_t type_;
-    uint16_t subtype_;
-    size_t size_;
+    FatMachHeader mach_header_;
+    uint32_t offset_;
+    uint32_t size_;
+    uint32_t alloc_;
 
-    CodesignAllocation(uint32_t type, uint16_t subtype, size_t size) :
-        type_(type),
-        subtype_(subtype),
-        size_(size)
+    CodesignAllocation(FatMachHeader mach_header, size_t offset, size_t size, size_t alloc) :
+        mach_header_(mach_header),
+        offset_(offset),
+        size_(size),
+        alloc_(alloc)
     {
     }
 };
@@ -878,7 +927,7 @@ int main(int argc, const char *argv[]) {
 
                     _assert(size != _not(uint32_t));
 
-                    _foreach (segment, const_cast<FatMachHeader &>(mach_header).GetSegments("__LINKEDIT")) {
+                    _foreach (segment, mach_header.GetSegments("__LINKEDIT")) {
                         segment->filesize -= mach_header.GetSize() - size;
 
                         if (fat_arch *fat_arch = mach_header.GetFatArch()) {
@@ -888,7 +937,7 @@ int main(int argc, const char *argv[]) {
                             clip = std::max(clip, size);
                     }
 
-                    _foreach (segment, const_cast<FatMachHeader &>(mach_header).GetSegments64("__LINKEDIT")) {
+                    _foreach (segment, mach_header.GetSegments64("__LINKEDIT")) {
                         segment->filesize -= mach_header.GetSize() - size;
 
                         if (fat_arch *fat_arch = mach_header.GetFatArch()) {
@@ -905,14 +954,15 @@ int main(int argc, const char *argv[]) {
         }
 
         if (flag_S) {
-            asprintf(&temp, "%s.%s.cs", dir, base);
-            const char *allocate = getenv("CODESIGN_ALLOCATE");
-            if (allocate == NULL)
-                allocate = "codesign_allocate";
+            FatHeader source(Map(path));
+
+            size_t offset(0);
+
+            if (source.IsFat())
+                offset += sizeof(fat_header) + sizeof(fat_arch) * source.Swap(source->nfat_arch);
 
             std::vector<CodesignAllocation> allocations; {
-                FatHeader fat_header(Map(path));
-                _foreach (mach_header, fat_header.GetMachHeaders()) {
+                _foreach (mach_header, source.GetMachHeaders()) {
                     if (flag_A) {
                         if (mach_header.GetCPUType() != flag_CPUType)
                             continue;
@@ -937,57 +987,6 @@ int main(int argc, const char *argv[]) {
                             size = mach_header.GetSize();
                     }
 
-                    allocations.push_back(CodesignAllocation(mach_header.GetCPUType(), mach_header.GetCPUSubtype(), size));
-                }
-            }
-
-            if (!allocations.empty()) {
-
-            pid_t pid = fork();
-            _syscall(pid);
-            if (pid == 0) {
-                // XXX: this leaks memory, but it doesn't really matter
-                std::vector<const char *> args;
-                char *arg;
-
-                args.push_back(allocate);
-
-                args.push_back("-i");
-                args.push_back(path);
-
-                _foreach (allocation, allocations) {
-                    if (allocation.type_ == 12 && (
-                        allocation.subtype_ == 0 ||
-                        allocation.subtype_ == 6 ||
-                    false)) {
-                        // Telesphoreo codesign_allocate
-                        args.push_back("-a");
-
-                        const char *arch;
-                        switch (allocation.subtype_) {
-                            case 0:
-                                arch = "arm";
-                                break;
-                            case 6:
-                                arch = "armv6";
-                                break;
-                            default:
-                                arch = NULL;
-                                break;
-                        }
-
-                        _assert(arch != NULL);
-                        args.push_back(arch);
-                    } else {
-                        args.push_back("-A");
-
-                        asprintf(&arg, "%u", allocation.type_);
-                        args.push_back(arg);
-
-                        asprintf(&arg, "%u", allocation.subtype_);
-                        args.push_back(arg);
-                    }
-
                     size_t alloc(0);
                     alloc += sizeof(struct SuperBlob);
                     uint32_t special(0);
@@ -1008,38 +1007,75 @@ int main(int argc, const char *argv[]) {
                         alloc += xmls;
                     }
 
-                    size_t normal((allocation.size_ + 0x1000 - 1) / 0x1000);
-                    alloc += (special + normal) * 0x14;
+                    size_t normal((size + 0x1000 - 1) / 0x1000);
+                    alloc = Align(alloc + (special + normal) * 0x14, 16);
 
-                    alloc += 15;
-                    alloc /= 16;
-                    alloc *= 16;
-
-                    asprintf(&arg, "%zu", alloc);
-                    args.push_back(arg);
+                    offset = Align(offset, 4096);
+                    allocations.push_back(CodesignAllocation(mach_header, offset, size, alloc));
+                    offset += size + alloc;
                 }
-
-                args.push_back("-o");
-                args.push_back(temp);
-
-                args.push_back(NULL);
-
-                if (false) {
-                    printf("run:");
-                    _foreach (arg, args)
-                        printf(" %s", arg);
-                    printf("\n");
-                }
-
-                execvp(allocate, (char **) &args[0]);
-                _assert(false);
             }
 
-            int status;
-            _syscall(waitpid(pid, &status, 0));
-            _assert(WIFEXITED(status));
-            _assert(WEXITSTATUS(status) == 0);
+            asprintf(&temp, "%s.%s.cs", dir, base);
+            fclose(fopen(temp, "w+"));
+            truncate(temp, offset);
 
+            void *file(map(temp, 0, offset, NULL, false));
+            memset(file, 0, offset);
+
+            fat_arch *fat_arch;
+            if (!source.IsFat())
+                fat_arch = NULL;
+            else {
+                auto *fat_header(reinterpret_cast<struct fat_header *>(file));
+                fat_header->magic = Swap(FAT_MAGIC);
+                fat_header->nfat_arch = Swap(source.Swap(source->nfat_arch));
+                fat_arch = reinterpret_cast<struct fat_arch *>(fat_header + 1);
+            }
+
+            _foreach (allocation, allocations) {
+                auto &source(allocation.mach_header_);
+
+                uint32_t align(allocation.size_);
+                align = Align(align, 0x10);
+
+                if (fat_arch != NULL) {
+                    fat_arch->cputype = Swap(source->cputype);
+                    fat_arch->cpusubtype = Swap(source->cpusubtype);
+                    fat_arch->offset = Swap(allocation.offset_);
+                    fat_arch->size = Swap(align + allocation.alloc_);
+                    fat_arch->align = Swap(0xc);
+                    ++fat_arch;
+                }
+
+                void *target(reinterpret_cast<uint8_t *>(file) + allocation.offset_);
+                memcpy(target, source, allocation.size_);
+                MachHeader mach_header(target, align + allocation.alloc_);
+
+                struct linkedit_data_command *signature(NULL);
+                _foreach (load_command, mach_header.GetLoadCommands()) {
+                    uint32_t cmd(mach_header.Swap(load_command->cmd));
+                    if (cmd != LC_CODE_SIGNATURE)
+                        continue;
+                    signature = reinterpret_cast<struct linkedit_data_command *>(load_command);
+                    break;
+                }
+
+                if (signature == NULL) {
+                    mach_header->ncmds = mach_header.Swap(mach_header.Swap(mach_header->ncmds) + 1);
+                    signature = reinterpret_cast<struct linkedit_data_command *>(reinterpret_cast<uint8_t *>(mach_header.GetLoadCommand()) + mach_header.Swap(mach_header->sizeofcmds));
+                    mach_header->sizeofcmds = mach_header.Swap(mach_header.Swap(mach_header->sizeofcmds) + uint32_t(sizeof(*signature)));
+                    signature->cmd = mach_header.Swap(LC_CODE_SIGNATURE);
+                    signature->cmdsize = mach_header.Swap(uint32_t(sizeof(*signature)));
+                }
+
+                signature->dataoff = mach_header.Swap(align);
+                signature->datasize = mach_header.Swap(allocation.alloc_);
+
+                _foreach (segment, mach_header.GetSegments("__LINKEDIT"))
+                    segment->filesize = mach_header.Swap(align + allocation.alloc_ - mach_header.Swap(segment->fileoff));
+                _foreach (segment, mach_header.GetSegments64("__LINKEDIT"))
+                    segment->filesize = mach_header.Swap(align + allocation.alloc_ - mach_header.Swap(segment->fileoff));
             }
         }
 

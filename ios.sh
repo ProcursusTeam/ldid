@@ -2,7 +2,8 @@
 
 set -e -x
 
-cycc -i2.0 -m10.4 -oldid.arm -- ldid.cpp -x c sha1.c lookup2.c -I .
+cycc -i2.0 -oldid.arm -- -c -std=c++11 ldid.cpp -I.
+cycc -i2.0 -oldid.arm -- ldid.arm -x c sha1.c lookup2.c -I .
 
 rm -rf _
 mkdir -p _/usr/bin
