@@ -725,6 +725,8 @@ int main(int argc, const char *argv[]) {
     uint32_t flag_CPUType(_not(uint32_t));
     uint32_t flag_CPUSubtype(_not(uint32_t));
 
+    const char *flag_I(NULL);
+
     bool timeh(false);
     uint32_t timev(0);
 
@@ -801,6 +803,10 @@ int main(int argc, const char *argv[]) {
                 }
             } break;
 
+            case 'I': {
+                flag_I = argv[argi] + 2;
+            } break;
+
             case 'n': {
                 char *arge;
                 noffset = strtoul(argv[argi] + 2, &arge, 0);
@@ -834,6 +840,8 @@ int main(int argc, const char *argv[]) {
             dir = strdup("");
             base = path;
         }
+
+        const char *name(flag_I ?: base);
 
         if (flag_r) {
             uint32_t clip(0); {
@@ -987,7 +995,7 @@ int main(int argc, const char *argv[]) {
                     special = std::max(special, CSSLOT_CODEDIRECTORY);
                     alloc += sizeof(struct BlobIndex);
                     alloc += sizeof(struct CodeDirectory);
-                    alloc += strlen(base) + 1;
+                    alloc += strlen(name) + 1;
 
                     special = std::max(special, CSSLOT_REQUIREMENTS);
                     alloc += sizeof(struct BlobIndex);
@@ -1205,8 +1213,8 @@ int main(int argc, const char *argv[]) {
                 directory->spare2 = Swap(uint32_t(0));
 
                 directory->identOffset = Swap(offset - begin);
-                strcpy(reinterpret_cast<char *>(blob + offset), base);
-                offset += strlen(base) + 1;
+                strcpy(reinterpret_cast<char *>(blob + offset), name);
+                offset += strlen(name) + 1;
 
                 uint32_t special = xmld == NULL ? CSSLOT_REQUIREMENTS : CSSLOT_ENTITLEMENTS;
                 directory->nSpecialSlots = Swap(special);
