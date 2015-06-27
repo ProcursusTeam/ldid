@@ -2,6 +2,8 @@
 
 set -e
 
+sudo xcode-select --switch /Applications/Xcode-5.1.1.app
+
 if which xcrun &>/dev/null; then
     flags=(xcrun -sdk macosx g++)
     flags+=(-mmacosx-version-min=10.4)
