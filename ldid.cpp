@@ -1014,7 +1014,7 @@ int main(int argc, const char *argv[]) {
 
             asprintf(&temp, "%s.%s.cs", dir, base);
             fclose(fopen(temp, "w+"));
-            truncate(temp, offset);
+            _syscall(truncate(temp, offset));
 
             void *file(map(temp, 0, offset, NULL, false));
             memset(file, 0, offset);
