@@ -1068,10 +1068,17 @@ int main(int argc, const char *argv[]) {
                 signature->dataoff = mach_header.Swap(align);
                 signature->datasize = mach_header.Swap(allocation.alloc_);
 
-                _foreach (segment, mach_header.GetSegments("__LINKEDIT"))
-                    segment->filesize = mach_header.Swap(align + allocation.alloc_ - mach_header.Swap(segment->fileoff));
-                _foreach (segment, mach_header.GetSegments64("__LINKEDIT"))
-                    segment->filesize = mach_header.Swap(align + allocation.alloc_ - mach_header.Swap(segment->fileoff));
+                _foreach (segment, mach_header.GetSegments("__LINKEDIT")) {
+                    size_t size(mach_header.Swap(align + allocation.alloc_ - mach_header.Swap(segment->fileoff)));
+                    segment->filesize = size;
+                    segment->vmsize = Align(size, 0x1000);
+                }
+
+                _foreach (segment, mach_header.GetSegments64("__LINKEDIT")) {
+                    size_t size(mach_header.Swap(align + allocation.alloc_ - mach_header.Swap(segment->fileoff)));
+                    segment->filesize = size;
+                    segment->vmsize = Align(size, 0x1000);
+                }
             }
         }
 
