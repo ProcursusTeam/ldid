@@ -1009,6 +1009,7 @@ int main(int argc, const char *argv[]) {
                     offset = Align(offset, 4096);
                     allocations.push_back(CodesignAllocation(mach_header, offset, size, alloc));
                     offset += size + alloc;
+                    offset = Align(offset, 16);
                 }
             }
 
