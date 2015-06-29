@@ -728,12 +728,14 @@ struct CodesignAllocation {
     uint32_t offset_;
     uint32_t size_;
     uint32_t alloc_;
+    uint32_t align_;
 
-    CodesignAllocation(FatMachHeader mach_header, size_t offset, size_t size, size_t alloc) :
+    CodesignAllocation(FatMachHeader mach_header, size_t offset, size_t size, size_t alloc, size_t align) :
         mach_header_(mach_header),
         offset_(offset),
         size_(size),
-        alloc_(alloc)
+        alloc_(alloc),
+        align_(align)
     {
     }
 };
@@ -1006,8 +1008,11 @@ int main(int argc, const char *argv[]) {
                     size_t normal((size + 0x1000 - 1) / 0x1000);
                     alloc = Align(alloc + (special + normal) * 0x14, 16);
 
-                    offset = Align(offset, 4096);
-                    allocations.push_back(CodesignAllocation(mach_header, offset, size, alloc));
+                    auto *fat_arch(mach_header.GetFatArch());
+                    uint32_t align(fat_arch == NULL ? 0 : source.Swap(fat_arch->align));
+                    offset = Align(offset, 1 << align);
+
+                    allocations.push_back(CodesignAllocation(mach_header, offset, size, alloc, align));
                     offset += size + alloc;
                     offset = Align(offset, 16);
                 }
@@ -1041,7 +1046,7 @@ int main(int argc, const char *argv[]) {
                     fat_arch->cpusubtype = Swap(source->cpusubtype);
                     fat_arch->offset = Swap(allocation.offset_);
                     fat_arch->size = Swap(align + allocation.alloc_);
-                    fat_arch->align = Swap(0xc);
+                    fat_arch->align = Swap(allocation.align_);
                     ++fat_arch;
                 }
 
