@@ -1097,6 +1097,8 @@ int main(int argc, const char *argv[]) {
         struct linkedit_data_command *signature(NULL);
 
         _foreach (mach_header, fat_header.GetMachHeaders()) {
+            struct encryption_info_command *encryption(NULL);
+
             if (flag_A) {
                 if (mach_header.GetCPUType() != flag_CPUType)
                     continue;
@@ -1143,6 +1145,8 @@ int main(int argc, const char *argv[]) {
                     load_command->cmd = mach_header.Swap(LC_LOAD_DYLIB);
                 else if (cmd == LC_CODE_SIGNATURE)
                     signature = reinterpret_cast<struct linkedit_data_command *>(load_command);
+                else if (cmd == LC_ENCRYPTION_INFO)
+                    encryption = reinterpret_cast<struct encryption_info_command *>(load_command);
                 else if (cmd == LC_UUID) {
                     volatile struct uuid_command *uuid_command(reinterpret_cast<struct uuid_command *>(load_command));
 
@@ -1172,18 +1176,20 @@ int main(int argc, const char *argv[]) {
 
                         dylib_command->dylib.timestamp = mach_header.Swap(timed);
                     }
-                } else if (cmd == LC_ENCRYPTION_INFO) {
-                    volatile struct encryption_info_command *encryption_info_command(reinterpret_cast<struct encryption_info_command *>(load_command));
-
-                    if (flag_D)
-                        encryption_info_command->cryptid = mach_header.Swap(0);
-
-                    if (flag_d) {
-                        printf("cryptoff=0x%x\n", mach_header.Swap(encryption_info_command->cryptoff));
-                        printf("cryptsize=0x%x\n", mach_header.Swap(encryption_info_command->cryptsize));
-                        printf("cryptid=0x%x\n", mach_header.Swap(encryption_info_command->cryptid));
-                    }
                 }
+            }
+
+            if (flag_d) {
+                _assert(encryption != NULL);
+
+                printf("cryptoff=0x%x\n", mach_header.Swap(encryption->cryptoff));
+                printf("cryptsize=0x%x\n", mach_header.Swap(encryption->cryptsize));
+                printf("cryptid=0x%x\n", mach_header.Swap(encryption->cryptid));
+            }
+
+            if (flag_D) {
+                _assert(encryption != NULL);
+                encryption->cryptid = mach_header.Swap(0);
             }
 
             if (flag_e) {
