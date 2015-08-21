@@ -31,6 +31,8 @@ extern "C" {
 #include <string>
 #include <vector>
 
+#include <plist/plist.h>
+
 struct fat_header {
     uint32_t magic;
     uint32_t nfat_arch;
