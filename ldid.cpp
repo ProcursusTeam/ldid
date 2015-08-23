@@ -23,13 +23,11 @@
 #include "minimal/string.h"
 #include "minimal/mapping.h"
 
-extern "C" {
-#include "sha1.h"
-}
-
 #include <cstring>
 #include <string>
 #include <vector>
+
+#include <openssl/sha.h>
 
 #include <plist/plist.h>
 
@@ -719,10 +717,7 @@ struct CodeDirectory {
 extern "C" uint32_t hash(uint8_t *k, uint32_t length, uint32_t initval);
 
 void sha1(uint8_t *hash, uint8_t *data, size_t size) {
-    SHA1Context context;
-    SHA1Reset(&context);
-    SHA1Input(&context, data, size);
-    SHA1Result(&context, hash);
+    SHA1(data, size, hash);
 }
 
 struct CodesignAllocation {

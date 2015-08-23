@@ -7,6 +7,7 @@ if [[ $# == 0 ]]; then
     ios=false
 else
     ios=$1
+    shift
 fi
 
 if "${ios}"; then
@@ -40,6 +41,8 @@ flags+=(-I"${sdk}"/usr/include/libxml2)
 flags+=(-Ilibplist/include)
 flags+=(-Ilibplist/libcnary/include)
 
+flags+=("$@")
+
 mkdir -p "${out}"
 os=()
 
@@ -55,7 +58,7 @@ done
 set -x
 
 "${flags[@]}" -c -std=c++11 -o "${out}"/ldid.o ldid.cpp
-"${flags[@]}" -o "${out}"/ldid "${out}"/ldid.o "${os[@]}" -x c lookup2.c -x c sha1.c -lxml2
+"${flags[@]}" -o "${out}"/ldid "${out}"/ldid.o "${os[@]}" -x c lookup2.c -lxml2 -lcrypto
 
 if ! "${ios}"; then
     ln -sf out/ldid .
