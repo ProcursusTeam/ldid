@@ -20,7 +20,6 @@
 /* }}} */
 
 #include "minimal/stdlib.h"
-#include "minimal/string.h"
 #include "minimal/mapping.h"
 
 #include <cstring>
@@ -876,16 +875,15 @@ int main(int argc, const char *argv[]) {
     _foreach (file, files) try {
         const char *path(file.c_str());
         const char *base = strrchr(path, '/');
-        char *temp(NULL), *dir;
 
+        std::string dir;
         if (base != NULL)
-            dir = strndup_(path, base++ - path + 1);
-        else {
-            dir = strdup("");
+            dir.assign(path, base++ - path + 1);
+        else
             base = path;
-        }
 
         const char *name(flag_I ?: base);
+        char *temp(NULL);
 
         if (flag_r) {
             uint32_t clip(0); {
@@ -1015,7 +1013,7 @@ int main(int argc, const char *argv[]) {
                 }
             }
 
-            asprintf(&temp, "%s.%s.cs", dir, base);
+            asprintf(&temp, "%s.%s.cs", dir.c_str(), base);
             fclose(fopen(temp, "w+"));
             _syscall(truncate(temp, offset));
 
@@ -1333,7 +1331,7 @@ int main(int argc, const char *argv[]) {
             size_t size = fat_header.GetSize();
 
             char *copy;
-            asprintf(&copy, "%s.%s.cp", dir, base);
+            asprintf(&copy, "%s.%s.cp", dir.c_str(), base);
             FILE *file = fopen(copy, "w+");
             size_t writ = fwrite(top, 1, size, file);
             _assert(writ == size);
@@ -1354,7 +1352,6 @@ int main(int argc, const char *argv[]) {
             free(temp);
         }
 
-        free(dir);
         ++filei;
     } catch (const char *) {
         ++filee;
