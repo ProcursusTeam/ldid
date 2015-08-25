@@ -20,11 +20,16 @@
 /* }}} */
 
 #include "minimal/stdlib.h"
-#include "minimal/mapping.h"
 
 #include <cstring>
 #include <string>
 #include <vector>
+
+#include <dlfcn.h>
+#include <fcntl.h>
+
+#include <sys/mman.h>
+#include <sys/stat.h>
 
 #include <openssl/sha.h>
 
@@ -635,12 +640,6 @@ class FatHeader :
     }
 };
 
-FatHeader Map(const char *path, bool ro = false) {
-    size_t size;
-    void *base(map(path, 0, _not(size_t), &size, ro));
-    return FatHeader(base, size);
-}
-
 template <typename Target_>
 class Pointer {
   private:
@@ -736,6 +735,82 @@ struct CodesignAllocation {
     }
 };
 
+class File {
+  private:
+    int file_;
+
+  public:
+    File() :
+        file_(-1)
+    {
+    }
+
+    ~File() {
+        if (file_ != -1)
+            _syscall(close(file_));
+    }
+
+    void open(const char *path, bool ro) {
+        _assert(file_ == -1);
+        _syscall(file_ = ::open(path, ro ? O_RDONLY : O_RDWR));
+    }
+
+    int file() const {
+        return file_;
+    }
+};
+
+class Map {
+  private:
+    File file_;
+    void *data_;
+    size_t size_;
+
+    void clear() {
+        if (data_ == NULL)
+            return;
+        _syscall(munmap(data_, size_));
+        data_ = NULL;
+        size_ = 0;
+    }
+
+  public:
+    Map() :
+        data_(NULL),
+        size_(0)
+    {
+    }
+
+    Map(const char *path, bool ro) {
+        open(path, ro);
+    }
+
+    ~Map() {
+        clear();
+    }
+
+    void open(const char *path, bool ro) {
+        clear();
+
+        file_.open(path, ro);
+        int file(file_.file());
+
+        struct stat stat;
+        _syscall(fstat(file, &stat));
+        size_ = stat.st_size;
+
+        _syscall(data_ = mmap(NULL, size_, ro ? PROT_READ : PROT_READ | PROT_WRITE, ro ? MAP_PRIVATE : MAP_SHARED, file, 0));
+    }
+
+    void *data() const {
+        return data_;
+    }
+
+    size_t size() const {
+        return size_;
+    }
+};
+
 int main(int argc, const char *argv[]) {
     union {
         uint16_t word;
@@ -773,6 +848,7 @@ int main(int argc, const char *argv[]) {
     bool timeh(false);
     uint32_t timev(0);
 
+    Map xmlm;
     const void *xmld(NULL);
     size_t xmls(0);
 
@@ -831,7 +907,9 @@ int main(int argc, const char *argv[]) {
                 flag_S = true;
                 if (argv[argi][2] != '\0') {
                     const char *xml = argv[argi] + 2;
-                    xmld = map(xml, 0, _not(size_t), &xmls, true);
+                    xmlm.open(xml, true);
+                    xmld = xmlm.data();
+                    xmls = xmlm.size();
                 }
             break;
 
@@ -887,7 +965,8 @@ int main(int argc, const char *argv[]) {
 
         if (flag_r) {
             uint32_t clip(0); {
-                FatHeader fat_header(Map(path));
+                Map mapping(path, false);
+                FatHeader fat_header(mapping.data(), mapping.size());
                 _foreach (mach_header, fat_header.GetMachHeaders()) {
                     if (flag_A) {
                         if (mach_header.GetCPUType() != flag_CPUType)
@@ -947,7 +1026,8 @@ int main(int argc, const char *argv[]) {
         }
 
         if (flag_S) {
-            FatHeader source(Map(path));
+            Map input(path, true);
+            FatHeader source(input.data(), input.size());
 
             size_t offset(0);
 
@@ -962,8 +1042,6 @@ int main(int argc, const char *argv[]) {
                         if (mach_header.GetCPUSubtype() != flag_CPUSubtype)
                             continue;
                     }
-
-                    mach_header->flags = mach_header.Swap(mach_header.Swap(mach_header->flags) | MH_DYLDLINK);
 
                     size_t size(_not(size_t)); {
                         _foreach (load_command, mach_header.GetLoadCommands()) {
@@ -1017,7 +1095,9 @@ int main(int argc, const char *argv[]) {
             fclose(fopen(temp, "w+"));
             _syscall(truncate(temp, offset));
 
-            void *file(map(temp, 0, offset, NULL, false));
+            Map output(temp, false);
+            _assert(output.size() == offset);
+            void *file(output.data());
             memset(file, 0, offset);
 
             fat_arch *fat_arch;
@@ -1086,7 +1166,8 @@ int main(int argc, const char *argv[]) {
         if (flag_p)
             printf("path%zu='%s'\n", filei, file.c_str());
 
-        FatHeader fat_header(Map(temp == NULL ? path : temp, !(flag_R || flag_T || flag_s || flag_S || flag_O || flag_D)));
+        Map mapping(temp == NULL ? path : temp, !(flag_R || flag_T || flag_s || flag_S || flag_O || flag_D));
+        FatHeader fat_header(mapping.data(), mapping.size());
 
         _foreach (mach_header, fat_header.GetMachHeaders()) {
             struct linkedit_data_command *signature(NULL);
