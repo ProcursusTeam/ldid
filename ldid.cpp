@@ -95,6 +95,7 @@ struct load_command {
 #define LC_ENCRYPTION_INFO    uint32_t(0x21)
 #define LC_DYLD_INFO          uint32_t(0x22)
 #define LC_DYLD_INFO_ONLY     uint32_t(0x22 | LC_REQ_DYLD)
+#define LC_ENCRYPTION_INFO_64 uint32_t(0x2c)
 
 struct dylib {
     uint32_t name;
@@ -1129,7 +1130,7 @@ int main(int argc, const char *argv[]) {
                 if (false);
                 else if (cmd == LC_CODE_SIGNATURE)
                     signature = reinterpret_cast<struct linkedit_data_command *>(load_command);
-                else if (cmd == LC_ENCRYPTION_INFO)
+                else if (cmd == LC_ENCRYPTION_INFO || cmd == LC_ENCRYPTION_INFO_64)
                     encryption = reinterpret_cast<struct encryption_info_command *>(load_command);
                 else if (cmd == LC_ID_DYLIB) {
                     volatile struct dylib_command *dylib_command(reinterpret_cast<struct dylib_command *>(load_command));
