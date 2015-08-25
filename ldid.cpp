@@ -750,9 +750,9 @@ class File {
             _syscall(close(file_));
     }
 
-    void open(const char *path, bool ro) {
+    void open(const char *path, int flags) {
         _assert(file_ == -1);
-        _syscall(file_ = ::open(path, ro ? O_RDONLY : O_RDWR));
+        _syscall(file_ = ::open(path, flags));
     }
 
     int file() const {
@@ -781,25 +781,40 @@ class Map {
     {
     }
 
-    Map(const char *path, bool ro) {
-        open(path, ro);
+    Map(const char *path, int oflag, int pflag, int mflag) :
+        Map()
+    {
+        open(path, oflag, pflag, mflag);
+    }
+
+    Map(const char *path, bool edit) :
+        Map()
+    {
+        open(path, edit);
     }
 
     ~Map() {
         clear();
     }
 
-    void open(const char *path, bool ro) {
+    void open(const char *path, int oflag, int pflag, int mflag) {
         clear();
 
-        file_.open(path, ro);
+        file_.open(path, oflag);
         int file(file_.file());
 
         struct stat stat;
         _syscall(fstat(file, &stat));
         size_ = stat.st_size;
 
-        _syscall(data_ = mmap(NULL, size_, ro ? PROT_READ : PROT_READ | PROT_WRITE, ro ? MAP_PRIVATE : MAP_SHARED, file, 0));
+        _syscall(data_ = mmap(NULL, size_, pflag, mflag, file, 0));
+    }
+
+    void open(const char *path, bool edit) {
+        if (edit)
+            open(path, O_RDWR, PROT_READ | PROT_WRITE, MAP_SHARED);
+        else
+            open(path, O_RDONLY, PROT_READ, MAP_PRIVATE);
     }
 
     void *data() const {
@@ -819,12 +834,7 @@ int main(int argc, const char *argv[]) {
 
     little_ = endian.byte[0];
 
-    bool flag_R(false);
     bool flag_r(false);
-
-    bool flag_t(false);
-    bool flag_p(false);
-    bool flag_u(false);
     bool flag_e(false);
 
     bool flag_T(false);
@@ -832,10 +842,7 @@ int main(int argc, const char *argv[]) {
     bool flag_S(false);
     bool flag_s(false);
 
-    bool flag_O(false);
-
     bool flag_D(false);
-    bool flag_d(false);
 
     bool flag_A(false);
     bool flag_a(false);
@@ -852,9 +859,6 @@ int main(int argc, const char *argv[]) {
     const void *xmld(NULL);
     size_t xmls(0);
 
-    uintptr_t noffset(_not(uintptr_t));
-    uintptr_t woffset(_not(uintptr_t));
-
     std::vector<std::string> files;
 
     if (argc == 1) {
@@ -869,17 +873,10 @@ int main(int argc, const char *argv[]) {
         if (argv[argi][0] != '-')
             files.push_back(argv[argi]);
         else switch (argv[argi][1]) {
-            case 'R': flag_R = true; break;
             case 'r': flag_r = true; break;
-
-            case 't': flag_t = true; break;
-            case 'u': flag_u = true; break;
-            case 'p': flag_p = true; break;
             case 'e': flag_e = true; break;
-            case 'O': flag_O = true; break;
 
             case 'D': flag_D = true; break;
-            case 'd': flag_d = true; break;
 
             case 'a': flag_a = true; break;
 
@@ -907,7 +904,7 @@ int main(int argc, const char *argv[]) {
                 flag_S = true;
                 if (argv[argi][2] != '\0') {
                     const char *xml = argv[argi] + 2;
-                    xmlm.open(xml, true);
+                    xmlm.open(xml, O_RDONLY, PROT_READ, MAP_PRIVATE);
                     xmld = xmlm.data();
                     xmls = xmlm.size();
                 }
@@ -926,18 +923,6 @@ int main(int argc, const char *argv[]) {
 
             case 'I': {
                 flag_I = argv[argi] + 2;
-            } break;
-
-            case 'n': {
-                char *arge;
-                noffset = strtoul(argv[argi] + 2, &arge, 0);
-                _assert(arge == argv[argi] + strlen(argv[argi]));
-            } break;
-
-            case 'w': {
-                char *arge;
-                woffset = strtoul(argv[argi] + 2, &arge, 0);
-                _assert(arge == argv[argi] + strlen(argv[argi]));
             } break;
 
             default:
@@ -963,102 +948,45 @@ int main(int argc, const char *argv[]) {
         const char *name(flag_I ?: base);
         char *temp(NULL);
 
-        if (flag_r) {
-            uint32_t clip(0); {
-                Map mapping(path, false);
-                FatHeader fat_header(mapping.data(), mapping.size());
-                _foreach (mach_header, fat_header.GetMachHeaders()) {
-                    if (flag_A) {
-                        if (mach_header.GetCPUType() != flag_CPUType)
-                            continue;
-                        if (mach_header.GetCPUSubtype() != flag_CPUSubtype)
-                            continue;
-                    }
-
-                    mach_header->flags = mach_header.Swap(mach_header.Swap(mach_header->flags) | MH_DYLDLINK);
-
-                    uint32_t size(_not(uint32_t)); {
-                        _foreach (load_command, mach_header.GetLoadCommands()) {
-                            switch (mach_header.Swap(load_command->cmd)) {
-                                case LC_CODE_SIGNATURE: {
-                                    struct linkedit_data_command *signature = reinterpret_cast<struct linkedit_data_command *>(load_command);
-                                    memset(reinterpret_cast<uint8_t *>(mach_header.GetBase()) + mach_header.Swap(signature->dataoff), 0, mach_header.Swap(signature->datasize));
-                                    memset(signature, 0, sizeof(struct linkedit_data_command));
-
-                                    mach_header->ncmds = mach_header.Swap(mach_header.Swap(mach_header->ncmds) - 1);
-                                    mach_header->sizeofcmds = mach_header.Swap(uint32_t(mach_header.Swap(mach_header->sizeofcmds) - sizeof(struct linkedit_data_command)));
-                                } break;
-
-                                case LC_SYMTAB: {
-                                    struct symtab_command *symtab = reinterpret_cast<struct symtab_command *>(load_command);
-                                    size = mach_header.Swap(symtab->stroff) + mach_header.Swap(symtab->strsize);
-                                } break;
-                            }
-                        }
-                    }
-
-                    _assert(size != _not(uint32_t));
-
-                    _foreach (segment, mach_header.GetSegments("__LINKEDIT")) {
-                        segment->filesize -= mach_header.GetSize() - size;
-
-                        if (fat_arch *fat_arch = mach_header.GetFatArch()) {
-                            fat_arch->size = fat_header.Swap(size);
-                            clip = std::max(clip, fat_header.Swap(fat_arch->offset) + size);
-                        } else
-                            clip = std::max(clip, size);
-                    }
-
-                    _foreach (segment, mach_header.GetSegments64("__LINKEDIT")) {
-                        segment->filesize -= mach_header.GetSize() - size;
-
-                        if (fat_arch *fat_arch = mach_header.GetFatArch()) {
-                            fat_arch->size = fat_header.Swap(size);
-                            clip = std::max(clip, fat_header.Swap(fat_arch->offset) + size);
-                        } else
-                            clip = std::max(clip, size);
-                    }
-                }
-            }
-
-            if (clip != 0)
-                _syscall(truncate(path, clip));
-        }
-
-        if (flag_S) {
-            Map input(path, true);
+        if (flag_S || flag_r) {
+            Map input(path, O_RDONLY, PROT_READ | PROT_WRITE, MAP_PRIVATE);
             FatHeader source(input.data(), input.size());
 
             size_t offset(0);
-
             if (source.IsFat())
                 offset += sizeof(fat_header) + sizeof(fat_arch) * source.Swap(source->nfat_arch);
 
-            std::vector<CodesignAllocation> allocations; {
-                _foreach (mach_header, source.GetMachHeaders()) {
-                    if (flag_A) {
-                        if (mach_header.GetCPUType() != flag_CPUType)
-                            continue;
-                        if (mach_header.GetCPUSubtype() != flag_CPUSubtype)
-                            continue;
-                    }
+            std::vector<CodesignAllocation> allocations;
+            _foreach (mach_header, source.GetMachHeaders()) {
+                struct linkedit_data_command *signature(NULL);
+                struct symtab_command *symtab(NULL);
 
-                    size_t size(_not(size_t)); {
-                        _foreach (load_command, mach_header.GetLoadCommands()) {
-                            uint32_t cmd(mach_header.Swap(load_command->cmd));
-                            if (cmd == LC_CODE_SIGNATURE) {
-                                struct linkedit_data_command *signature = reinterpret_cast<struct linkedit_data_command *>(load_command);
-                                size = mach_header.Swap(signature->dataoff);
-                                _assert(size < mach_header.GetSize());
-                                break;
-                            }
-                        }
+                _foreach (load_command, mach_header.GetLoadCommands()) {
+                    uint32_t cmd(mach_header.Swap(load_command->cmd));
+                    if (false);
+                    else if (cmd == LC_CODE_SIGNATURE)
+                        signature = reinterpret_cast<struct linkedit_data_command *>(load_command);
+                    else if (cmd == LC_SYMTAB)
+                        symtab = reinterpret_cast<struct symtab_command *>(load_command);
+                }
 
-                        if (size == _not(size_t))
-                            size = mach_header.GetSize();
-                    }
+                size_t size;
+                if (signature == NULL)
+                    size = mach_header.GetSize();
+                else {
+                    size = mach_header.Swap(signature->dataoff);
+                    _assert(size <= mach_header.GetSize());
+                }
 
-                    size_t alloc(0);
+                if (symtab != NULL) {
+                    auto end(mach_header.Swap(symtab->stroff) + mach_header.Swap(symtab->strsize));
+                    _assert(end <= size);
+                    _assert(end >= size - 0x10);
+                    size = end;
+                }
+
+                size_t alloc(0);
+                if (!flag_r) {
                     alloc += sizeof(struct SuperBlob);
                     uint32_t special(0);
 
@@ -1080,22 +1008,22 @@ int main(int argc, const char *argv[]) {
 
                     size_t normal((size + 0x1000 - 1) / 0x1000);
                     alloc = Align(alloc + (special + normal) * 0x14, 16);
-
-                    auto *fat_arch(mach_header.GetFatArch());
-                    uint32_t align(fat_arch == NULL ? 0 : source.Swap(fat_arch->align));
-                    offset = Align(offset, 1 << align);
-
-                    allocations.push_back(CodesignAllocation(mach_header, offset, size, alloc, align));
-                    offset += size + alloc;
-                    offset = Align(offset, 16);
                 }
+
+                auto *fat_arch(mach_header.GetFatArch());
+                uint32_t align(fat_arch == NULL ? 0 : source.Swap(fat_arch->align));
+                offset = Align(offset, 1 << align);
+
+                allocations.push_back(CodesignAllocation(mach_header, offset, size, alloc, align));
+                offset += size + alloc;
+                offset = Align(offset, 16);
             }
 
             asprintf(&temp, "%s.%s.cs", dir.c_str(), base);
             fclose(fopen(temp, "w+"));
             _syscall(truncate(temp, offset));
 
-            Map output(temp, false);
+            Map output(temp, O_RDWR, PROT_READ | PROT_WRITE, MAP_SHARED);
             _assert(output.size() == offset);
             void *file(output.data());
             memset(file, 0, offset);
@@ -1114,7 +1042,8 @@ int main(int argc, const char *argv[]) {
                 auto &source(allocation.mach_header_);
 
                 uint32_t align(allocation.size_);
-                align = Align(align, 0x10);
+                if (allocation.alloc_ != 0)
+                    align = Align(align, 0x10);
 
                 if (fat_arch != NULL) {
                     fat_arch->cputype = Swap(source->cputype);
@@ -1138,16 +1067,30 @@ int main(int argc, const char *argv[]) {
                     break;
                 }
 
-                if (signature == NULL) {
-                    mach_header->ncmds = mach_header.Swap(mach_header.Swap(mach_header->ncmds) + 1);
-                    signature = reinterpret_cast<struct linkedit_data_command *>(reinterpret_cast<uint8_t *>(mach_header.GetLoadCommand()) + mach_header.Swap(mach_header->sizeofcmds));
-                    mach_header->sizeofcmds = mach_header.Swap(mach_header.Swap(mach_header->sizeofcmds) + uint32_t(sizeof(*signature)));
-                    signature->cmd = mach_header.Swap(LC_CODE_SIGNATURE);
-                    signature->cmdsize = mach_header.Swap(uint32_t(sizeof(*signature)));
+                if (flag_r && signature != NULL) {
+                    auto before(reinterpret_cast<uint8_t *>(mach_header.GetLoadCommand()));
+                    auto after(reinterpret_cast<uint8_t *>(signature));
+                    auto next(mach_header.Swap(signature->cmdsize));
+                    auto total(mach_header.Swap(mach_header->sizeofcmds));
+                    memmove(signature, after + next, before + total - after - next);
+                    memset(before + total - next, 0, next);
+                    mach_header->ncmds = mach_header.Swap(mach_header.Swap(mach_header->ncmds) - 1);
+                    mach_header->sizeofcmds = mach_header.Swap(total - next);
+                    signature = NULL;
                 }
 
-                signature->dataoff = mach_header.Swap(align);
-                signature->datasize = mach_header.Swap(allocation.alloc_);
+                if (flag_S) {
+                    if (signature == NULL) {
+                        signature = reinterpret_cast<struct linkedit_data_command *>(reinterpret_cast<uint8_t *>(mach_header.GetLoadCommand()) + mach_header.Swap(mach_header->sizeofcmds));
+                        signature->cmd = mach_header.Swap(LC_CODE_SIGNATURE);
+                        signature->cmdsize = mach_header.Swap(uint32_t(sizeof(*signature)));
+                        mach_header->ncmds = mach_header.Swap(mach_header.Swap(mach_header->ncmds) + 1);
+                        mach_header->sizeofcmds = mach_header.Swap(mach_header.Swap(mach_header->sizeofcmds) + uint32_t(sizeof(*signature)));
+                    }
+
+                    signature->dataoff = mach_header.Swap(align);
+                    signature->datasize = mach_header.Swap(allocation.alloc_);
+                }
 
                 _foreach (segment, mach_header.GetSegments("__LINKEDIT")) {
                     size_t size(mach_header.Swap(align + allocation.alloc_ - mach_header.Swap(segment->fileoff)));
@@ -1163,10 +1106,7 @@ int main(int argc, const char *argv[]) {
             }
         }
 
-        if (flag_p)
-            printf("path%zu='%s'\n", filei, file.c_str());
-
-        Map mapping(temp == NULL ? path : temp, !(flag_R || flag_T || flag_s || flag_S || flag_O || flag_D));
+        Map mapping(temp ?: path, flag_T || flag_s || flag_S);
         FatHeader fat_header(mapping.data(), mapping.size());
 
         _foreach (mach_header, fat_header.GetMachHeaders()) {
@@ -1183,60 +1123,16 @@ int main(int argc, const char *argv[]) {
             if (flag_a)
                 printf("cpu=0x%x:0x%x\n", mach_header.GetCPUType(), mach_header.GetCPUSubtype());
 
-            if (flag_d) {
-                if (struct fat_arch *fat_arch = mach_header.GetFatArch())
-                    printf("offset=0x%x\n", Swap(fat_arch->offset));
-                else
-                    printf("offset=0x0\n");
-            }
-
-            if (woffset != _not(uintptr_t)) {
-                Pointer<uint32_t> wvalue(mach_header.GetPointer<uint32_t>(woffset));
-                if (wvalue == NULL)
-                    printf("(null) %p\n", reinterpret_cast<void *>(woffset));
-                else
-                    printf("0x%.08x\n", *wvalue);
-            }
-
-            if (noffset != _not(uintptr_t))
-                printf("%s\n", &*mach_header.GetPointer<char>(noffset));
-
-            if (flag_d)
-                _foreach(segment, mach_header.GetSegments("__TEXT")) {
-                    printf("vmaddr=0x%x\n", mach_header.Swap(segment->vmaddr));
-                    printf("fileoff=0x%x\n", mach_header.Swap(segment->fileoff));
-                }
-
-            if (flag_O) {
-                _foreach(section, mach_header.GetSections("__TEXT", "__text"))
-                    section->addr = mach_header.Swap(0);
-            }
-
             _foreach (load_command, mach_header.GetLoadCommands()) {
                 uint32_t cmd(mach_header.Swap(load_command->cmd));
 
-                if (flag_R && cmd == LC_REEXPORT_DYLIB)
-                    load_command->cmd = mach_header.Swap(LC_LOAD_DYLIB);
+                if (false);
                 else if (cmd == LC_CODE_SIGNATURE)
                     signature = reinterpret_cast<struct linkedit_data_command *>(load_command);
                 else if (cmd == LC_ENCRYPTION_INFO)
                     encryption = reinterpret_cast<struct encryption_info_command *>(load_command);
-                else if (cmd == LC_UUID) {
-                    volatile struct uuid_command *uuid_command(reinterpret_cast<struct uuid_command *>(load_command));
-
-                    if (flag_u) {
-                        printf("uuid%zu=%.2x%.2x%.2x%.2x-%.2x%.2x-%.2x%.2x-%.2x%.2x-%.2x%.2x%.2x%.2x%.2x%.2x\n", filei,
-                            uuid_command->uuid[ 0], uuid_command->uuid[ 1], uuid_command->uuid[ 2], uuid_command->uuid[ 3],
-                            uuid_command->uuid[ 4], uuid_command->uuid[ 5], uuid_command->uuid[ 6], uuid_command->uuid[ 7],
-                            uuid_command->uuid[ 8], uuid_command->uuid[ 9], uuid_command->uuid[10], uuid_command->uuid[11],
-                            uuid_command->uuid[12], uuid_command->uuid[13], uuid_command->uuid[14], uuid_command->uuid[15]
-                        );
-                    }
-                } else if (cmd == LC_ID_DYLIB) {
+                else if (cmd == LC_ID_DYLIB) {
                     volatile struct dylib_command *dylib_command(reinterpret_cast<struct dylib_command *>(load_command));
-
-                    if (flag_t)
-                        printf("time%zu=0x%.8x\n", filei, mach_header.Swap(dylib_command->dylib.timestamp));
 
                     if (flag_T) {
                         uint32_t timed;
@@ -1251,14 +1147,6 @@ int main(int argc, const char *argv[]) {
                         dylib_command->dylib.timestamp = mach_header.Swap(timed);
                     }
                 }
-            }
-
-            if (flag_d) {
-                _assert(encryption != NULL);
-
-                printf("cryptoff=0x%x\n", mach_header.Swap(encryption->cryptoff));
-                printf("cryptsize=0x%x\n", mach_header.Swap(encryption->cryptsize));
-                printf("cryptid=0x%x\n", mach_header.Swap(encryption->cryptid));
             }
 
             if (flag_D) {
@@ -1405,22 +1293,6 @@ int main(int argc, const char *argv[]) {
 
                 memset(blob + offset, 0, size - offset);
             }
-        }
-
-        if (flag_S) {
-            uint8_t *top = reinterpret_cast<uint8_t *>(fat_header.GetBase());
-            size_t size = fat_header.GetSize();
-
-            char *copy;
-            asprintf(&copy, "%s.%s.cp", dir.c_str(), base);
-            FILE *file = fopen(copy, "w+");
-            size_t writ = fwrite(top, 1, size, file);
-            _assert(writ == size);
-            fclose(file);
-
-            _syscall(unlink(temp));
-            free(temp);
-            temp = copy;
         }
 
         if (temp != NULL) {
