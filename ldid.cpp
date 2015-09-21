@@ -1128,6 +1128,11 @@ void resign(void *idata, size_t isize, std::streambuf &output, const Functor<siz
 
 typedef std::map<uint32_t, std::string> Blobs;
 
+static void insert(Blobs &blobs, uint32_t slot, const std::stringbuf &buffer) {
+    auto value(buffer.str());
+    std::swap(blobs[slot], value);
+}
+
 static void insert(Blobs &blobs, uint32_t slot, uint32_t magic, const std::stringbuf &buffer) {
     auto value(buffer.str());
     Blob blob;
@@ -1199,11 +1204,10 @@ void resign(void *idata, size_t isize, std::streambuf &output, const std::string
         if (true) {
             std::stringbuf data;
 
-            uint32_t requirements;
-            requirements = Swap(0);
-            put(data, &requirements, sizeof(requirements));
+            Blobs requirements;
+            put(data, CSMAGIC_REQUIREMENTS, requirements);
 
-            insert(blobs, CSSLOT_REQUIREMENTS, CSMAGIC_REQUIREMENTS, data);
+            insert(blobs, CSSLOT_REQUIREMENTS, data);
         }
 
         if (entitlements.size() != 0) {
