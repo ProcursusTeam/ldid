@@ -1289,7 +1289,9 @@ class Signature {
     }
 };
 
-void resign(void *idata, size_t isize, std::streambuf &output, const std::string &name, const std::string &entitlements, const std::string &key) {
+typedef std::map<uint32_t, std::string> Slots;
+
+void resign(void *idata, size_t isize, std::streambuf &output, const std::string &name, const std::string &entitlements, const std::string &key, const Slots &slots) {
     resign(idata, isize, output, fun([&](size_t size) -> size_t {
         size_t alloc(sizeof(struct SuperBlob));
 
@@ -1319,6 +1321,9 @@ void resign(void *idata, size_t isize, std::streambuf &output, const std::string
             alloc += 0x3000;
         }
 
+        _foreach (slot, slots)
+            special = std::max(special, slot.first);
+
         uint32_t normal((size + PageSize_ - 1) / PageSize_);
         alloc = Align(alloc + (special + normal) * SHA_DIGEST_LENGTH, 16);
         return alloc;
@@ -1346,6 +1351,8 @@ void resign(void *idata, size_t isize, std::streambuf &output, const std::string
             uint32_t special(0);
             _foreach (blob, blobs)
                 special = std::max(special, blob.first);
+            _foreach (slot, slots)
+                special = std::max(special, slot.first);
             uint32_t normal((limit + PageSize_ - 1) / PageSize_);
 
             CodeDirectory directory;
@@ -1373,6 +1380,11 @@ void resign(void *idata, size_t isize, std::streambuf &output, const std::string
             _foreach (blob, blobs) {
                 auto local(reinterpret_cast<const Blob *>(&blob.second[0]));
                 sha1((uint8_t *) (hashes - blob.first), local, Swap(local->length));
+            }
+
+            _foreach (slot, slots) {
+                _assert(sizeof(*hashes) == slot.second.size());
+                memcpy(hashes - slot.first, slot.second.data(), slot.second.size());
             }
 
             if (normal != 1)
@@ -1446,6 +1458,7 @@ int main(int argc, char *argv[]) {
 
     Map entitlements;
     Map key;
+    Slots slots;
 
     std::vector<std::string> files;
 
@@ -1468,6 +1481,19 @@ int main(int argc, char *argv[]) {
             break;
 
             case 'e': flag_e = true; break;
+
+            case 'E': {
+                const char *slot = argv[argi] + 2;
+                const char *colon = strchr(slot, ':');
+                _assert(colon != NULL);
+                Map file(colon + 1, O_RDONLY, PROT_READ, MAP_PRIVATE);
+                char *arge;
+                unsigned number(strtoul(slot, &arge, 0));
+                _assert(arge == colon);
+                std::string &hash(slots[number]);
+                hash.resize(SHA_DIGEST_LENGTH);
+                sha1(reinterpret_cast<uint8_t *>(&hash[0]), file.data(), file.size());
+            } break;
 
             case 'D': flag_D = true; break;
 
@@ -1558,9 +1584,8 @@ int main(int argc, char *argv[]) {
 
             if (flag_r)
                 resign(input.data(), input.size(), output);
-            else {
-                resign(input.data(), input.size(), output, name, entitlements, key);
-            }
+            else
+                resign(input.data(), input.size(), output, name, entitlements, key, slots);
         }
 
         Map mapping(!temp.empty() ? temp.c_str() : path, flag_T || flag_s);
