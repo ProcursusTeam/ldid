@@ -1182,7 +1182,7 @@ void resign(void *idata, size_t isize, std::streambuf &output, const std::string
         alloc += sizeof(struct BlobIndex);
         alloc += 0xc;
 
-        if (entitlements.size() != 0) {
+        if (!entitlements.empty()) {
             special = std::max(special, CSSLOT_ENTITLEMENTS);
             alloc += sizeof(struct BlobIndex);
             alloc += sizeof(struct Blob);
@@ -1210,7 +1210,7 @@ void resign(void *idata, size_t isize, std::streambuf &output, const std::string
             insert(blobs, CSSLOT_REQUIREMENTS, data);
         }
 
-        if (entitlements.size() != 0) {
+        if (!entitlements.empty()) {
             std::stringbuf data;
             put(data, entitlements.data(), entitlements.size());
             insert(blobs, CSSLOT_ENTITLEMENTS, CSMAGIC_EMBEDDED_ENTITLEMENTS, data);
