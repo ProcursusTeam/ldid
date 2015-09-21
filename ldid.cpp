@@ -1128,8 +1128,13 @@ void resign(void *idata, size_t isize, std::streambuf &output, const Functor<siz
 
 typedef std::map<uint32_t, std::string> Blobs;
 
-static void insert(Blobs &blobs, uint32_t slot, const std::stringbuf &data) {
-    blobs.insert(std::make_pair(slot, data.str()));
+static void insert(Blobs &blobs, uint32_t slot, uint32_t magic, const std::stringbuf &buffer) {
+    auto value(buffer.str());
+    Blob blob;
+    blob.magic = Swap(magic);
+    blob.length = Swap(uint32_t(sizeof(blob) + value.size()));
+    value.insert(0, reinterpret_cast<char *>(&blob), sizeof(blob));
+    std::swap(blobs[slot], value);
 }
 
 static size_t put(std::streambuf &output, uint32_t magic, const Blobs &blobs) {
@@ -1194,29 +1199,17 @@ void resign(void *idata, size_t isize, std::streambuf &output, const std::string
         if (true) {
             std::stringbuf data;
 
-            Blob blob;
-            blob.magic = Swap(CSMAGIC_REQUIREMENTS);
-            blob.length = Swap(uint32_t(sizeof(Blob) + sizeof(uint32_t)));
-            put(data, &blob, sizeof(blob));
-
             uint32_t requirements;
             requirements = Swap(0);
             put(data, &requirements, sizeof(requirements));
 
-            insert(blobs, CSSLOT_REQUIREMENTS, data);
+            insert(blobs, CSSLOT_REQUIREMENTS, CSMAGIC_REQUIREMENTS, data);
         }
 
         if (entitlements.size() != 0) {
             std::stringbuf data;
-
-            Blob blob;
-            blob.magic = Swap(CSMAGIC_EMBEDDED_ENTITLEMENTS);
-            blob.length = Swap(uint32_t(sizeof(blob) + entitlements.size()));
-            put(data, &blob, sizeof(blob));
-
             put(data, entitlements.data(), entitlements.size());
-
-            insert(blobs, CSSLOT_ENTITLEMENTS, data);
+            insert(blobs, CSSLOT_ENTITLEMENTS, CSMAGIC_EMBEDDED_ENTITLEMENTS, data);
         }
 
         if (true) {
@@ -1227,16 +1220,11 @@ void resign(void *idata, size_t isize, std::streambuf &output, const std::string
                 special = std::max(special, blob.first);
             uint32_t normal((limit + pagesize - 1) / pagesize);
 
-            Blob blob;
-            blob.magic = Swap(CSMAGIC_CODEDIRECTORY);
-            blob.length = Swap(uint32_t(sizeof(blob) + sizeof(CodeDirectory) + name.size() + 1 + SHA_DIGEST_LENGTH * (special + normal)));
-            put(data, &blob, sizeof(blob));
-
             CodeDirectory directory;
             directory.version = Swap(uint32_t(0x00020001));
             directory.flags = Swap(uint32_t(0));
-            directory.hashOffset = Swap(uint32_t(sizeof(blob) + sizeof(CodeDirectory) + name.size() + 1 + SHA_DIGEST_LENGTH * special));
-            directory.identOffset = Swap(uint32_t(sizeof(blob) + sizeof(CodeDirectory)));
+            directory.hashOffset = Swap(uint32_t(sizeof(Blob) + sizeof(CodeDirectory) + name.size() + 1 + SHA_DIGEST_LENGTH * special));
+            directory.identOffset = Swap(uint32_t(sizeof(Blob) + sizeof(CodeDirectory)));
             directory.nSpecialSlots = Swap(special);
             directory.codeLimit = Swap(uint32_t(limit));
             directory.nCodeSlots = Swap(normal);
@@ -1267,7 +1255,7 @@ void resign(void *idata, size_t isize, std::streambuf &output, const std::string
 
             put(data, storage, sizeof(storage));
 
-            insert(blobs, CSSLOT_CODEDIRECTORY, data);
+            insert(blobs, CSSLOT_CODEDIRECTORY, CSMAGIC_CODEDIRECTORY, data);
         }
 
         return put(output, CSMAGIC_EMBEDDED_SIGNATURE, blobs);
