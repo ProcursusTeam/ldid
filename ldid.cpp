@@ -1126,6 +1126,39 @@ void resign(void *idata, size_t isize, std::streambuf &output, const Functor<siz
     }
 }
 
+typedef std::map<uint32_t, std::string> Blobs;
+
+static void insert(Blobs &blobs, uint32_t slot, const std::stringbuf &data) {
+    blobs.insert(std::make_pair(slot, data.str()));
+}
+
+static size_t put(std::streambuf &output, uint32_t magic, const Blobs &blobs) {
+    size_t total(0);
+    _foreach (blob, blobs)
+        total += blob.second.size();
+
+    struct SuperBlob super;
+    super.blob.magic = Swap(magic);
+    super.blob.length = Swap(uint32_t(sizeof(SuperBlob) + blobs.size() * sizeof(BlobIndex) + total));
+    super.count = Swap(uint32_t(blobs.size()));
+    put(output, &super, sizeof(super));
+
+    size_t offset(sizeof(SuperBlob) + sizeof(BlobIndex) * blobs.size());
+
+    _foreach (blob, blobs) {
+        BlobIndex index;
+        index.type = Swap(blob.first);
+        index.offset = Swap(uint32_t(offset));
+        put(output, &index, sizeof(index));
+        offset += blob.second.size();
+    }
+
+    _foreach (blob, blobs)
+        put(output, blob.second.data(), blob.second.size());
+
+    return offset;
+}
+
 void resign(void *idata, size_t isize, std::streambuf &output, const std::string &name, const std::string &entitlements) {
     uint8_t pageshift(0x0c);
     uint32_t pagesize(1 << pageshift);
@@ -1156,7 +1189,7 @@ void resign(void *idata, size_t isize, std::streambuf &output, const std::string
         alloc = Align(alloc + (special + normal) * SHA_DIGEST_LENGTH, 16);
         return alloc;
     }), fun([&](std::streambuf &output, size_t limit, const std::string &overlap, const char *top) -> size_t {
-        std::map<uint32_t, std::string> blobs;
+        Blobs blobs;
 
         if (true) {
             std::stringbuf data;
@@ -1170,7 +1203,7 @@ void resign(void *idata, size_t isize, std::streambuf &output, const std::string
             requirements = Swap(0);
             put(data, &requirements, sizeof(requirements));
 
-            blobs.insert(std::make_pair(CSSLOT_REQUIREMENTS, data.str()));
+            insert(blobs, CSSLOT_REQUIREMENTS, data);
         }
 
         if (entitlements.size() != 0) {
@@ -1183,7 +1216,7 @@ void resign(void *idata, size_t isize, std::streambuf &output, const std::string
 
             put(data, entitlements.data(), entitlements.size());
 
-            blobs.insert(std::make_pair(CSSLOT_ENTITLEMENTS, data.str()));
+            insert(blobs, CSSLOT_ENTITLEMENTS, data);
         }
 
         if (true) {
@@ -1234,33 +1267,10 @@ void resign(void *idata, size_t isize, std::streambuf &output, const std::string
 
             put(data, storage, sizeof(storage));
 
-            blobs.insert(std::make_pair(CSSLOT_CODEDIRECTORY, data.str()));
+            insert(blobs, CSSLOT_CODEDIRECTORY, data);
         }
 
-        size_t total(0);
-        _foreach (blob, blobs)
-            total += blob.second.size();
-
-        struct SuperBlob super;
-        super.blob.magic = Swap(CSMAGIC_EMBEDDED_SIGNATURE);
-        super.blob.length = Swap(uint32_t(sizeof(SuperBlob) + blobs.size() * sizeof(BlobIndex) + total));
-        super.count = Swap(uint32_t(blobs.size()));
-        put(output, &super, sizeof(super));
-
-        size_t offset(sizeof(SuperBlob) + sizeof(BlobIndex) * blobs.size());
-
-        _foreach (blob, blobs) {
-            BlobIndex index;
-            index.type = Swap(blob.first);
-            index.offset = Swap(uint32_t(offset));
-            put(output, &index, sizeof(index));
-            offset += blob.second.size();
-        }
-
-        _foreach (blob, blobs)
-            put(output, blob.second.data(), blob.second.size());
-
-        return offset;
+        return put(output, CSMAGIC_EMBEDDED_SIGNATURE, blobs);
     }));
 }
 
