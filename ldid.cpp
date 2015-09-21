@@ -22,6 +22,9 @@
 #include "minimal/stdlib.h"
 
 #include <cstring>
+#include <fstream>
+#include <map>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -297,6 +300,20 @@ struct encryption_info_command {
 #define BIND_OPCODE_DO_BIND_ADD_ADDR_IMM_SCALED      0xb0
 #define BIND_OPCODE_DO_BIND_ULEB_TIMES_SKIPPING_ULEB 0xc0
 
+inline void get(std::streambuf &stream, void *data, size_t size) {
+    _assert(stream.sgetn(static_cast<char *>(data), size) == size);
+}
+
+inline void put(std::streambuf &stream, const void *data, size_t size) {
+    _assert(stream.sputn(static_cast<const char *>(data), size) == size);
+}
+
+inline void pad(std::streambuf &stream, size_t size) {
+    char padding[size];
+    memset(padding, 0, size);
+    put(stream, padding, size);
+}
+
 template <typename Type_>
 Type_ Align(Type_ value, size_t align) {
     value += align - 1;
@@ -367,44 +384,39 @@ int64_t Swap(int64_t value) {
 template <typename Target_>
 class Pointer;
 
-class Data {
-  private:
-    void *base_;
-    size_t size_;
-
+class Swapped {
   protected:
     bool swapped_;
 
-  public:
-    Data(void *base, size_t size) :
-        base_(base),
-        size_(size),
+    Swapped() :
         swapped_(false)
     {
     }
 
-    uint16_t Swap(uint16_t value) const {
+  public:
+    Swapped(bool swapped) :
+        swapped_(swapped)
+    {
+    }
+
+    template <typename Type_>
+    Type_ Swap(Type_ value) const {
         return swapped_ ? Swap_(value) : value;
     }
+};
 
-    uint32_t Swap(uint32_t value) const {
-        return swapped_ ? Swap_(value) : value;
-    }
+class Data :
+    public Swapped
+{
+  private:
+    void *base_;
+    size_t size_;
 
-    uint64_t Swap(uint64_t value) const {
-        return swapped_ ? Swap_(value) : value;
-    }
-
-    int16_t Swap(int16_t value) const {
-        return Swap(static_cast<uint16_t>(value));
-    }
-
-    int32_t Swap(int32_t value) const {
-        return Swap(static_cast<uint32_t>(value));
-    }
-
-    int64_t Swap(int64_t value) const {
-        return Swap(static_cast<uint64_t>(value));
+  public:
+    Data(void *base, size_t size) :
+        base_(base),
+        size_(size)
+    {
     }
 
     void *GetBase() const {
@@ -458,6 +470,10 @@ class MachHeader :
             Swap(mach_header_->filetype) == MH_DYLIB ||
             Swap(mach_header_->filetype) == MH_BUNDLE
         );
+    }
+
+    bool Bits64() const {
+        return bits64_;
     }
 
     struct mach_header *operator ->() const {
@@ -673,13 +689,25 @@ class Pointer {
     }
 };
 
-#define CSMAGIC_CODEDIRECTORY      uint32_t(0xfade0c02)
-#define CSMAGIC_EMBEDDED_SIGNATURE uint32_t(0xfade0cc0)
-#define CSMAGIC_ENTITLEMENTS       uint32_t(0xfade7171)
+#define CSMAGIC_REQUIREMENT            uint32_t(0xfade0c00)
+#define CSMAGIC_REQUIREMENTS           uint32_t(0xfade0c01)
+#define CSMAGIC_CODEDIRECTORY          uint32_t(0xfade0c02)
+#define CSMAGIC_EMBEDDED_SIGNATURE     uint32_t(0xfade0cc0)
+#define CSMAGIC_EMBEDDED_SIGNATURE_OLD uint32_t(0xfade0b02)
+#define CSMAGIC_EMBEDDED_ENTITLEMENTS  uint32_t(0xfade7171)
+#define CSMAGIC_DETACHED_SIGNATURE     uint32_t(0xfade0cc1)
+#define CSMAGIC_BLOBWRAPPER            uint32_t(0xfade0b01)
 
-#define CSSLOT_CODEDIRECTORY uint32_t(0)
-#define CSSLOT_REQUIREMENTS  uint32_t(2)
-#define CSSLOT_ENTITLEMENTS  uint32_t(5)
+#define CSSLOT_CODEDIRECTORY uint32_t(0x00000)
+#define CSSLOT_INFOSLOT      uint32_t(0x00001)
+#define CSSLOT_REQUIREMENTS  uint32_t(0x00002)
+#define CSSLOT_RESOURCEDIR   uint32_t(0x00003)
+#define CSSLOT_APPLICATION   uint32_t(0x00004)
+#define CSSLOT_ENTITLEMENTS  uint32_t(0x00005)
+
+#define CSSLOT_SIGNATURESLOT uint32_t(0x10000)
+
+#define CS_HASHTYPE_SHA1 1
 
 struct BlobIndex {
     uint32_t type;
@@ -698,7 +726,6 @@ struct SuperBlob {
 } _packed;
 
 struct CodeDirectory {
-    struct Blob blob;
     uint32_t version;
     uint32_t flags;
     uint32_t hashOffset;
@@ -715,22 +742,26 @@ struct CodeDirectory {
 
 extern "C" uint32_t hash(uint8_t *k, uint32_t length, uint32_t initval);
 
-void sha1(uint8_t *hash, uint8_t *data, size_t size) {
-    SHA1(data, size, hash);
+void sha1(uint8_t *hash, const void *data, size_t size) {
+    SHA1(static_cast<const uint8_t *>(data), size, hash);
 }
 
 struct CodesignAllocation {
     FatMachHeader mach_header_;
     uint32_t offset_;
     uint32_t size_;
+    uint32_t limit_;
     uint32_t alloc_;
+    uint32_t special_;
     uint32_t align_;
 
-    CodesignAllocation(FatMachHeader mach_header, size_t offset, size_t size, size_t alloc, size_t align) :
+    CodesignAllocation(FatMachHeader mach_header, size_t offset, size_t size, size_t limit, size_t alloc, size_t special, size_t align) :
         mach_header_(mach_header),
         offset_(offset),
         size_(size),
+        limit_(limit),
         alloc_(alloc),
+        special_(special),
         align_(align)
     {
     }
@@ -831,9 +862,11 @@ class Map {
     }
 };
 
-void resign(const char *path, const char *temp, const char *name, const std::string &xml) {
-    Map input(path, O_RDONLY, PROT_READ | PROT_WRITE, MAP_PRIVATE);
-    FatHeader source(input.data(), input.size());
+void resign(void *idata, size_t isize, std::streambuf &output, const char *name, const std::string &entitlements) {
+    FatHeader source(idata, isize);
+
+    uint8_t pageshift(0x0c);
+    uint32_t pagesize(1 << pageshift);
 
     size_t offset(0);
     if (source.IsFat())
@@ -869,215 +902,266 @@ void resign(const char *path, const char *temp, const char *name, const std::str
         }
 
         size_t alloc(0);
+        uint32_t special(0);
+
         if (name != NULL) {
             alloc += sizeof(struct SuperBlob);
-            uint32_t special(0);
-
-            special = std::max(special, CSSLOT_CODEDIRECTORY);
-            alloc += sizeof(struct BlobIndex);
-            alloc += sizeof(struct CodeDirectory);
-            alloc += strlen(name) + 1;
 
             special = std::max(special, CSSLOT_REQUIREMENTS);
             alloc += sizeof(struct BlobIndex);
             alloc += 0xc;
 
-            if (xml.size() != 0) {
+            if (entitlements.size() != 0) {
                 special = std::max(special, CSSLOT_ENTITLEMENTS);
                 alloc += sizeof(struct BlobIndex);
                 alloc += sizeof(struct Blob);
-                alloc += xml.size();
+                alloc += entitlements.size();
             }
 
-            size_t normal((size + 0x1000 - 1) / 0x1000);
-            alloc = Align(alloc + (special + normal) * 0x14, 16);
+            special = std::max(special, CSSLOT_CODEDIRECTORY);
+            alloc += sizeof(struct BlobIndex);
+            alloc += sizeof(struct Blob);
+            alloc += sizeof(struct CodeDirectory);
+            alloc += strlen(name) + 1;
+
+            uint32_t normal((size + pagesize - 1) / pagesize);
+            alloc = Align(alloc + (special + normal) * SHA_DIGEST_LENGTH, 16);
         }
 
         auto *fat_arch(mach_header.GetFatArch());
         uint32_t align(fat_arch == NULL ? 0 : source.Swap(fat_arch->align));
         offset = Align(offset, 1 << align);
 
-        allocations.push_back(CodesignAllocation(mach_header, offset, size, alloc, align));
+        uint32_t limit(size);
+        if (alloc != 0)
+            limit = Align(limit, 0x10);
+
+        allocations.push_back(CodesignAllocation(mach_header, offset, size, limit, alloc, special, align));
         offset += size + alloc;
         offset = Align(offset, 16);
     }
 
-    fclose(fopen(temp, "w+"));
-    _syscall(truncate(temp, offset));
+    size_t position(0);
 
-    Map output(temp, O_RDWR, PROT_READ | PROT_WRITE, MAP_SHARED);
-    _assert(output.size() == offset);
-    void *file(output.data());
-    memset(file, 0, offset);
+    if (source.IsFat()) {
+        fat_header fat_header;
+        fat_header.magic = Swap(FAT_MAGIC);
+        fat_header.nfat_arch = Swap(uint32_t(allocations.size()));
+        put(output, &fat_header, sizeof(fat_header));
+        position += sizeof(fat_header);
 
-    fat_arch *fat_arch;
-    if (!source.IsFat())
-        fat_arch = NULL;
-    else {
-        auto *fat_header(reinterpret_cast<struct fat_header *>(file));
-        fat_header->magic = Swap(FAT_MAGIC);
-        fat_header->nfat_arch = Swap(source.Swap(source->nfat_arch));
-        fat_arch = reinterpret_cast<struct fat_arch *>(fat_header + 1);
+        _foreach (allocation, allocations) {
+            auto &mach_header(allocation.mach_header_);
+
+            fat_arch fat_arch;
+            fat_arch.cputype = Swap(mach_header->cputype);
+            fat_arch.cpusubtype = Swap(mach_header->cpusubtype);
+            fat_arch.offset = Swap(allocation.offset_);
+            fat_arch.size = Swap(allocation.limit_ + allocation.alloc_);
+            fat_arch.align = Swap(allocation.align_);
+            put(output, &fat_arch, sizeof(fat_arch));
+            position += sizeof(fat_arch);
+        }
     }
 
     _foreach (allocation, allocations) {
-        auto &source(allocation.mach_header_);
+        auto &mach_header(allocation.mach_header_);
 
-        uint32_t align(allocation.size_);
-        if (allocation.alloc_ != 0)
-            align = Align(align, 0x10);
+        pad(output, allocation.offset_ - position);
+        position = allocation.offset_;
 
-        if (fat_arch != NULL) {
-            fat_arch->cputype = Swap(source->cputype);
-            fat_arch->cpusubtype = Swap(source->cpusubtype);
-            fat_arch->offset = Swap(allocation.offset_);
-            fat_arch->size = Swap(align + allocation.alloc_);
-            fat_arch->align = Swap(allocation.align_);
-            ++fat_arch;
-        }
+        std::vector<std::string> commands;
 
-        void *target(reinterpret_cast<uint8_t *>(file) + allocation.offset_);
-        memcpy(target, source, allocation.size_);
-        MachHeader mach_header(target, align + allocation.alloc_);
-
-        struct linkedit_data_command *signature(NULL);
         _foreach (load_command, mach_header.GetLoadCommands()) {
-            uint32_t cmd(mach_header.Swap(load_command->cmd));
-            if (cmd != LC_CODE_SIGNATURE)
-                continue;
-            signature = reinterpret_cast<struct linkedit_data_command *>(load_command);
-            break;
-        }
+            std::string copy(reinterpret_cast<const char *>(load_command), load_command->cmdsize);
 
-        _foreach (segment, mach_header.GetSegments("__LINKEDIT")) {
-            size_t size(mach_header.Swap(align + allocation.alloc_ - mach_header.Swap(segment->fileoff)));
-            segment->filesize = size;
-            segment->vmsize = Align(size, 0x1000);
-        }
+            switch (uint32_t cmd = mach_header.Swap(load_command->cmd)) {
+                case LC_CODE_SIGNATURE:
+                    continue;
+                break;
 
-        _foreach (segment, mach_header.GetSegments64("__LINKEDIT")) {
-            size_t size(mach_header.Swap(align + allocation.alloc_ - mach_header.Swap(segment->fileoff)));
-            segment->filesize = size;
-            segment->vmsize = Align(size, 0x1000);
-        }
+                case LC_SEGMENT: {
+                    auto segment_command(reinterpret_cast<struct segment_command *>(&copy[0]));
+                    if (strncmp(segment_command->segname, "__LINKEDIT", 16) != 0)
+                        break;
+                    size_t size(mach_header.Swap(allocation.limit_ + allocation.alloc_ - mach_header.Swap(segment_command->fileoff)));
+                    segment_command->filesize = size;
+                    segment_command->vmsize = Align(size, 0x1000);
+                } break;
 
-        if (name == NULL && signature != NULL) {
-            auto before(reinterpret_cast<uint8_t *>(mach_header.GetLoadCommand()));
-            auto after(reinterpret_cast<uint8_t *>(signature));
-            auto next(mach_header.Swap(signature->cmdsize));
-            auto total(mach_header.Swap(mach_header->sizeofcmds));
-            memmove(signature, after + next, before + total - after - next);
-            memset(before + total - next, 0, next);
-            mach_header->ncmds = mach_header.Swap(mach_header.Swap(mach_header->ncmds) - 1);
-            mach_header->sizeofcmds = mach_header.Swap(total - next);
-            signature = NULL;
+                case LC_SEGMENT_64: {
+                    auto segment_command(reinterpret_cast<struct segment_command_64 *>(&copy[0]));
+                    if (strncmp(segment_command->segname, "__LINKEDIT", 16) != 0)
+                        break;
+                    size_t size(mach_header.Swap(allocation.limit_ + allocation.alloc_ - mach_header.Swap(segment_command->fileoff)));
+                    segment_command->filesize = size;
+                    segment_command->vmsize = Align(size, 0x1000);
+                } break;
+            }
+
+            commands.push_back(copy);
         }
 
         if (name != NULL) {
-            if (signature == NULL) {
-                signature = reinterpret_cast<struct linkedit_data_command *>(reinterpret_cast<uint8_t *>(mach_header.GetLoadCommand()) + mach_header.Swap(mach_header->sizeofcmds));
-                signature->cmd = mach_header.Swap(LC_CODE_SIGNATURE);
-                signature->cmdsize = mach_header.Swap(uint32_t(sizeof(*signature)));
-                mach_header->ncmds = mach_header.Swap(mach_header.Swap(mach_header->ncmds) + 1);
-                mach_header->sizeofcmds = mach_header.Swap(mach_header.Swap(mach_header->sizeofcmds) + uint32_t(sizeof(*signature)));
+            linkedit_data_command signature;
+            signature.cmd = mach_header.Swap(LC_CODE_SIGNATURE);
+            signature.cmdsize = mach_header.Swap(uint32_t(sizeof(signature)));
+            signature.dataoff = mach_header.Swap(allocation.limit_);
+            signature.datasize = mach_header.Swap(allocation.alloc_);
+            commands.push_back(std::string(reinterpret_cast<const char *>(&signature), sizeof(signature)));
+        }
+
+        size_t begin(position);
+
+        uint32_t after(0);
+        _foreach(command, commands)
+            after += command.size();
+
+        std::stringbuf altern;
+
+        struct mach_header header(*mach_header);
+        header.ncmds = mach_header.Swap(uint32_t(commands.size()));
+        header.sizeofcmds = mach_header.Swap(after);
+        put(output, &header, sizeof(header));
+        put(altern, &header, sizeof(header));
+        position += sizeof(header);
+
+        if (mach_header.Bits64()) {
+            auto pad(mach_header.Swap(uint32_t(0)));
+            put(output, &pad, sizeof(pad));
+            put(altern, &pad, sizeof(pad));
+            position += sizeof(pad);
+        }
+
+        _foreach(command, commands) {
+            put(output, command.data(), command.size());
+            put(altern, command.data(), command.size());
+            position += command.size();
+        }
+
+        uint32_t before(mach_header.Swap(mach_header->sizeofcmds));
+        if (before > after) {
+            pad(output, before - after);
+            pad(altern, before - after);
+            position += before - after;
+        }
+
+        auto top(reinterpret_cast<char *>(mach_header.GetBase()));
+
+        std::string overlap(altern.str());
+        overlap.append(top + overlap.size(), Align(overlap.size(), 0x1000) - overlap.size());
+
+        put(output, top + (position - begin), allocation.size_ - (position - begin));
+        position = begin + allocation.size_;
+
+        pad(output, allocation.limit_ - allocation.size_);
+        position += allocation.limit_ - allocation.size_;
+
+        if (name != NULL) {
+            std::map<uint32_t, std::string> blobs;
+
+            if (true) {
+                std::stringbuf data;
+
+                Blob blob;
+                blob.magic = Swap(CSMAGIC_REQUIREMENTS);
+                blob.length = Swap(uint32_t(sizeof(Blob) + sizeof(uint32_t)));
+                put(data, &blob, sizeof(blob));
+
+                uint32_t requirements(0);
+                requirements = Swap(0);
+                put(data, &requirements, sizeof(requirements));
+
+                blobs.insert(std::make_pair(CSSLOT_REQUIREMENTS, data.str()));
             }
 
-            signature->dataoff = mach_header.Swap(align);
-            signature->datasize = mach_header.Swap(allocation.alloc_);
+            if (entitlements.size() != 0) {
+                std::stringbuf data;
 
-            uint32_t data = mach_header.Swap(signature->dataoff);
-            uint32_t size = mach_header.Swap(signature->datasize);
+                Blob blob;
+                blob.magic = Swap(CSMAGIC_EMBEDDED_ENTITLEMENTS);
+                blob.length = Swap(uint32_t(sizeof(blob) + entitlements.size()));
+                put(data, &blob, sizeof(blob));
 
-            uint8_t *top = reinterpret_cast<uint8_t *>(mach_header.GetBase());
-            uint8_t *blob = top + data;
-            struct SuperBlob *super = reinterpret_cast<struct SuperBlob *>(blob);
-            super->blob.magic = Swap(CSMAGIC_EMBEDDED_SIGNATURE);
+                put(data, entitlements.data(), entitlements.size());
 
-            uint32_t count = xml.size() == 0 ? 2 : 3;
-            uint32_t offset = sizeof(struct SuperBlob) + count * sizeof(struct BlobIndex);
-
-            super->index[0].type = Swap(CSSLOT_CODEDIRECTORY);
-            super->index[0].offset = Swap(offset);
-
-            uint32_t begin = offset;
-            struct CodeDirectory *directory = reinterpret_cast<struct CodeDirectory *>(blob + begin);
-            offset += sizeof(struct CodeDirectory);
-
-            directory->blob.magic = Swap(CSMAGIC_CODEDIRECTORY);
-            directory->version = Swap(uint32_t(0x00020001));
-            directory->flags = Swap(uint32_t(0));
-            directory->codeLimit = Swap(data);
-            directory->hashSize = 0x14;
-            directory->hashType = 0x01;
-            directory->spare1 = 0x00;
-            directory->pageSize = 0x0c;
-            directory->spare2 = Swap(uint32_t(0));
-
-            directory->identOffset = Swap(offset - begin);
-            strcpy(reinterpret_cast<char *>(blob + offset), name);
-            offset += strlen(name) + 1;
-
-            uint32_t special = xml.size() == 0 ? CSSLOT_REQUIREMENTS : CSSLOT_ENTITLEMENTS;
-            directory->nSpecialSlots = Swap(special);
-
-            uint8_t (*hashes)[20] = reinterpret_cast<uint8_t (*)[20]>(blob + offset);
-            memset(hashes, 0, sizeof(*hashes) * special);
-
-            offset += sizeof(*hashes) * special;
-            hashes += special;
-
-            uint32_t pages = (data + 0x1000 - 1) / 0x1000;
-            directory->nCodeSlots = Swap(pages);
-
-            if (pages != 1)
-                for (size_t i = 0; i != pages - 1; ++i)
-                    sha1(hashes[i], top + 0x1000 * i, 0x1000);
-            if (pages != 0)
-                sha1(hashes[pages - 1], top + 0x1000 * (pages - 1), ((data - 1) % 0x1000) + 1);
-
-            directory->hashOffset = Swap(offset - begin);
-            offset += sizeof(*hashes) * pages;
-            directory->blob.length = Swap(offset - begin);
-
-            super->index[1].type = Swap(CSSLOT_REQUIREMENTS);
-            super->index[1].offset = Swap(offset);
-
-            memcpy(blob + offset, "\xfa\xde\x0c\x01\x00\x00\x00\x0c\x00\x00\x00\x00", 0xc);
-            offset += 0xc;
-
-            if (xml.size() != 0) {
-                super->index[2].type = Swap(CSSLOT_ENTITLEMENTS);
-                super->index[2].offset = Swap(offset);
-
-                uint32_t begin = offset;
-                struct Blob *entitlements = reinterpret_cast<struct Blob *>(blob + begin);
-                offset += sizeof(struct Blob);
-
-                memcpy(blob + offset, xml.data(), xml.size());
-                offset += xml.size();
-
-                entitlements->magic = Swap(CSMAGIC_ENTITLEMENTS);
-                entitlements->length = Swap(offset - begin);
+                blobs.insert(std::make_pair(CSSLOT_ENTITLEMENTS, data.str()));
             }
 
-            for (size_t index(0); index != count; ++index) {
-                uint32_t type = Swap(super->index[index].type);
-                if (type != 0 && type <= special) {
-                    uint32_t offset = Swap(super->index[index].offset);
-                    struct Blob *local = (struct Blob *) (blob + offset);
-                    sha1((uint8_t *) (hashes - type), (uint8_t *) local, Swap(local->length));
+            if (true) {
+                std::stringbuf data;
+
+                uint32_t normal((allocation.limit_ + pagesize - 1) / pagesize);
+
+                Blob blob;
+                blob.magic = Swap(CSMAGIC_CODEDIRECTORY);
+                blob.length = Swap(uint32_t(sizeof(blob) + sizeof(CodeDirectory) + strlen(name) + 1 + SHA_DIGEST_LENGTH * (allocation.special_ + normal)));
+                put(data, &blob, sizeof(blob));
+
+                CodeDirectory directory;
+                directory.version = Swap(uint32_t(0x00020001));
+                directory.flags = Swap(uint32_t(0));
+                directory.hashOffset = Swap(uint32_t(sizeof(blob) + sizeof(CodeDirectory) + strlen(name) + 1 + SHA_DIGEST_LENGTH * allocation.special_));
+                directory.identOffset = Swap(uint32_t(sizeof(blob) + sizeof(CodeDirectory)));
+                directory.nSpecialSlots = Swap(allocation.special_);
+                directory.codeLimit = Swap(allocation.limit_);
+                directory.nCodeSlots = Swap(normal);
+                directory.hashSize = SHA_DIGEST_LENGTH;
+                directory.hashType = CS_HASHTYPE_SHA1;
+                directory.spare1 = 0x00;
+                directory.pageSize = pageshift;
+                directory.spare2 = Swap(uint32_t(0));
+                put(data, &directory, sizeof(directory));
+
+                put(data, name, strlen(name) + 1);
+
+                uint8_t storage[allocation.special_ + normal][SHA_DIGEST_LENGTH];
+                uint8_t (*hashes)[SHA_DIGEST_LENGTH] = storage + allocation.special_;
+
+                memset(storage, 0, sizeof(*storage) * allocation.special_);
+
+                _foreach (blob, blobs) {
+                    auto local(reinterpret_cast<const Blob *>(&blob.second[0]));
+                    sha1((uint8_t *) (hashes - blob.first), local, Swap(local->length));
                 }
+
+                if (normal != 1)
+                    for (size_t i = 0; i != normal - 1; ++i)
+                        sha1(hashes[i], (pagesize * i < overlap.size() ? overlap.data() : top) + pagesize * i, pagesize);
+                if (normal != 0)
+                    sha1(hashes[normal - 1], top + pagesize * (normal - 1), ((allocation.limit_ - 1) % pagesize) + 1);
+
+                put(data, storage, sizeof(storage));
+
+                blobs.insert(std::make_pair(CSSLOT_CODEDIRECTORY, data.str()));
             }
 
-            super->count = Swap(count);
-            super->blob.length = Swap(offset);
+            size_t total(0);
+            _foreach (blob, blobs)
+                total += blob.second.size();
 
-            if (offset > size) {
-                fprintf(stderr, "offset (%u) > size (%u)\n", offset, size);
-                _assert(false);
-            } //else fprintf(stderr, "offset (%zu) <= size (%zu)\n", offset, size);
+            struct SuperBlob super;
+            super.blob.magic = Swap(CSMAGIC_EMBEDDED_SIGNATURE);
+            super.blob.length = Swap(uint32_t(sizeof(SuperBlob) + blobs.size() * sizeof(BlobIndex) + total));
+            super.count = Swap(uint32_t(blobs.size()));
+            put(output, &super, sizeof(super));
 
-            memset(blob + offset, 0, size - offset);
+            uint32_t offset(sizeof(SuperBlob) + sizeof(BlobIndex) * blobs.size());
+            position += offset + total;
+
+            _foreach (blob, blobs) {
+                BlobIndex index;
+                index.type = Swap(blob.first);
+                index.offset = Swap(offset);
+                put(output, &index, sizeof(index));
+                offset += blob.second.size();
+            }
+
+            _foreach (blob, blobs)
+                put(output, blob.second.data(), blob.second.size());
+
+            if (allocation.alloc_ > position)
+                pad(output, allocation.alloc_ - position);
         }
     }
 }
@@ -1111,7 +1195,7 @@ int main(int argc, const char *argv[]) {
     bool timeh(false);
     uint32_t timev(0);
 
-    Map xmlm;
+    Map entitlements;
 
     std::vector<std::string> files;
 
@@ -1158,7 +1242,7 @@ int main(int argc, const char *argv[]) {
                 flag_S = true;
                 if (argv[argi][2] != '\0') {
                     const char *xml = argv[argi] + 2;
-                    xmlm.open(xml, O_RDONLY, PROT_READ, MAP_PRIVATE);
+                    entitlements.open(xml, O_RDONLY, PROT_READ, MAP_PRIVATE);
                 }
             break;
 
@@ -1203,8 +1287,13 @@ int main(int argc, const char *argv[]) {
         char *temp(NULL);
 
         if (flag_S || flag_r) {
+            Map input(path, O_RDONLY, PROT_READ, MAP_PRIVATE);
+
+            std::filebuf output;
             asprintf(&temp, "%s.%s.cs", dir.c_str(), base);
-            resign(path, temp, flag_S ? name : NULL, xmlm);
+            _assert(output.open(temp, std::ios::out | std::ios::trunc | std::ios::binary) == &output);
+
+            resign(input.data(), input.size(), output, flag_S ? name : NULL, entitlements);
         }
 
         Map mapping(temp ?: path, flag_T || flag_s);
@@ -1286,7 +1375,7 @@ int main(int argc, const char *argv[]) {
                         uint32_t begin = Swap(super->index[index].offset);
                         struct CodeDirectory *directory = reinterpret_cast<struct CodeDirectory *>(blob + begin);
 
-                        uint8_t (*hashes)[20] = reinterpret_cast<uint8_t (*)[20]>(blob + begin + Swap(directory->hashOffset));
+                        uint8_t (*hashes)[SHA_DIGEST_LENGTH] = reinterpret_cast<uint8_t (*)[SHA_DIGEST_LENGTH]>(blob + begin + Swap(directory->hashOffset));
                         uint32_t pages = Swap(directory->nCodeSlots);
 
                         if (pages != 1)
