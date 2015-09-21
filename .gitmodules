@@ -1,6 +1,3 @@
-[submodule "minimal"]
-	path = minimal
-	url = git://git.saurik.com/minimal.git
 [submodule "libplist"]
 	path = libplist
 	url = http://git.libimobiledevice.org/libplist.git

@@ -19,8 +19,8 @@
 **/
 /* }}} */
 
-#include "minimal/stdlib.h"
-
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <map>
@@ -29,7 +29,10 @@
 #include <vector>
 
 #include <dlfcn.h>
+#include <errno.h>
 #include <fcntl.h>
+#include <stdbool.h>
+#include <stdint.h>
 
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -37,6 +40,53 @@
 #include <openssl/sha.h>
 
 #include <plist/plist.h>
+
+#define _assert___(line) \
+    #line
+#define _assert__(line) \
+    _assert___(line)
+#define _assert_(e) \
+    throw __FILE__ "(" _assert__(__LINE__) "): _assert(" e ")"
+
+#define _assert(expr) \
+    do if (!(expr)) { \
+        fprintf(stderr, "%s(%u): _assert(%s); errno=%u\n", __FILE__, __LINE__, #expr, errno); \
+        _assert_(#expr); \
+    } while (false)
+
+#define _syscall(expr) ({ \
+    __typeof__(expr) _value; \
+    do if ((long) (_value = (expr)) != -1) \
+        break; \
+    else switch (errno) { \
+        case EINTR: \
+            continue; \
+        default: \
+            _assert(false); \
+    } while (true); \
+    _value; \
+})
+
+#define _trace() \
+    fprintf(stderr, "_trace(%s:%u): %s\n", __FILE__, __LINE__, __FUNCTION__)
+
+#define _not(type) \
+    ((type) ~ (type) 0)
+
+#define _packed \
+    __attribute__((packed))
+
+template <typename Type_>
+struct Iterator_ {
+    typedef typename Type_::const_iterator Result;
+};
+
+#define _foreach(item, list) \
+    for (bool _stop(true); _stop; ) \
+        for (const __typeof__(list) &_list = (list); _stop; _stop = false) \
+            for (Iterator_<__typeof__(list)>::Result _item = _list.begin(); _item != _list.end(); ++_item) \
+                for (bool _suck(true); _suck; _suck = false) \
+                    for (const __typeof__(*_item) &item = *_item; _suck; _suck = false)
 
 struct fat_header {
     uint32_t magic;
