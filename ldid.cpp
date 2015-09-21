@@ -28,11 +28,11 @@
 #include <string>
 #include <vector>
 
-#include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <unistd.h>
 
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -919,7 +919,6 @@ template <typename Type_, typename... Args_>
 class Functor<Type_ (Args_...)> {
   public:
     virtual Type_ operator ()(Args_... args) const = 0;
-    virtual operator bool() const = 0;
 };
 
 template <typename Function_>
@@ -1038,7 +1037,7 @@ void resign(void *idata, size_t isize, std::streambuf &output, const Functor<siz
         _foreach (load_command, mach_header.GetLoadCommands()) {
             std::string copy(reinterpret_cast<const char *>(load_command), load_command->cmdsize);
 
-            switch (uint32_t cmd = mach_header.Swap(load_command->cmd)) {
+            switch (mach_header.Swap(load_command->cmd)) {
                 case LC_CODE_SIGNATURE:
                     continue;
                 break;
@@ -1273,7 +1272,7 @@ void resign(void *idata, size_t isize, std::streambuf &output) {
     }));
 }
 
-int main(int argc, const char *argv[]) {
+int main(int argc, char *argv[]) {
     union {
         uint16_t word;
         uint8_t byte[2];
@@ -1391,14 +1390,14 @@ int main(int argc, const char *argv[]) {
             base = path;
 
         const char *name(flag_I ?: base);
-        char *temp(NULL);
+        std::string temp;
 
         if (flag_S || flag_r) {
             Map input(path, O_RDONLY, PROT_READ, MAP_PRIVATE);
 
+            temp = dir + "." + base + ".cs";
             std::filebuf output;
-            asprintf(&temp, "%s.%s.cs", dir.c_str(), base);
-            _assert(output.open(temp, std::ios::out | std::ios::trunc | std::ios::binary) == &output);
+            _assert(output.open(temp.c_str(), std::ios::out | std::ios::trunc | std::ios::binary) == &output);
 
             if (flag_r)
                 resign(input.data(), input.size(), output);
@@ -1407,7 +1406,7 @@ int main(int argc, const char *argv[]) {
             }
         }
 
-        Map mapping(temp ?: path, flag_T || flag_s);
+        Map mapping(!temp.empty() ? temp.c_str() : path, flag_T || flag_s);
         FatHeader fat_header(mapping.data(), mapping.size());
 
         _foreach (mach_header, fat_header.GetMachHeaders()) {
@@ -1498,14 +1497,15 @@ int main(int argc, const char *argv[]) {
             }
         }
 
-        if (temp != NULL) {
+        if (!temp.empty()) {
             struct stat info;
             _syscall(stat(path, &info));
-            _syscall(chown(temp, info.st_uid, info.st_gid));
-            _syscall(chmod(temp, info.st_mode));
+#ifndef __WIN32__
+            _syscall(chown(temp.c_str(), info.st_uid, info.st_gid));
+#endif
+            _syscall(chmod(temp.c_str(), info.st_mode));
             _syscall(unlink(path));
-            _syscall(rename(temp, path));
-            free(temp);
+            _syscall(rename(temp.c_str(), path));
         }
 
         ++filei;
