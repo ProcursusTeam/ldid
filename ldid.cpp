@@ -884,6 +884,10 @@ class Map {
         clear();
     }
 
+    bool empty() const {
+        return data_ == NULL;
+    }
+
     void open(const char *path, int oflag, int pflag, int mflag) {
         clear();
 
@@ -1462,7 +1466,12 @@ int main(int argc, char *argv[]) {
         if (argv[argi][0] != '-')
             files.push_back(argv[argi]);
         else switch (argv[argi][1]) {
-            case 'r': flag_r = true; break;
+            case 'r':
+                _assert(!flag_s);
+                _assert(!flag_S);
+                flag_r = true;
+            break;
+
             case 'e': flag_e = true; break;
 
             case 'D': flag_D = true; break;
@@ -1470,6 +1479,7 @@ int main(int argc, char *argv[]) {
             case 'a': flag_a = true; break;
 
             case 'A':
+                _assert(!flag_A);
                 flag_A = true;
                 if (argv[argi][2] != '\0') {
                     const char *cpu = argv[argi] + 2;
@@ -1484,11 +1494,13 @@ int main(int argc, char *argv[]) {
             break;
 
             case 's':
+                _assert(!flag_r);
                 _assert(!flag_S);
                 flag_s = true;
             break;
 
             case 'S':
+                _assert(!flag_r);
                 _assert(!flag_s);
                 flag_S = true;
                 if (argv[argi][2] != '\0') {
@@ -1521,7 +1533,8 @@ int main(int argc, char *argv[]) {
             break;
         }
 
-    _assert(!flag_S || !flag_r);
+    _assert(flag_S || key.empty());
+    _assert(flag_S || flag_I == NULL);
 
     if (files.empty()) usage: {
         exit(0);
