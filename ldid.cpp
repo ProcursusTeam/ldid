@@ -376,6 +376,9 @@ Type_ Align(Type_ value, size_t align) {
     return value;
 }
 
+static const uint8_t PageShift_(0x0c);
+static const uint32_t PageSize_(1 << PageShift_);
+
 static inline uint16_t Swap_(uint16_t value) {
     return
         ((value >>  8) & 0x00ff) |
@@ -1004,7 +1007,7 @@ static void resign(void *idata, size_t isize, std::streambuf &output, const Func
 
         allocations.push_back(CodesignAllocation(mach_header, offset, size, limit, alloc, align));
         offset += size + alloc;
-        offset = Align(offset, 16);
+        offset = Align(offset, 0x10);
     }
 
     size_t position(0);
@@ -1052,7 +1055,7 @@ static void resign(void *idata, size_t isize, std::streambuf &output, const Func
                         break;
                     size_t size(mach_header.Swap(allocation.limit_ + allocation.alloc_ - mach_header.Swap(segment_command->fileoff)));
                     segment_command->filesize = size;
-                    segment_command->vmsize = Align(size, 0x1000);
+                    segment_command->vmsize = Align(size, PageSize_);
                 } break;
 
                 case LC_SEGMENT_64: {
@@ -1061,7 +1064,7 @@ static void resign(void *idata, size_t isize, std::streambuf &output, const Func
                         break;
                     size_t size(mach_header.Swap(allocation.limit_ + allocation.alloc_ - mach_header.Swap(segment_command->fileoff)));
                     segment_command->filesize = size;
-                    segment_command->vmsize = Align(size, 0x1000);
+                    segment_command->vmsize = Align(size, PageSize_);
                 } break;
             }
 
@@ -1288,9 +1291,6 @@ class Signature {
 };
 
 void resign(void *idata, size_t isize, std::streambuf &output, const std::string &name, const std::string &entitlements, const std::string &key) {
-    uint8_t pageshift(0x0c);
-    uint32_t pagesize(1 << pageshift);
-
     resign(idata, isize, output, fun([&](size_t size) -> size_t {
         size_t alloc(sizeof(struct SuperBlob));
 
@@ -1320,7 +1320,7 @@ void resign(void *idata, size_t isize, std::streambuf &output, const std::string
             alloc += 0x3000;
         }
 
-        uint32_t normal((size + pagesize - 1) / pagesize);
+        uint32_t normal((size + PageSize_ - 1) / PageSize_);
         alloc = Align(alloc + (special + normal) * SHA_DIGEST_LENGTH, 16);
         return alloc;
     }), fun([&](std::streambuf &output, size_t limit, const std::string &overlap, const char *top) -> size_t {
@@ -1347,7 +1347,7 @@ void resign(void *idata, size_t isize, std::streambuf &output, const std::string
             uint32_t special(0);
             _foreach (blob, blobs)
                 special = std::max(special, blob.first);
-            uint32_t normal((limit + pagesize - 1) / pagesize);
+            uint32_t normal((limit + PageSize_ - 1) / PageSize_);
 
             CodeDirectory directory;
             directory.version = Swap(uint32_t(0x00020001));
@@ -1360,7 +1360,7 @@ void resign(void *idata, size_t isize, std::streambuf &output, const std::string
             directory.hashSize = SHA_DIGEST_LENGTH;
             directory.hashType = CS_HASHTYPE_SHA1;
             directory.spare1 = 0x00;
-            directory.pageSize = pageshift;
+            directory.pageSize = PageShift_;
             directory.spare2 = Swap(uint32_t(0));
             put(data, &directory, sizeof(directory));
 
@@ -1378,9 +1378,9 @@ void resign(void *idata, size_t isize, std::streambuf &output, const std::string
 
             if (normal != 1)
                 for (size_t i = 0; i != normal - 1; ++i)
-                    sha1(hashes[i], (pagesize * i < overlap.size() ? overlap.data() : top) + pagesize * i, pagesize);
+                    sha1(hashes[i], (PageSize_ * i < overlap.size() ? overlap.data() : top) + PageSize_ * i, PageSize_);
             if (normal != 0)
-                sha1(hashes[normal - 1], top + pagesize * (normal - 1), ((limit - 1) % pagesize) + 1);
+                sha1(hashes[normal - 1], top + PageSize_ * (normal - 1), ((limit - 1) % PageSize_) + 1);
 
             put(data, storage, sizeof(storage));
 
@@ -1616,7 +1616,7 @@ int main(int argc, char *argv[]) {
                     if (Swap(super->index[index].type) == CSSLOT_ENTITLEMENTS) {
                         uint32_t begin = Swap(super->index[index].offset);
                         struct Blob *entitlements = reinterpret_cast<struct Blob *>(blob + begin);
-                        fwrite(entitlements + 1, 1, Swap(entitlements->length) - sizeof(struct Blob), stdout);
+                        fwrite(entitlements + 1, 1, Swap(entitlements->length) - sizeof(*entitlements), stdout);
                     }
             }
 
@@ -1639,9 +1639,9 @@ int main(int argc, char *argv[]) {
 
                         if (pages != 1)
                             for (size_t i = 0; i != pages - 1; ++i)
-                                sha1(hashes[i], top + 0x1000 * i, 0x1000);
+                                sha1(hashes[i], top + PageSize_ * i, PageSize_);
                         if (pages != 0)
-                            sha1(hashes[pages - 1], top + 0x1000 * (pages - 1), ((data - 1) % 0x1000) + 1);
+                            sha1(hashes[pages - 1], top + PageSize_ * (pages - 1), ((data - 1) % PageSize_) + 1);
                     }
             }
         }
