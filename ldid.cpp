@@ -376,13 +376,13 @@ Type_ Align(Type_ value, size_t align) {
     return value;
 }
 
-uint16_t Swap_(uint16_t value) {
+static inline uint16_t Swap_(uint16_t value) {
     return
         ((value >>  8) & 0x00ff) |
         ((value <<  8) & 0xff00);
 }
 
-uint32_t Swap_(uint32_t value) {
+static inline uint32_t Swap_(uint32_t value) {
     value = ((value >>  8) & 0x00ff00ff) |
             ((value <<  8) & 0xff00ff00);
     value = ((value >> 16) & 0x0000ffff) |
@@ -390,48 +390,48 @@ uint32_t Swap_(uint32_t value) {
     return value;
 }
 
-uint64_t Swap_(uint64_t value) {
+static inline uint64_t Swap_(uint64_t value) {
     value = (value & 0x00000000ffffffff) << 32 | (value & 0xffffffff00000000) >> 32;
     value = (value & 0x0000ffff0000ffff) << 16 | (value & 0xffff0000ffff0000) >> 16;
     value = (value & 0x00ff00ff00ff00ff) << 8  | (value & 0xff00ff00ff00ff00) >> 8;
     return value;
 }
 
-int16_t Swap_(int16_t value) {
+static inline int16_t Swap_(int16_t value) {
     return Swap_(static_cast<uint16_t>(value));
 }
 
-int32_t Swap_(int32_t value) {
+static inline int32_t Swap_(int32_t value) {
     return Swap_(static_cast<uint32_t>(value));
 }
 
-int64_t Swap_(int64_t value) {
+static inline int64_t Swap_(int64_t value) {
     return Swap_(static_cast<uint64_t>(value));
 }
 
-bool little_(true);
+static bool little_(true);
 
-uint16_t Swap(uint16_t value) {
+static inline uint16_t Swap(uint16_t value) {
     return little_ ? Swap_(value) : value;
 }
 
-uint32_t Swap(uint32_t value) {
+static inline uint32_t Swap(uint32_t value) {
     return little_ ? Swap_(value) : value;
 }
 
-uint64_t Swap(uint64_t value) {
+static inline uint64_t Swap(uint64_t value) {
     return little_ ? Swap_(value) : value;
 }
 
-int16_t Swap(int16_t value) {
+static inline int16_t Swap(int16_t value) {
     return Swap(static_cast<uint16_t>(value));
 }
 
-int32_t Swap(int32_t value) {
+static inline int32_t Swap(int32_t value) {
     return Swap(static_cast<uint32_t>(value));
 }
 
-int64_t Swap(int64_t value) {
+static inline int64_t Swap(int64_t value) {
     return Swap(static_cast<uint64_t>(value));
 }
 
@@ -796,7 +796,7 @@ struct CodeDirectory {
 
 extern "C" uint32_t hash(uint8_t *k, uint32_t length, uint32_t initval);
 
-void sha1(uint8_t *hash, const void *data, size_t size) {
+static void sha1(uint8_t *hash, const void *data, size_t size) {
     SHA1(static_cast<const uint8_t *>(data), size, hash);
 }
 
@@ -956,7 +956,7 @@ FunctorImpl<decltype(&Function_::operator())> fun(const Function_ &value) {
     return value;
 }
 
-void resign(void *idata, size_t isize, std::streambuf &output, const Functor<size_t (size_t)> &allocate, const Functor<size_t (std::streambuf &output, size_t, const std::string &, const char *)> &save) {
+static void resign(void *idata, size_t isize, std::streambuf &output, const Functor<size_t (size_t)> &allocate, const Functor<size_t (std::streambuf &output, size_t, const std::string &, const char *)> &save) {
     FatHeader source(idata, isize);
 
     size_t offset(0);
@@ -1406,7 +1406,7 @@ void resign(void *idata, size_t isize, std::streambuf &output, const std::string
     }));
 }
 
-void resign(void *idata, size_t isize, std::streambuf &output) {
+static void resign(void *idata, size_t isize, std::streambuf &output) {
     resign(idata, isize, output, fun([](size_t size) -> size_t {
         return 0;
     }), fun([](std::streambuf &output, size_t limit, const std::string &overlap, const char *top) -> size_t {
