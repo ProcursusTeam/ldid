@@ -37,6 +37,10 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
+#include <openssl/err.h>
+#include <openssl/pem.h>
+#include <openssl/pkcs7.h>
+#include <openssl/pkcs12.h>
 #include <openssl/sha.h>
 
 #include <plist/plist.h>
@@ -1169,7 +1173,121 @@ static size_t put(std::streambuf &output, uint32_t magic, const Blobs &blobs) {
     return offset;
 }
 
-void resign(void *idata, size_t isize, std::streambuf &output, const std::string &name, const std::string &entitlements) {
+class Buffer {
+  private:
+    BIO *bio_;
+
+  public:
+    Buffer(BIO *bio) :
+        bio_(bio)
+    {
+        _assert(bio_ != NULL);
+    }
+
+    Buffer() :
+        bio_(BIO_new(BIO_s_mem()))
+    {
+    }
+
+    Buffer(const char *data, size_t size) :
+        Buffer(BIO_new_mem_buf(const_cast<char *>(data), size))
+    {
+    }
+
+    Buffer(const std::string &data) :
+        Buffer(data.data(), data.size())
+    {
+    }
+
+    Buffer(PKCS7 *pkcs) :
+        Buffer()
+    {
+        _assert(i2d_PKCS7_bio(bio_, pkcs) != 0);
+    }
+
+    ~Buffer() {
+        BIO_free_all(bio_);
+    }
+
+    operator BIO *() const {
+        return bio_;
+    }
+
+    explicit operator std::string() const {
+        char *data;
+        auto size(BIO_get_mem_data(bio_, &data));
+        return std::string(data, size);
+    }
+};
+
+class Stuff {
+  private:
+    PKCS12 *value_;
+    EVP_PKEY *key_;
+    X509 *cert_;
+    STACK_OF(X509) *ca_;
+
+  public:
+    Stuff(BIO *bio) :
+        value_(d2i_PKCS12_bio(bio, NULL)),
+        ca_(NULL)
+    {
+        _assert(value_ != NULL);
+        _assert(PKCS12_parse(value_, "", &key_, &cert_, &ca_) != 0);
+        _assert(key_ != NULL);
+        _assert(cert_ != NULL);
+    }
+
+    Stuff(const std::string &data) :
+        Stuff(Buffer(data))
+    {
+    }
+
+    ~Stuff() {
+        sk_X509_pop_free(ca_, X509_free);
+        X509_free(cert_);
+        EVP_PKEY_free(key_);
+        PKCS12_free(value_);
+    }
+
+    operator PKCS12 *() const {
+        return value_;
+    }
+
+    operator EVP_PKEY *() const {
+        return key_;
+    }
+
+    operator X509 *() const {
+        return cert_;
+    }
+
+    operator STACK_OF(X509) *() const {
+        return ca_;
+    }
+};
+
+class Signature {
+  private:
+    PKCS7 *value_;
+
+  public:
+    Signature(const Stuff &stuff, const Buffer &data) :
+        value_(PKCS7_sign(stuff, stuff, stuff, data, PKCS7_BINARY | PKCS7_DETACHED))
+    {
+        _assert(value_ != NULL);
+    }
+
+    ~Signature() {
+        PKCS7_free(value_);
+    }
+
+    operator PKCS7 *() const {
+        return value_;
+    }
+};
+
+void resign(void *idata, size_t isize, std::streambuf &output, const std::string &name, const std::string &entitlements, const std::string &key) {
     uint8_t pageshift(0x0c);
     uint32_t pagesize(1 << pageshift);
 
@@ -1194,6 +1312,13 @@ void resign(void *idata, size_t isize, std::streambuf &output, const std::string
         alloc += sizeof(struct Blob);
         alloc += sizeof(struct CodeDirectory);
         alloc += name.size() + 1;
+
+        if (!key.empty()) {
+            alloc += sizeof(struct BlobIndex);
+            alloc += sizeof(struct Blob);
+            // XXX: this is just a "sufficiently large number"
+            alloc += 0x3000;
+        }
 
         uint32_t normal((size + pagesize - 1) / pagesize);
         alloc = Align(alloc + (special + normal) * SHA_DIGEST_LENGTH, 16);
@@ -1262,6 +1387,21 @@ void resign(void *idata, size_t isize, std::streambuf &output, const std::string
             insert(blobs, CSSLOT_CODEDIRECTORY, CSMAGIC_CODEDIRECTORY, data);
         }
 
+        if (!key.empty()) {
+            std::stringbuf data;
+            const std::string &sign(blobs[CSSLOT_CODEDIRECTORY]);
+
+            Stuff stuff(key);
+            Buffer bio(sign);
+
+            Signature signature(stuff, sign);
+            Buffer result(signature);
+            std::string value(result);
+            put(data, value.data(), value.size());
+
+            insert(blobs, CSSLOT_SIGNATURESLOT, CSMAGIC_BLOBWRAPPER, data);
+        }
+
         return put(output, CSMAGIC_EMBEDDED_SIGNATURE, blobs);
     }));
 }
@@ -1275,6 +1415,8 @@ void resign(void *idata, size_t isize, std::streambuf &output) {
 }
 
 int main(int argc, char *argv[]) {
+    OpenSSL_add_all_algorithms();
+
     union {
         uint16_t word;
         uint8_t byte[2];
@@ -1304,6 +1446,7 @@ int main(int argc, char *argv[]) {
     uint32_t timev(0);
 
     Map entitlements;
+    Map key;
 
     std::vector<std::string> files;
 
@@ -1352,6 +1495,10 @@ int main(int argc, char *argv[]) {
                     const char *xml = argv[argi] + 2;
                     entitlements.open(xml, O_RDONLY, PROT_READ, MAP_PRIVATE);
                 }
+            break;
+
+            case 'K':
+                key.open(argv[argi] + 2, O_RDONLY, PROT_READ, MAP_PRIVATE);
             break;
 
             case 'T': {
@@ -1404,7 +1551,7 @@ int main(int argc, char *argv[]) {
             if (flag_r)
                 resign(input.data(), input.size(), output);
             else {
-                resign(input.data(), input.size(), output, name, entitlements);
+                resign(input.data(), input.size(), output, name, entitlements, key);
             }
         }
 
