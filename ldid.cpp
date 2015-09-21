@@ -943,11 +943,6 @@ class FunctorImpl<Type_ (Value_::*)(Args_...) const> :
     const Value_ *value_;
 
   public:
-    FunctorImpl() :
-        value_(NULL)
-    {
-    }
-
     FunctorImpl(const Value_ &value) :
         value_(&value)
     {
