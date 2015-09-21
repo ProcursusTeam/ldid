@@ -1127,7 +1127,7 @@ void resign(void *idata, size_t isize, std::streambuf &output, const Functor<siz
     }
 }
 
-void resign(void *idata, size_t isize, std::streambuf &output, const char *name, const std::string &entitlements) {
+void resign(void *idata, size_t isize, std::streambuf &output, const std::string &name, const std::string &entitlements) {
     uint8_t pageshift(0x0c);
     uint32_t pagesize(1 << pageshift);
 
@@ -1151,7 +1151,7 @@ void resign(void *idata, size_t isize, std::streambuf &output, const char *name,
         alloc += sizeof(struct BlobIndex);
         alloc += sizeof(struct Blob);
         alloc += sizeof(struct CodeDirectory);
-        alloc += strlen(name) + 1;
+        alloc += name.size() + 1;
 
         uint32_t normal((size + pagesize - 1) / pagesize);
         alloc = Align(alloc + (special + normal) * SHA_DIGEST_LENGTH, 16);
@@ -1197,13 +1197,13 @@ void resign(void *idata, size_t isize, std::streambuf &output, const char *name,
 
             Blob blob;
             blob.magic = Swap(CSMAGIC_CODEDIRECTORY);
-            blob.length = Swap(uint32_t(sizeof(blob) + sizeof(CodeDirectory) + strlen(name) + 1 + SHA_DIGEST_LENGTH * (special + normal)));
+            blob.length = Swap(uint32_t(sizeof(blob) + sizeof(CodeDirectory) + name.size() + 1 + SHA_DIGEST_LENGTH * (special + normal)));
             put(data, &blob, sizeof(blob));
 
             CodeDirectory directory;
             directory.version = Swap(uint32_t(0x00020001));
             directory.flags = Swap(uint32_t(0));
-            directory.hashOffset = Swap(uint32_t(sizeof(blob) + sizeof(CodeDirectory) + strlen(name) + 1 + SHA_DIGEST_LENGTH * special));
+            directory.hashOffset = Swap(uint32_t(sizeof(blob) + sizeof(CodeDirectory) + name.size() + 1 + SHA_DIGEST_LENGTH * special));
             directory.identOffset = Swap(uint32_t(sizeof(blob) + sizeof(CodeDirectory)));
             directory.nSpecialSlots = Swap(special);
             directory.codeLimit = Swap(uint32_t(limit));
@@ -1215,7 +1215,7 @@ void resign(void *idata, size_t isize, std::streambuf &output, const char *name,
             directory.spare2 = Swap(uint32_t(0));
             put(data, &directory, sizeof(directory));
 
-            put(data, name, strlen(name) + 1);
+            put(data, name.c_str(), name.size() + 1);
 
             uint8_t storage[special + normal][SHA_DIGEST_LENGTH];
             uint8_t (*hashes)[SHA_DIGEST_LENGTH] = storage + special;
