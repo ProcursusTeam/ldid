@@ -1,5 +1,5 @@
 /* ldid - (Mach-O) Link-Loader Identity Editor
- * Copyright (C) 2007-2012  Jay Freeman (saurik)
+ * Copyright (C) 2007-2015  Jay Freeman (saurik)
 */
 
 /* GNU Affero General Public License, Version 3 {{{ */
