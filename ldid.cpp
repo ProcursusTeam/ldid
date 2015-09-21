@@ -802,16 +802,14 @@ struct CodesignAllocation {
     uint32_t size_;
     uint32_t limit_;
     uint32_t alloc_;
-    uint32_t special_;
     uint32_t align_;
 
-    CodesignAllocation(FatMachHeader mach_header, size_t offset, size_t size, size_t limit, size_t alloc, size_t special, size_t align) :
+    CodesignAllocation(FatMachHeader mach_header, size_t offset, size_t size, size_t limit, size_t alloc, size_t align) :
         mach_header_(mach_header),
         offset_(offset),
         size_(size),
         limit_(limit),
         alloc_(alloc),
-        special_(special),
         align_(align)
     {
     }
@@ -912,11 +910,51 @@ class Map {
     }
 };
 
-void resign(void *idata, size_t isize, std::streambuf &output, const char *name, const std::string &entitlements) {
-    FatHeader source(idata, isize);
+// I wish Apple cared about providing quality toolchains :/
 
-    uint8_t pageshift(0x0c);
-    uint32_t pagesize(1 << pageshift);
+template <typename Function_>
+class Functor;
+
+template <typename Type_, typename... Args_>
+class Functor<Type_ (Args_...)> {
+  public:
+    virtual Type_ operator ()(Args_... args) const = 0;
+    virtual operator bool() const = 0;
+};
+
+template <typename Function_>
+class FunctorImpl;
+
+template <typename Value_, typename Type_, typename... Args_>
+class FunctorImpl<Type_ (Value_::*)(Args_...) const> :
+    public Functor<Type_ (Args_...)>
+{
+  private:
+    const Value_ *value_;
+
+  public:
+    FunctorImpl() :
+        value_(NULL)
+    {
+    }
+
+    FunctorImpl(const Value_ &value) :
+        value_(&value)
+    {
+    }
+
+    virtual Type_ operator ()(Args_... args) const {
+        return (*value_)(args...);
+    }
+};
+
+template <typename Function_>
+FunctorImpl<decltype(&Function_::operator())> fun(const Function_ &value) {
+    return value;
+}
+
+void resign(void *idata, size_t isize, std::streambuf &output, const Functor<size_t (size_t)> &allocate, const Functor<size_t (std::streambuf &output, size_t, const std::string &, const char *)> &save) {
+    FatHeader source(idata, isize);
 
     size_t offset(0);
     if (source.IsFat())
@@ -951,32 +989,7 @@ void resign(void *idata, size_t isize, std::streambuf &output, const char *name,
             size = end;
         }
 
-        size_t alloc(0);
-        uint32_t special(0);
-
-        if (name != NULL) {
-            alloc += sizeof(struct SuperBlob);
-
-            special = std::max(special, CSSLOT_REQUIREMENTS);
-            alloc += sizeof(struct BlobIndex);
-            alloc += 0xc;
-
-            if (entitlements.size() != 0) {
-                special = std::max(special, CSSLOT_ENTITLEMENTS);
-                alloc += sizeof(struct BlobIndex);
-                alloc += sizeof(struct Blob);
-                alloc += entitlements.size();
-            }
-
-            special = std::max(special, CSSLOT_CODEDIRECTORY);
-            alloc += sizeof(struct BlobIndex);
-            alloc += sizeof(struct Blob);
-            alloc += sizeof(struct CodeDirectory);
-            alloc += strlen(name) + 1;
-
-            uint32_t normal((size + pagesize - 1) / pagesize);
-            alloc = Align(alloc + (special + normal) * SHA_DIGEST_LENGTH, 16);
-        }
+        size_t alloc(allocate(size));
 
         auto *fat_arch(mach_header.GetFatArch());
         uint32_t align(fat_arch == NULL ? 0 : source.Swap(fat_arch->align));
@@ -986,7 +999,7 @@ void resign(void *idata, size_t isize, std::streambuf &output, const char *name,
         if (alloc != 0)
             limit = Align(limit, 0x10);
 
-        allocations.push_back(CodesignAllocation(mach_header, offset, size, limit, alloc, special, align));
+        allocations.push_back(CodesignAllocation(mach_header, offset, size, limit, alloc, align));
         offset += size + alloc;
         offset = Align(offset, 16);
     }
@@ -1052,7 +1065,7 @@ void resign(void *idata, size_t isize, std::streambuf &output, const char *name,
             commands.push_back(copy);
         }
 
-        if (name != NULL) {
+        if (allocation.alloc_ != 0) {
             linkedit_data_command signature;
             signature.cmd = mach_header.Swap(LC_CODE_SIGNATURE);
             signature.cmdsize = mach_header.Swap(uint32_t(sizeof(signature)));
@@ -1106,114 +1119,157 @@ void resign(void *idata, size_t isize, std::streambuf &output, const char *name,
 
         pad(output, allocation.limit_ - allocation.size_);
         position += allocation.limit_ - allocation.size_;
+        position += save(output, allocation.limit_, overlap, top);
 
-        if (name != NULL) {
-            std::map<uint32_t, std::string> blobs;
+        if (allocation.alloc_ > position)
+            pad(output, allocation.alloc_ - position);
+    }
+}
 
-            if (true) {
-                std::stringbuf data;
+void resign(void *idata, size_t isize, std::streambuf &output, const char *name, const std::string &entitlements) {
+    uint8_t pageshift(0x0c);
+    uint32_t pagesize(1 << pageshift);
 
-                Blob blob;
-                blob.magic = Swap(CSMAGIC_REQUIREMENTS);
-                blob.length = Swap(uint32_t(sizeof(Blob) + sizeof(uint32_t)));
-                put(data, &blob, sizeof(blob));
+    resign(idata, isize, output, fun([&](size_t size) -> size_t {
+        size_t alloc(sizeof(struct SuperBlob));
 
-                uint32_t requirements(0);
-                requirements = Swap(0);
-                put(data, &requirements, sizeof(requirements));
+        uint32_t special(0);
 
-                blobs.insert(std::make_pair(CSSLOT_REQUIREMENTS, data.str()));
-            }
+        special = std::max(special, CSSLOT_REQUIREMENTS);
+        alloc += sizeof(struct BlobIndex);
+        alloc += 0xc;
 
-            if (entitlements.size() != 0) {
-                std::stringbuf data;
+        if (entitlements.size() != 0) {
+            special = std::max(special, CSSLOT_ENTITLEMENTS);
+            alloc += sizeof(struct BlobIndex);
+            alloc += sizeof(struct Blob);
+            alloc += entitlements.size();
+        }
 
-                Blob blob;
-                blob.magic = Swap(CSMAGIC_EMBEDDED_ENTITLEMENTS);
-                blob.length = Swap(uint32_t(sizeof(blob) + entitlements.size()));
-                put(data, &blob, sizeof(blob));
+        special = std::max(special, CSSLOT_CODEDIRECTORY);
+        alloc += sizeof(struct BlobIndex);
+        alloc += sizeof(struct Blob);
+        alloc += sizeof(struct CodeDirectory);
+        alloc += strlen(name) + 1;
 
-                put(data, entitlements.data(), entitlements.size());
+        uint32_t normal((size + pagesize - 1) / pagesize);
+        alloc = Align(alloc + (special + normal) * SHA_DIGEST_LENGTH, 16);
+        return alloc;
+    }), fun([&](std::streambuf &output, size_t limit, const std::string &overlap, const char *top) -> size_t {
+        std::map<uint32_t, std::string> blobs;
 
-                blobs.insert(std::make_pair(CSSLOT_ENTITLEMENTS, data.str()));
-            }
+        if (true) {
+            std::stringbuf data;
 
-            if (true) {
-                std::stringbuf data;
+            Blob blob;
+            blob.magic = Swap(CSMAGIC_REQUIREMENTS);
+            blob.length = Swap(uint32_t(sizeof(Blob) + sizeof(uint32_t)));
+            put(data, &blob, sizeof(blob));
 
-                uint32_t normal((allocation.limit_ + pagesize - 1) / pagesize);
+            uint32_t requirements;
+            requirements = Swap(0);
+            put(data, &requirements, sizeof(requirements));
 
-                Blob blob;
-                blob.magic = Swap(CSMAGIC_CODEDIRECTORY);
-                blob.length = Swap(uint32_t(sizeof(blob) + sizeof(CodeDirectory) + strlen(name) + 1 + SHA_DIGEST_LENGTH * (allocation.special_ + normal)));
-                put(data, &blob, sizeof(blob));
+            blobs.insert(std::make_pair(CSSLOT_REQUIREMENTS, data.str()));
+        }
 
-                CodeDirectory directory;
-                directory.version = Swap(uint32_t(0x00020001));
-                directory.flags = Swap(uint32_t(0));
-                directory.hashOffset = Swap(uint32_t(sizeof(blob) + sizeof(CodeDirectory) + strlen(name) + 1 + SHA_DIGEST_LENGTH * allocation.special_));
-                directory.identOffset = Swap(uint32_t(sizeof(blob) + sizeof(CodeDirectory)));
-                directory.nSpecialSlots = Swap(allocation.special_);
-                directory.codeLimit = Swap(allocation.limit_);
-                directory.nCodeSlots = Swap(normal);
-                directory.hashSize = SHA_DIGEST_LENGTH;
-                directory.hashType = CS_HASHTYPE_SHA1;
-                directory.spare1 = 0x00;
-                directory.pageSize = pageshift;
-                directory.spare2 = Swap(uint32_t(0));
-                put(data, &directory, sizeof(directory));
+        if (entitlements.size() != 0) {
+            std::stringbuf data;
 
-                put(data, name, strlen(name) + 1);
+            Blob blob;
+            blob.magic = Swap(CSMAGIC_EMBEDDED_ENTITLEMENTS);
+            blob.length = Swap(uint32_t(sizeof(blob) + entitlements.size()));
+            put(data, &blob, sizeof(blob));
 
-                uint8_t storage[allocation.special_ + normal][SHA_DIGEST_LENGTH];
-                uint8_t (*hashes)[SHA_DIGEST_LENGTH] = storage + allocation.special_;
+            put(data, entitlements.data(), entitlements.size());
 
-                memset(storage, 0, sizeof(*storage) * allocation.special_);
+            blobs.insert(std::make_pair(CSSLOT_ENTITLEMENTS, data.str()));
+        }
 
-                _foreach (blob, blobs) {
-                    auto local(reinterpret_cast<const Blob *>(&blob.second[0]));
-                    sha1((uint8_t *) (hashes - blob.first), local, Swap(local->length));
-                }
+        if (true) {
+            std::stringbuf data;
 
-                if (normal != 1)
-                    for (size_t i = 0; i != normal - 1; ++i)
-                        sha1(hashes[i], (pagesize * i < overlap.size() ? overlap.data() : top) + pagesize * i, pagesize);
-                if (normal != 0)
-                    sha1(hashes[normal - 1], top + pagesize * (normal - 1), ((allocation.limit_ - 1) % pagesize) + 1);
-
-                put(data, storage, sizeof(storage));
-
-                blobs.insert(std::make_pair(CSSLOT_CODEDIRECTORY, data.str()));
-            }
-
-            size_t total(0);
+            uint32_t special(0);
             _foreach (blob, blobs)
-                total += blob.second.size();
+                special = std::max(special, blob.first);
+            uint32_t normal((limit + pagesize - 1) / pagesize);
 
-            struct SuperBlob super;
-            super.blob.magic = Swap(CSMAGIC_EMBEDDED_SIGNATURE);
-            super.blob.length = Swap(uint32_t(sizeof(SuperBlob) + blobs.size() * sizeof(BlobIndex) + total));
-            super.count = Swap(uint32_t(blobs.size()));
-            put(output, &super, sizeof(super));
+            Blob blob;
+            blob.magic = Swap(CSMAGIC_CODEDIRECTORY);
+            blob.length = Swap(uint32_t(sizeof(blob) + sizeof(CodeDirectory) + strlen(name) + 1 + SHA_DIGEST_LENGTH * (special + normal)));
+            put(data, &blob, sizeof(blob));
 
-            uint32_t offset(sizeof(SuperBlob) + sizeof(BlobIndex) * blobs.size());
-            position += offset + total;
+            CodeDirectory directory;
+            directory.version = Swap(uint32_t(0x00020001));
+            directory.flags = Swap(uint32_t(0));
+            directory.hashOffset = Swap(uint32_t(sizeof(blob) + sizeof(CodeDirectory) + strlen(name) + 1 + SHA_DIGEST_LENGTH * special));
+            directory.identOffset = Swap(uint32_t(sizeof(blob) + sizeof(CodeDirectory)));
+            directory.nSpecialSlots = Swap(special);
+            directory.codeLimit = Swap(uint32_t(limit));
+            directory.nCodeSlots = Swap(normal);
+            directory.hashSize = SHA_DIGEST_LENGTH;
+            directory.hashType = CS_HASHTYPE_SHA1;
+            directory.spare1 = 0x00;
+            directory.pageSize = pageshift;
+            directory.spare2 = Swap(uint32_t(0));
+            put(data, &directory, sizeof(directory));
+
+            put(data, name, strlen(name) + 1);
+
+            uint8_t storage[special + normal][SHA_DIGEST_LENGTH];
+            uint8_t (*hashes)[SHA_DIGEST_LENGTH] = storage + special;
+
+            memset(storage, 0, sizeof(*storage) * special);
 
             _foreach (blob, blobs) {
-                BlobIndex index;
-                index.type = Swap(blob.first);
-                index.offset = Swap(offset);
-                put(output, &index, sizeof(index));
-                offset += blob.second.size();
+                auto local(reinterpret_cast<const Blob *>(&blob.second[0]));
+                sha1((uint8_t *) (hashes - blob.first), local, Swap(local->length));
             }
 
-            _foreach (blob, blobs)
-                put(output, blob.second.data(), blob.second.size());
+            if (normal != 1)
+                for (size_t i = 0; i != normal - 1; ++i)
+                    sha1(hashes[i], (pagesize * i < overlap.size() ? overlap.data() : top) + pagesize * i, pagesize);
+            if (normal != 0)
+                sha1(hashes[normal - 1], top + pagesize * (normal - 1), ((limit - 1) % pagesize) + 1);
 
-            if (allocation.alloc_ > position)
-                pad(output, allocation.alloc_ - position);
+            put(data, storage, sizeof(storage));
+
+            blobs.insert(std::make_pair(CSSLOT_CODEDIRECTORY, data.str()));
         }
-    }
+
+        size_t total(0);
+        _foreach (blob, blobs)
+            total += blob.second.size();
+
+        struct SuperBlob super;
+        super.blob.magic = Swap(CSMAGIC_EMBEDDED_SIGNATURE);
+        super.blob.length = Swap(uint32_t(sizeof(SuperBlob) + blobs.size() * sizeof(BlobIndex) + total));
+        super.count = Swap(uint32_t(blobs.size()));
+        put(output, &super, sizeof(super));
+
+        size_t offset(sizeof(SuperBlob) + sizeof(BlobIndex) * blobs.size());
+
+        _foreach (blob, blobs) {
+            BlobIndex index;
+            index.type = Swap(blob.first);
+            index.offset = Swap(uint32_t(offset));
+            put(output, &index, sizeof(index));
+            offset += blob.second.size();
+        }
+
+        _foreach (blob, blobs)
+            put(output, blob.second.data(), blob.second.size());
+
+        return offset;
+    }));
+}
+
+void resign(void *idata, size_t isize, std::streambuf &output) {
+    resign(idata, isize, output, fun([](size_t size) -> size_t {
+        return 0;
+    }), fun([](std::streambuf &output, size_t limit, const std::string &overlap, const char *top) -> size_t {
+        return 0;
+    }));
 }
 
 int main(int argc, const char *argv[]) {
@@ -1343,7 +1399,11 @@ int main(int argc, const char *argv[]) {
             asprintf(&temp, "%s.%s.cs", dir.c_str(), base);
             _assert(output.open(temp, std::ios::out | std::ios::trunc | std::ios::binary) == &output);
 
-            resign(input.data(), input.size(), output, flag_S ? name : NULL, entitlements);
+            if (flag_r)
+                resign(input.data(), input.size(), output);
+            else {
+                resign(input.data(), input.size(), output, name, entitlements);
+            }
         }
 
         Map mapping(temp ?: path, flag_T || flag_s);
