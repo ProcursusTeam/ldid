@@ -1119,10 +1119,11 @@ void resign(void *idata, size_t isize, std::streambuf &output, const Functor<siz
 
         pad(output, allocation.limit_ - allocation.size_);
         position += allocation.limit_ - allocation.size_;
-        position += save(output, allocation.limit_, overlap, top);
 
-        if (allocation.alloc_ > position)
-            pad(output, allocation.alloc_ - position);
+        size_t saved(save(output, allocation.limit_, overlap, top));
+        if (allocation.alloc_ > saved)
+            pad(output, allocation.alloc_ - saved);
+        position += allocation.alloc_;
     }
 }
 
