@@ -1564,19 +1564,18 @@ int main(int argc, char *argv[]) {
     size_t filei(0), filee(0);
     _foreach (file, files) try {
         const char *path(file.c_str());
-        const char *base = strrchr(path, '/');
-
-        std::string dir;
-        if (base != NULL)
-            dir.assign(path, base++ - path + 1);
-        else
-            base = path;
-
-        const char *name(flag_I ?: base);
         std::string temp;
 
         if (flag_S || flag_r) {
             Map input(path, O_RDONLY, PROT_READ, MAP_PRIVATE);
+
+            std::string dir;
+            const char *base = strrchr(path, '/');
+
+            if (base != NULL)
+                dir.assign(path, base++ - path + 1);
+            else
+                base = path;
 
             temp = dir + "." + base + ".cs";
             std::filebuf output;
@@ -1584,8 +1583,10 @@ int main(int argc, char *argv[]) {
 
             if (flag_r)
                 resign(input.data(), input.size(), output);
-            else
+            else {
+                const char *name(flag_I ?: base);
                 resign(input.data(), input.size(), output, name, entitlements, key, slots);
+            }
         }
 
         Map mapping(!temp.empty() ? temp.c_str() : path, flag_T || flag_s);
