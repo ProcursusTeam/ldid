@@ -1564,7 +1564,6 @@ int main(int argc, char *argv[]) {
     size_t filei(0), filee(0);
     _foreach (file, files) try {
         const char *path(file.c_str());
-        std::string temp;
 
         if (flag_S || flag_r) {
             Map input(path, O_RDONLY, PROT_READ, MAP_PRIVATE);
@@ -1577,7 +1576,7 @@ int main(int argc, char *argv[]) {
             else
                 base = path;
 
-            temp = dir + "." + base + ".cs";
+            std::string temp(dir + "." + base + ".cs");
             std::filebuf output;
             _assert(output.open(temp.c_str(), std::ios::out | std::ios::trunc | std::ios::binary) == &output);
 
@@ -1587,9 +1586,18 @@ int main(int argc, char *argv[]) {
                 const char *name(flag_I ?: base);
                 resign(input.data(), input.size(), output, name, entitlements, key, slots);
             }
+
+            struct stat info;
+            _syscall(stat(path, &info));
+#ifndef __WIN32__
+            _syscall(chown(temp.c_str(), info.st_uid, info.st_gid));
+#endif
+            _syscall(chmod(temp.c_str(), info.st_mode));
+            _syscall(unlink(path));
+            _syscall(rename(temp.c_str(), path));
         }
 
-        Map mapping(!temp.empty() ? temp.c_str() : path, flag_T || flag_s);
+        Map mapping(path, flag_T || flag_s);
         FatHeader fat_header(mapping.data(), mapping.size());
 
         _foreach (mach_header, fat_header.GetMachHeaders()) {
@@ -1678,17 +1686,6 @@ int main(int argc, char *argv[]) {
                             sha1(hashes[pages - 1], top + PageSize_ * (pages - 1), ((data - 1) % PageSize_) + 1);
                     }
             }
-        }
-
-        if (!temp.empty()) {
-            struct stat info;
-            _syscall(stat(path, &info));
-#ifndef __WIN32__
-            _syscall(chown(temp.c_str(), info.st_uid, info.st_gid));
-#endif
-            _syscall(chmod(temp.c_str(), info.st_mode));
-            _syscall(unlink(path));
-            _syscall(rename(temp.c_str(), path));
         }
 
         ++filei;
