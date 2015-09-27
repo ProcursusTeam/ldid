@@ -45,6 +45,8 @@
 
 #include <plist/plist.h>
 
+#include "ldid.hpp"
+
 #define _assert___(line) \
     #line
 #define _assert__(line) \
@@ -958,7 +960,9 @@ FunctorImpl<decltype(&Function_::operator())> fun(const Function_ &value) {
     return value;
 }
 
-static void resign(void *idata, size_t isize, std::streambuf &output, const Functor<size_t (size_t)> &allocate, const Functor<size_t (std::streambuf &output, size_t, const std::string &, const char *)> &save) {
+namespace ldid {
+
+static void Allocate(void *idata, size_t isize, std::streambuf &output, const Functor<size_t (size_t)> &allocate, const Functor<size_t (std::streambuf &output, size_t, const std::string &, const char *)> &save) {
     FatHeader source(idata, isize);
 
     size_t offset(0);
@@ -1132,6 +1136,8 @@ static void resign(void *idata, size_t isize, std::streambuf &output, const Func
     }
 }
 
+}
+
 typedef std::map<uint32_t, std::string> Blobs;
 
 static void insert(Blobs &blobs, uint32_t slot, const std::stringbuf &buffer) {
@@ -1289,10 +1295,10 @@ class Signature {
     }
 };
 
-typedef std::map<uint32_t, std::string> Slots;
+namespace ldid {
 
-void resign(void *idata, size_t isize, std::streambuf &output, const std::string &name, const std::string &entitlements, const std::string &key, const Slots &slots) {
-    resign(idata, isize, output, fun([&](size_t size) -> size_t {
+void Sign(void *idata, size_t isize, std::streambuf &output, const std::string &name, const std::string &entitlements, const std::string &key, const Slots &slots) {
+    Allocate(idata, isize, output, fun([&](size_t size) -> size_t {
         size_t alloc(sizeof(struct SuperBlob));
 
         uint32_t special(0);
@@ -1417,12 +1423,14 @@ void resign(void *idata, size_t isize, std::streambuf &output, const std::string
     }));
 }
 
-static void resign(void *idata, size_t isize, std::streambuf &output) {
-    resign(idata, isize, output, fun([](size_t size) -> size_t {
+static void Unsign(void *idata, size_t isize, std::streambuf &output) {
+    Allocate(idata, isize, output, fun([](size_t size) -> size_t {
         return 0;
     }), fun([](std::streambuf &output, size_t limit, const std::string &overlap, const char *top) -> size_t {
         return 0;
     }));
+}
+
 }
 
 int main(int argc, char *argv[]) {
@@ -1458,7 +1466,7 @@ int main(int argc, char *argv[]) {
 
     Map entitlements;
     Map key;
-    Slots slots;
+    ldid::Slots slots;
 
     std::vector<std::string> files;
 
@@ -1581,10 +1589,10 @@ int main(int argc, char *argv[]) {
             _assert(output.open(temp.c_str(), std::ios::out | std::ios::trunc | std::ios::binary) == &output);
 
             if (flag_r)
-                resign(input.data(), input.size(), output);
+                ldid::Unsign(input.data(), input.size(), output);
             else {
                 const char *name(flag_I ?: base);
-                resign(input.data(), input.size(), output, name, entitlements, key, slots);
+                ldid::Sign(input.data(), input.size(), output, name, entitlements, key, slots);
             }
 
             struct stat info;
