@@ -43,7 +43,7 @@
 #include <openssl/pkcs12.h>
 #include <openssl/sha.h>
 
-#include <plist/plist.h>
+#include <plist/plist++.h>
 
 #include "ldid.hpp"
 
