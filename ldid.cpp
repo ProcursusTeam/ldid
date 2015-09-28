@@ -29,9 +29,9 @@
 #include <string>
 #include <vector>
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <fts.h>
 #include <regex.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -1563,6 +1563,42 @@ DiskFolder::~DiskFolder() {
             Commit(commit.first, commit.second);
 }
 
+void DiskFolder::Find(const std::string &root, const std::string &base, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)>&code) {
+    std::string path(Path(root) + base);
+
+    DIR *dir(opendir(path.c_str()));
+    _assert(dir != NULL);
+    _scope({ _syscall(closedir(dir)); });
+
+    while (auto child = readdir(dir)) {
+        std::string name(child->d_name, child->d_namlen);
+        if (name == "." || name == "..")
+            continue;
+        if (Starts(name, ".ldid."))
+            continue;
+
+        switch (child->d_type) {
+            case DT_DIR:
+                Find(root, base + name + "/", code);
+            break;
+
+            case DT_REG:
+                code(base + name, fun([&](const Functor<void (std::streambuf &, std::streambuf &)> &code) {
+                    std::string access(root + base + name);
+                    _assert_(Open(access, fun([&](std::streambuf &data) {
+                        NullBuffer save;
+                        code(data, save);
+                    })), "open(): %s", access.c_str());
+                }));
+            break;
+
+            default:
+                _assert_(false, "d_type=%u", child->d_type);
+            break;
+        }
+    }
+}
+
 void DiskFolder::Save(const std::string &path, const Functor<void (std::streambuf &)> &code) {
     std::filebuf save;
     auto from(Path(path));
@@ -1581,43 +1617,7 @@ bool DiskFolder::Open(const std::string &path, const Functor<void (std::streambu
 }
 
 void DiskFolder::Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)>&code) {
-    auto root(Path(path));
-
-    FTS *fts(fts_open((char *[]) {const_cast<char *>(root.c_str()), NULL}, FTS_PHYSICAL | FTS_NOCHDIR, NULL));
-    _assert(fts != NULL);
-    _scope({ fts_close(fts); });
-
-    while (FTSENT *entry = fts_read(fts)) {
-        _assert(entry->fts_pathlen >= root.size());
-        _assert(strncmp(entry->fts_path, root.c_str(), root.size()) == 0);
-        if (entry->fts_pathlen == root.size())
-            continue;
-
-        _assert(entry->fts_path[root.size()] == '/');
-        std::string name(entry->fts_path + root.size() + 1);
-
-        if (Starts(Split(name).base, ".ldid."))
-            continue;
-
-        switch (auto info = entry->fts_info) {
-            case FTS_D:
-            case FTS_DP:
-            break;
-
-            case FTS_F: {
-                code(name, fun([&](const Functor<void (std::streambuf &, std::streambuf &)> &code) {
-                    std::string access(path + name);
-                    _assert_(Open(access, fun([&](std::streambuf &data) {
-                        NullBuffer save;
-                        code(data, save);
-                    })), "open(): %s", access.c_str());
-                }));
-            } break;
-
-            default:
-                _assert_(false, "fts_info=%u", info);
-        }
-    }
+    Find(path, "", code);
 }
 
 SubFolder::SubFolder(Folder *parent, const std::string &path) :

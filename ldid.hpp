@@ -61,6 +61,8 @@ class DiskFolder :
 
     std::string Path(const std::string &path);
 
+    void Find(const std::string &root, const std::string &base, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)>&code);
+
   public:
     DiskFolder(const std::string &path);
     ~DiskFolder();
