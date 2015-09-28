@@ -73,7 +73,8 @@
     int error(errno); \
     if (error == EINTR) \
         continue; \
-    for (auto success : (long[]) {__VA_ARGS__}) \
+    /* XXX: EINTR is included in this list to fix g++ */ \
+    for (auto success : (long[]) {EINTR, __VA_ARGS__}) \
         if (error == success) \
             return (decltype(expr)) -success; \
     _assert_(false, "errno=%u", error); \
