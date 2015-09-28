@@ -842,7 +842,7 @@ class File {
 
     void open(const char *path, int flags) {
         _assert(file_ == -1);
-        _syscall(file_ = ::open(path, flags));
+        file_ = _syscall(::open(path, flags));
     }
 
     int file() const {
@@ -901,7 +901,7 @@ class Map {
         _syscall(fstat(file, &stat));
         size_ = stat.st_size;
 
-        _syscall(data_ = mmap(NULL, size_, pflag, mflag, file, 0));
+        data_ = _syscall(mmap(NULL, size_, pflag, mflag, file, 0));
     }
 
     void open(const char *path, bool edit) {
