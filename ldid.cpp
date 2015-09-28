@@ -926,8 +926,8 @@ class Map {
 
 namespace ldid {
 
-static void Allocate(void *idata, size_t isize, std::streambuf &output, const Functor<size_t (size_t)> &allocate, const Functor<size_t (std::streambuf &output, size_t, const std::string &, const char *)> &save) {
-    FatHeader source(idata, isize);
+static void Allocate(const void *idata, size_t isize, std::streambuf &output, const Functor<size_t (size_t)> &allocate, const Functor<size_t (std::streambuf &output, size_t, const std::string &, const char *)> &save) {
+    FatHeader source(const_cast<void *>(idata), isize);
 
     size_t offset(0);
     if (source.IsFat())
@@ -1261,7 +1261,7 @@ class Signature {
 
 namespace ldid {
 
-void Sign(void *idata, size_t isize, std::streambuf &output, const std::string &name, const std::string &entitlements, const std::string &key, const Slots &slots) {
+void Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &key, const Slots &slots) {
     Allocate(idata, isize, output, fun([&](size_t size) -> size_t {
         size_t alloc(sizeof(struct SuperBlob));
 
@@ -1282,7 +1282,7 @@ void Sign(void *idata, size_t isize, std::streambuf &output, const std::string &
         alloc += sizeof(struct BlobIndex);
         alloc += sizeof(struct Blob);
         alloc += sizeof(struct CodeDirectory);
-        alloc += name.size() + 1;
+        alloc += identifier.size() + 1;
 
         if (!key.empty()) {
             alloc += sizeof(struct BlobIndex);
@@ -1328,7 +1328,7 @@ void Sign(void *idata, size_t isize, std::streambuf &output, const std::string &
             CodeDirectory directory;
             directory.version = Swap(uint32_t(0x00020001));
             directory.flags = Swap(uint32_t(0));
-            directory.hashOffset = Swap(uint32_t(sizeof(Blob) + sizeof(CodeDirectory) + name.size() + 1 + SHA_DIGEST_LENGTH * special));
+            directory.hashOffset = Swap(uint32_t(sizeof(Blob) + sizeof(CodeDirectory) + identifier.size() + 1 + SHA_DIGEST_LENGTH * special));
             directory.identOffset = Swap(uint32_t(sizeof(Blob) + sizeof(CodeDirectory)));
             directory.nSpecialSlots = Swap(special);
             directory.codeLimit = Swap(uint32_t(limit));
@@ -1340,7 +1340,7 @@ void Sign(void *idata, size_t isize, std::streambuf &output, const std::string &
             directory.spare2 = Swap(uint32_t(0));
             put(data, &directory, sizeof(directory));
 
-            put(data, name.c_str(), name.size() + 1);
+            put(data, identifier.c_str(), identifier.size() + 1);
 
             uint8_t storage[special + normal][SHA_DIGEST_LENGTH];
             uint8_t (*hashes)[SHA_DIGEST_LENGTH] = storage + special;
@@ -1555,8 +1555,8 @@ int main(int argc, char *argv[]) {
             if (flag_r)
                 ldid::Unsign(input.data(), input.size(), output);
             else {
-                const char *name(flag_I ?: base);
-                ldid::Sign(input.data(), input.size(), output, name, entitlements, key, slots);
+                std::string identifier(flag_I ?: base);
+                ldid::Sign(input.data(), input.size(), output, identifier, entitlements, key, slots);
             }
 
             struct stat info;

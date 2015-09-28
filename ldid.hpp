@@ -47,7 +47,7 @@ FunctorImpl<decltype(&Function_::operator())> fun(const Function_ &value) {
 
 typedef std::map<uint32_t, std::string> Slots;
 
-void Sign(void *idata, size_t isize, std::streambuf &output, const std::string &name, const std::string &entitlements, const std::string &key, const Slots &slots);
+void Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &key, const Slots &slots);
 
 }
 
