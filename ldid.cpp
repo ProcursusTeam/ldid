@@ -1387,8 +1387,13 @@ class Split {
 static void mkdir_p(const std::string &path) {
     if (path.empty())
         return;
+#ifdef __WIN32__
+    if (_syscall(mkdir(path.c_str()), EEXIST) == -EEXIST)
+        return;
+#else
     if (_syscall(mkdir(path.c_str(), 0755), EEXIST) == -EEXIST)
         return;
+#endif
     auto slash(path.rfind('/', path.size() - 1));
     if (slash == std::string::npos)
         return;
