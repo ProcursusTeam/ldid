@@ -1584,25 +1584,41 @@ void DiskFolder::Find(const std::string &root, const std::string &base, const Fu
         if (Starts(name, ".ldid."))
             continue;
 
+        bool directory;
+
+#ifdef __WIN32__
+        struct stat info;
+        _syscall(stat(path.c_str(), &info));
+        if (false);
+        else if (S_ISDIR(info.st_mode))
+            directory = true;
+        else if (S_ISREG(info.st_mode))
+            directory = false;
+        else
+            _assert_(false, "st_mode=%x", info.st_mode);
+#else
         switch (child->d_type) {
             case DT_DIR:
-                Find(root, base + name + "/", code);
-            break;
-
+                directory = true;
+                break;
             case DT_REG:
-                code(base + name, fun([&](const Functor<void (std::streambuf &, std::streambuf &)> &code) {
-                    std::string access(root + base + name);
-                    _assert_(Open(access, fun([&](std::streambuf &data) {
-                        NullBuffer save;
-                        code(data, save);
-                    })), "open(): %s", access.c_str());
-                }));
-            break;
-
+                directory = false;
+                break;
             default:
                 _assert_(false, "d_type=%u", child->d_type);
-            break;
         }
+#endif
+
+        if (directory)
+            Find(root, base + name + "/", code);
+        else
+            code(base + name, fun([&](const Functor<void (std::streambuf &, std::streambuf &)> &code) {
+                std::string access(root + base + name);
+                _assert_(Open(access, fun([&](std::streambuf &data) {
+                    NullBuffer save;
+                    code(data, save);
+                })), "open(): %s", access.c_str());
+            }));
     }
 }
 
