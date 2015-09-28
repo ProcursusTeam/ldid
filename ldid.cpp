@@ -1572,7 +1572,7 @@ void DiskFolder::Find(const std::string &root, const std::string &base, const Fu
     _scope({ _syscall(closedir(dir)); });
 
     while (auto child = readdir(dir)) {
-        std::string name(child->d_name, child->d_namlen);
+        std::string name(child->d_name);
         if (name == "." || name == "..")
             continue;
         if (Starts(name, ".ldid."))
