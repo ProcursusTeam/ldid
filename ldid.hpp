@@ -87,6 +87,8 @@ class SubFolder :
     virtual void Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code);
 };
 
+std::string Bundle(const std::string &root, Folder &folder, const std::string &key, std::map<std::string, std::vector<char>> &remote);
+
 typedef std::map<uint32_t, std::vector<char>> Slots;
 
 void Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &key, const Slots &slots);
