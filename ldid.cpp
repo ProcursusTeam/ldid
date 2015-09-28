@@ -871,13 +871,13 @@ class Map {
     {
     }
 
-    Map(const char *path, int oflag, int pflag, int mflag) :
+    Map(const std::string &path, int oflag, int pflag, int mflag) :
         Map()
     {
         open(path, oflag, pflag, mflag);
     }
 
-    Map(const char *path, bool edit) :
+    Map(const std::string &path, bool edit) :
         Map()
     {
         open(path, edit);
@@ -891,10 +891,10 @@ class Map {
         return data_ == NULL;
     }
 
-    void open(const char *path, int oflag, int pflag, int mflag) {
+    void open(const std::string &path, int oflag, int pflag, int mflag) {
         clear();
 
-        file_.open(path, oflag);
+        file_.open(path.c_str(), oflag);
         int file(file_.file());
 
         struct stat stat;
@@ -904,7 +904,7 @@ class Map {
         data_ = _syscall(mmap(NULL, size_, pflag, mflag, file, 0));
     }
 
-    void open(const char *path, bool edit) {
+    void open(const std::string &path, bool edit) {
         if (edit)
             open(path, O_RDWR, PROT_READ | PROT_WRITE, MAP_SHARED);
         else
@@ -1259,6 +1259,17 @@ class Signature {
     }
 };
 
+static void Commit(const std::string &path, const std::string &temp) {
+    struct stat info;
+    _syscall(stat(path.c_str(), &info));
+#ifndef __WIN32__
+    _syscall(chown(temp.c_str(), info.st_uid, info.st_gid));
+#endif
+    _syscall(chmod(temp.c_str(), info.st_mode));
+    _syscall(unlink(path.c_str()));
+    _syscall(rename(temp.c_str(), path.c_str()));
+}
+
 namespace ldid {
 
 void Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &key, const Slots &slots) {
@@ -1535,18 +1546,21 @@ int main(int argc, char *argv[]) {
 
     size_t filei(0), filee(0);
     _foreach (file, files) try {
-        const char *path(file.c_str());
+        std::string path(file);
 
         if (flag_S || flag_r) {
             Map input(path, O_RDONLY, PROT_READ, MAP_PRIVATE);
 
             std::string dir;
-            const char *base = strrchr(path, '/');
+            std::string base;
 
-            if (base != NULL)
-                dir.assign(path, base++ - path + 1);
-            else
+            size_t slash(path.rfind('/'));
+            if (slash == std::string::npos)
                 base = path;
+            else {
+                dir = path.substr(0, slash + 1);
+                base = path.substr(slash + 1);
+            }
 
             std::string temp(dir + "." + base + ".cs");
             std::filebuf output;
@@ -1555,18 +1569,11 @@ int main(int argc, char *argv[]) {
             if (flag_r)
                 ldid::Unsign(input.data(), input.size(), output);
             else {
-                std::string identifier(flag_I ?: base);
+                std::string identifier(flag_I ?: base.c_str());
                 ldid::Sign(input.data(), input.size(), output, identifier, entitlements, key, slots);
             }
 
-            struct stat info;
-            _syscall(stat(path, &info));
-#ifndef __WIN32__
-            _syscall(chown(temp.c_str(), info.st_uid, info.st_gid));
-#endif
-            _syscall(chmod(temp.c_str(), info.st_mode));
-            _syscall(unlink(path));
-            _syscall(rename(temp.c_str(), path));
+            Commit(path, temp);
         }
 
         Map mapping(path, flag_T || flag_s);
