@@ -23,19 +23,23 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
-#include <map>
+#include <iostream>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include <errno.h>
 #include <fcntl.h>
+#include <fts.h>
+#include <regex.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <unistd.h>
 
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 
 #include <openssl/err.h>
 #include <openssl/pem.h>
@@ -61,18 +65,18 @@
 #define _assert(expr) \
     _assert_(expr, "%s", #expr)
 
-#define _syscall(expr) ({ \
-    __typeof__(expr) _value; \
-    do if ((long) (_value = (expr)) != -1) \
-        break; \
-    else switch (errno) { \
-        case EINTR: \
-            continue; \
-        default: \
-            _assert_(false, "errno=%u", errno); \
-    } while (true); \
-    _value; \
-})
+#define _syscall(expr, ...) [&] { for (;;) { \
+    auto _value(expr); \
+    if ((long) _value != -1) \
+        return _value; \
+    int error(errno); \
+    if (error == EINTR) \
+        continue; \
+    for (auto success : (long[]) {__VA_ARGS__}) \
+        if (error == success) \
+            return (decltype(expr)) -success; \
+    _assert_(false, "errno=%u", error); \
+} }()
 
 #define _trace() \
     fprintf(stderr, "_trace(%s:%u): %s\n", __FILE__, __LINE__, __FUNCTION__)
@@ -94,6 +98,40 @@ struct Iterator_ {
             for (Iterator_<__typeof__(list)>::Result _item = _list.begin(); _item != _list.end(); ++_item) \
                 for (bool _suck(true); _suck; _suck = false) \
                     for (const __typeof__(*_item) &item = *_item; _suck; _suck = false)
+
+class _Scope {
+};
+
+template <typename Function_>
+class Scope :
+    public _Scope
+{
+  private:
+    Function_ function_;
+
+  public:
+    Scope(const Function_ &function) :
+        function_(function)
+    {
+    }
+
+    ~Scope() {
+        function_();
+    }
+};
+
+template <typename Function_>
+Scope<Function_> _scope(const Function_ &function) {
+    return Scope<Function_>(function);
+}
+
+#define _scope__(counter, function) \
+    __attribute__((__unused__)) \
+    const _Scope &_scope ## counter(_scope([&]function))
+#define _scope_(counter, function) \
+    _scope__(counter, function)
+#define _scope(function) \
+    _scope_(__COUNTER__, function)
 
 struct fat_header {
     uint32_t magic;
@@ -1259,14 +1297,118 @@ class Signature {
     }
 };
 
+class NullBuffer :
+    public std::streambuf
+{
+  public:
+    virtual std::streamsize xsputn(const char_type *data, std::streamsize size) {
+        return size;
+    }
+
+    virtual int_type overflow(int_type next) {
+        return next;
+    }
+};
+
+class HashBuffer :
+    public std::streambuf
+{
+  private:
+    std::vector<char> &hash_;
+    SHA_CTX context_;
+
+  public:
+    HashBuffer(std::vector<char> &hash) :
+        hash_(hash)
+    {
+        SHA1_Init(&context_);
+    }
+
+    ~HashBuffer() {
+        hash_.resize(SHA_DIGEST_LENGTH);
+        SHA1_Final(reinterpret_cast<uint8_t *>(hash_.data()), &context_);
+    }
+
+    virtual std::streamsize xsputn(const char_type *data, std::streamsize size) {
+        SHA1_Update(&context_, data, size);
+        return size;
+    }
+
+    virtual int_type overflow(int_type next) {
+        if (next == traits_type::eof())
+            return sync();
+        char value(next);
+        xsputn(&value, 1);
+        return next;
+    }
+};
+
+class HashProxy :
+    public HashBuffer
+{
+  private:
+    std::streambuf &buffer_;
+
+  public:
+    HashProxy(std::vector<char> &hash, std::streambuf &buffer) :
+        HashBuffer(hash),
+        buffer_(buffer)
+    {
+    }
+
+    virtual std::streamsize xsputn(const char_type *data, std::streamsize size) {
+        _assert(HashBuffer::xsputn(data, size) == size);
+        return buffer_.sputn(data, size);
+    }
+};
+
+static bool Starts(const std::string &lhs, const std::string &rhs) {
+    return lhs.size() >= rhs.size() && lhs.compare(0, rhs.size(), rhs) == 0;
+}
+
+class Split {
+  public:
+    std::string dir;
+    std::string base;
+
+    Split(const std::string &path) {
+        size_t slash(path.rfind('/'));
+        if (slash == std::string::npos)
+            base = path;
+        else {
+            dir = path.substr(0, slash + 1);
+            base = path.substr(slash + 1);
+        }
+    }
+};
+
+static void mkdir_p(const std::string &path) {
+    if (path.empty())
+        return;
+    if (_syscall(mkdir(path.c_str(), 0755), EEXIST) == -EEXIST)
+        return;
+    auto slash(path.rfind('/', path.size() - 1));
+    if (slash == std::string::npos)
+        return;
+    mkdir_p(path.substr(0, slash));
+}
+
+static std::string Temporary(std::filebuf &file, const Split &split) {
+    std::string temp(split.dir + ".ldid." + split.base);
+    mkdir_p(split.dir);
+    _assert_(file.open(temp.c_str(), std::ios::out | std::ios::trunc | std::ios::binary) == &file, "open(): %s", temp.c_str());
+    return temp;
+}
+
 static void Commit(const std::string &path, const std::string &temp) {
     struct stat info;
-    _syscall(stat(path.c_str(), &info));
+    if (_syscall(stat(path.c_str(), &info), ENOENT) == 0) {
 #ifndef __WIN32__
-    _syscall(chown(temp.c_str(), info.st_uid, info.st_gid));
+        _syscall(chown(temp.c_str(), info.st_uid, info.st_gid));
 #endif
-    _syscall(chmod(temp.c_str(), info.st_mode));
-    _syscall(unlink(path.c_str()));
+        _syscall(chmod(temp.c_str(), info.st_mode));
+    }
+
     _syscall(rename(temp.c_str(), path.c_str()));
 }
 
@@ -1406,6 +1548,382 @@ static void Unsign(void *idata, size_t isize, std::streambuf &output) {
     }));
 }
 
+std::string DiskFolder::Path(const std::string &path) {
+    return path_ + "/" + path;
+}
+
+DiskFolder::DiskFolder(const std::string &path) :
+    path_(path)
+{
+}
+
+DiskFolder::~DiskFolder() {
+    if (!std::uncaught_exception())
+        for (const auto &commit : commit_)
+            Commit(commit.first, commit.second);
+}
+
+void DiskFolder::Save(const std::string &path, const Functor<void (std::streambuf &)> &code) {
+    std::filebuf save;
+    auto from(Path(path));
+    commit_[from] = Temporary(save, from);
+    code(save);
+}
+
+bool DiskFolder::Open(const std::string &path, const Functor<void (std::streambuf &)> &code) {
+    std::filebuf data;
+    auto result(data.open(Path(path).c_str(), std::ios::binary | std::ios::in));
+    if (result == NULL)
+        return false;
+    _assert(result == &data);
+    code(data);
+    return true;
+}
+
+void DiskFolder::Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)>&code) {
+    auto root(Path(path));
+
+    FTS *fts(fts_open((char *[]) {const_cast<char *>(root.c_str()), NULL}, FTS_PHYSICAL | FTS_NOCHDIR, NULL));
+    _assert(fts != NULL);
+    _scope({ fts_close(fts); });
+
+    while (FTSENT *entry = fts_read(fts)) {
+        _assert(entry->fts_pathlen >= root.size());
+        _assert(strncmp(entry->fts_path, root.c_str(), root.size()) == 0);
+        if (entry->fts_pathlen == root.size())
+            continue;
+
+        _assert(entry->fts_path[root.size()] == '/');
+        std::string name(entry->fts_path + root.size() + 1);
+
+        if (Starts(Split(name).base, ".ldid."))
+            continue;
+
+        switch (auto info = entry->fts_info) {
+            case FTS_D:
+            case FTS_DP:
+            break;
+
+            case FTS_F: {
+                code(name, fun([&](const Functor<void (std::streambuf &, std::streambuf &)> &code) {
+                    std::string access(path + name);
+                    _assert_(Open(access, fun([&](std::streambuf &data) {
+                        NullBuffer save;
+                        code(data, save);
+                    })), "open(): %s", access.c_str());
+                }));
+            } break;
+
+            default:
+                _assert_(false, "fts_info=%u", info);
+        }
+    }
+}
+
+SubFolder::SubFolder(Folder *parent, const std::string &path) :
+    parent_(parent),
+    path_(path)
+{
+}
+
+void SubFolder::Save(const std::string &path, const Functor<void (std::streambuf &)> &code) {
+    return parent_->Save(path_ + path, code);
+}
+
+bool SubFolder::Open(const std::string &path, const Functor<void (std::streambuf &)> &code) {
+    return parent_->Open(path_ + path, code);
+}
+
+void SubFolder::Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code) {
+    return parent_->Find(path_ + path, code);
+}
+
+static size_t copy(std::streambuf &source, std::streambuf &target) {
+    size_t total(0);
+    for (;;) {
+        char data[4096];
+        size_t writ(source.sgetn(data, sizeof(data)));
+        if (writ == 0)
+            break;
+        _assert(target.sputn(data, writ) == writ);
+        total += writ;
+    }
+    return total;
+}
+
+static PList::Structure *plist(const std::string &data) {
+    if (!Starts(data, "bplist00"))
+        return PList::Structure::FromXml(data);
+    std::vector<char> bytes(data.data(), data.data() + data.size());
+    return PList::Structure::FromBin(bytes);
+}
+
+static void plist_d(std::streambuf &buffer, const Functor<void (PList::Dictionary *)> &code) {
+    std::stringbuf data;
+    copy(buffer, data);
+    PList::Structure *structure(plist(data.str()));
+    _scope({ delete structure; });
+    auto dictionary(dynamic_cast<PList::Dictionary *>(structure));
+    _assert(dictionary != NULL);
+    code(dictionary);
+}
+
+static std::string plist_s(PList::Node *node) {
+    auto value(dynamic_cast<PList::String *>(node));
+    _assert(value != NULL);
+    return value->GetValue();
+}
+
+enum Mode {
+    NoMode,
+    OptionalMode,
+    OmitMode,
+    NestedMode,
+    TopMode,
+};
+
+class Expression {
+  private:
+    regex_t regex_;
+
+  public:
+    Expression(const std::string &code) {
+        _assert_(regcomp(&regex_, code.c_str(), REG_EXTENDED | REG_NOSUB) == 0, "regcomp()");
+    }
+
+    ~Expression() {
+        regfree(&regex_);
+    }
+
+    bool operator ()(const std::string &data) const {
+        auto value(regexec(&regex_, data.c_str(), 0, NULL, 0));
+        if (value == REG_NOMATCH)
+            return false;
+        _assert_(value == 0, "regexec()");
+        return true;
+    }
+};
+
+struct Rule {
+    unsigned weight_;
+    Mode mode_;
+    std::string code_;
+
+    mutable std::auto_ptr<Expression> regex_;
+
+    Rule(unsigned weight, Mode mode, const std::string &code) :
+        weight_(weight),
+        mode_(mode),
+        code_(code)
+    {
+    }
+
+    Rule(const Rule &rhs) :
+        weight_(rhs.weight_),
+        mode_(rhs.mode_),
+        code_(rhs.code_)
+    {
+    }
+
+    void Compile() const {
+        regex_.reset(new Expression(code_));
+    }
+
+    bool operator ()(const std::string &data) const {
+        _assert(regex_.get() != NULL);
+        return (*regex_)(data);
+    }
+
+    bool operator <(const Rule &rhs) const {
+        if (weight_ > rhs.weight_)
+            return true;
+        if (weight_ < rhs.weight_)
+            return false;
+        return mode_ > rhs.mode_;
+    }
+};
+
+struct RuleCode {
+    bool operator ()(const Rule *lhs, const Rule *rhs) const {
+        return lhs->code_ < rhs->code_;
+    }
+};
+
+std::string Bundle(const std::string &root, Folder &folder, const std::string &key, std::map<std::string, std::vector<char>> &remote) {
+    std::string executable;
+    std::string identifier;
+
+    static const std::string info("Info.plist");
+
+    _assert_(folder.Open(info, fun([&](std::streambuf &buffer) {
+        plist_d(buffer, fun([&](PList::Dictionary *dictionary) {
+            executable = plist_s(((*dictionary)["CFBundleExecutable"]));
+            identifier = plist_s(((*dictionary)["CFBundleIdentifier"]));
+        }));
+    })), "open(): Info.plist");
+
+    std::map<std::string, std::multiset<Rule>> versions;
+
+    auto &rules1(versions[""]);
+    auto &rules2(versions["2"]);
+
+    static const std::string signature("_CodeSignature/CodeResources");
+
+    folder.Open(signature, fun([&](std::streambuf &buffer) {
+        plist_d(buffer, fun([&](PList::Dictionary *dictionary) {
+            // XXX: maybe attempt to preserve existing rules
+        }));
+    }));
+
+    if (true) {
+        rules1.insert(Rule{1, NoMode, "^"});
+        rules1.insert(Rule{10000, OmitMode, "^(Frameworks/[^/]+\\.framework/|PlugIns/[^/]+\\.appex/|PlugIns/[^/]+\\.appex/Frameworks/[^/]+\\.framework/|())SC_Info/[^/]+\\.(sinf|supf|supp)$"});
+        rules1.insert(Rule{1000, OptionalMode, "^.*\\.lproj/"});
+        rules1.insert(Rule{1100, OmitMode, "^.*\\.lproj/locversion.plist$"});
+        rules1.insert(Rule{10000, OmitMode, "^Watch/[^/]+\\.app/(Frameworks/[^/]+\\.framework/|PlugIns/[^/]+\\.appex/|PlugIns/[^/]+\\.appex/Frameworks/[^/]+\\.framework/)SC_Info/[^/]+\\.(sinf|supf|supp)$"});
+        rules1.insert(Rule{1, NoMode, "^version.plist$"});
+    }
+
+    if (true) {
+        rules2.insert(Rule{11, NoMode, ".*\\.dSYM($|/)"});
+        rules2.insert(Rule{20, NoMode, "^"});
+        rules2.insert(Rule{2000, OmitMode, "^(.*/)?\\.DS_Store$"});
+        rules2.insert(Rule{10000, OmitMode, "^(Frameworks/[^/]+\\.framework/|PlugIns/[^/]+\\.appex/|PlugIns/[^/]+\\.appex/Frameworks/[^/]+\\.framework/|())SC_Info/[^/]+\\.(sinf|supf|supp)$"});
+        rules2.insert(Rule{10, NestedMode, "^(Frameworks|SharedFrameworks|PlugIns|Plug-ins|XPCServices|Helpers|MacOS|Library/(Automator|Spotlight|LoginItems))/"});
+        rules2.insert(Rule{1, NoMode, "^.*"});
+        rules2.insert(Rule{1000, OptionalMode, "^.*\\.lproj/"});
+        rules2.insert(Rule{1100, OmitMode, "^.*\\.lproj/locversion.plist$"});
+        rules2.insert(Rule{20, OmitMode, "^Info\\.plist$"});
+        rules2.insert(Rule{20, OmitMode, "^PkgInfo$"});
+        rules2.insert(Rule{10000, OmitMode, "^Watch/[^/]+\\.app/(Frameworks/[^/]+\\.framework/|PlugIns/[^/]+\\.appex/|PlugIns/[^/]+\\.appex/Frameworks/[^/]+\\.framework/)SC_Info/[^/]+\\.(sinf|supf|supp)$"});
+        rules2.insert(Rule{10, NestedMode, "^[^/]+$"});
+        rules2.insert(Rule{20, NoMode, "^embedded\\.provisionprofile$"});
+        rules2.insert(Rule{20, NoMode, "^version\\.plist$"});
+    }
+
+    std::map<std::string, std::vector<char>> local;
+
+    static Expression nested("^PlugIns/[^/]*\\.appex/Info\\.plist$");
+
+    folder.Find("", fun([&](const std::string &name, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &code) {
+        if (!nested(name))
+            return;
+        auto bundle(root + Split(name).dir);
+        SubFolder subfolder(&folder, bundle);
+        Bundle(bundle, subfolder, key, local);
+    }));
+
+    folder.Find("", fun([&](const std::string &name, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &code) {
+        if (name == executable || name == signature)
+            return;
+
+        auto &hash(local[name]);
+        if (!hash.empty())
+            return;
+
+        code(fun([&](std::streambuf &data, std::streambuf &save) {
+            HashProxy proxy(hash, save);
+            copy(data, proxy);
+        }));
+
+        _assert(hash.size() == SHA_DIGEST_LENGTH);
+    }));
+
+    PList::Dictionary plist;
+
+    for (const auto &version : versions) {
+        PList::Dictionary files;
+
+        for (const auto &rule : version.second)
+            rule.Compile();
+
+        for (const auto &hash : local)
+            for (const auto &rule : version.second)
+                if (rule(hash.first)) {
+                    if (rule.mode_ == NoMode)
+                        files.Set(hash.first, PList::Data(hash.second));
+                    else if (rule.mode_ == OptionalMode) {
+                        PList::Dictionary entry;
+                        entry.Set("hash", PList::Data(hash.second));
+                        entry.Set("optional", PList::Boolean(true));
+                        files.Set(hash.first, entry);
+                    }
+
+                    break;
+                }
+
+        plist.Set("files" + version.first, files);
+    }
+
+    for (const auto &version : versions) {
+        PList::Dictionary rules;
+
+        std::multiset<const Rule *, RuleCode> ordered;
+        for (const auto &rule : version.second)
+            ordered.insert(&rule);
+
+        for (const auto &rule : ordered)
+            if (rule->weight_ == 1 && rule->mode_ == NoMode)
+                rules.Set(rule->code_, PList::Boolean(true));
+            else {
+                PList::Dictionary entry;
+
+                switch (rule->mode_) {
+                    case NoMode:
+                        break;
+                    case OmitMode:
+                        entry.Set("omit", PList::Boolean(true));
+                        break;
+                    case OptionalMode:
+                        entry.Set("optional", PList::Boolean(true));
+                        break;
+                    case NestedMode:
+                        entry.Set("nested", PList::Boolean(true));
+                        break;
+                    case TopMode:
+                        entry.Set("top", PList::Boolean(true));
+                        break;
+                }
+
+                if (rule->weight_ >= 10000)
+                    entry.Set("weight", PList::Integer(rule->weight_));
+                else if (rule->weight_ != 1)
+                    entry.Set("weight", PList::Real(rule->weight_));
+
+                rules.Set(rule->code_, entry);
+            }
+
+        plist.Set("rules" + version.first, rules);
+    }
+
+    folder.Save(signature, fun([&](std::streambuf &save) {
+        HashProxy proxy(local[signature], save);
+        auto xml(plist.ToXml());
+        put(proxy, xml.data(), xml.size());
+    }));
+
+    folder.Open(executable, fun([&](std::streambuf &buffer) {
+        // XXX: this is a miserable fail
+        std::stringbuf temp;
+        copy(buffer, temp);
+        auto data(temp.str());
+
+        folder.Save(executable, fun([&](std::streambuf &save) {
+            Slots slots;
+            slots[1] = local.at(info);
+            slots[3] = local.at(signature);
+
+            HashProxy proxy(local[executable], save);
+            Sign(data.data(), data.size(), proxy, identifier, "", key, slots);
+        }));
+    }));
+
+    for (const auto &hash : local)
+        remote[root + hash.first] = hash.second;
+
+    return executable;
+}
+
 }
 
 int main(int argc, char *argv[]) {
@@ -1473,9 +1991,9 @@ int main(int argc, char *argv[]) {
                 char *arge;
                 unsigned number(strtoul(slot, &arge, 0));
                 _assert(arge == colon);
-                std::string &hash(slots[number]);
+                std::vector<char> &hash(slots[number]);
                 hash.resize(SHA_DIGEST_LENGTH);
-                sha1(reinterpret_cast<uint8_t *>(&hash[0]), file.data(), file.size());
+                sha1(reinterpret_cast<uint8_t *>(hash.data()), file.data(), file.size());
             } break;
 
             case 'D': flag_D = true; break;
@@ -1548,28 +2066,25 @@ int main(int argc, char *argv[]) {
     _foreach (file, files) try {
         std::string path(file);
 
-        if (flag_S || flag_r) {
+        struct stat info;
+        _syscall(stat(path.c_str(), &info));
+
+        if (S_ISDIR(info.st_mode)) {
+            _assert(!flag_r);
+            ldid::DiskFolder folder(path);
+            std::map<std::string, std::vector<char>> hashes;
+            path += "/" + Bundle("", folder, key, hashes);
+        } else if (flag_S || flag_r) {
             Map input(path, O_RDONLY, PROT_READ, MAP_PRIVATE);
 
-            std::string dir;
-            std::string base;
-
-            size_t slash(path.rfind('/'));
-            if (slash == std::string::npos)
-                base = path;
-            else {
-                dir = path.substr(0, slash + 1);
-                base = path.substr(slash + 1);
-            }
-
-            std::string temp(dir + "." + base + ".cs");
             std::filebuf output;
-            _assert(output.open(temp.c_str(), std::ios::out | std::ios::trunc | std::ios::binary) == &output);
+            Split split(path);
+            auto temp(Temporary(output, split));
 
             if (flag_r)
                 ldid::Unsign(input.data(), input.size(), output);
             else {
-                std::string identifier(flag_I ?: base.c_str());
+                std::string identifier(flag_I ?: split.base.c_str());
                 ldid::Sign(input.data(), input.size(), output, identifier, entitlements, key, slots);
             }
 

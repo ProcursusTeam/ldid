@@ -45,7 +45,47 @@ FunctorImpl<decltype(&Function_::operator())> fun(const Function_ &value) {
     return value;
 }
 
-typedef std::map<uint32_t, std::string> Slots;
+class Folder {
+  public:
+    virtual void Save(const std::string &path, const Functor<void (std::streambuf &)> &code) = 0;
+    virtual bool Open(const std::string &path, const Functor<void (std::streambuf &)> &code) = 0;
+    virtual void Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code) = 0;
+};
+
+class DiskFolder :
+    public Folder
+{
+  private:
+    const std::string path_;
+    std::map<std::string, std::string> commit_;
+
+    std::string Path(const std::string &path);
+
+  public:
+    DiskFolder(const std::string &path);
+    ~DiskFolder();
+
+    virtual void Save(const std::string &path, const Functor<void (std::streambuf &)> &code);
+    virtual bool Open(const std::string &path, const Functor<void (std::streambuf &)> &code);
+    virtual void Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code);
+};
+
+class SubFolder :
+    public Folder
+{
+  private:
+    Folder *parent_;
+    std::string path_;
+
+  public:
+    SubFolder(Folder *parent, const std::string &path);
+
+    virtual void Save(const std::string &path, const Functor<void (std::streambuf &)> &code);
+    virtual bool Open(const std::string &path, const Functor<void (std::streambuf &)> &code);
+    virtual void Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code);
+};
+
+typedef std::map<uint32_t, std::vector<char>> Slots;
 
 void Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &key, const Slots &slots);
 
