@@ -51,14 +51,15 @@
     #line
 #define _assert__(line) \
     _assert___(line)
-#define _assert_(e) \
-    throw __FILE__ "(" _assert__(__LINE__) "): _assert(" e ")"
+
+#define _assert_(expr, format, ...) \
+    do if (!(expr)) { \
+        fprintf(stderr, "%s(%u): _assert(): " format "\n", __FILE__, __LINE__, ## __VA_ARGS__); \
+        throw __FILE__ "(" _assert__(__LINE__) "): _assert(" #expr ")"; \
+    } while (false)
 
 #define _assert(expr) \
-    do if (!(expr)) { \
-        fprintf(stderr, "%s(%u): _assert(%s); errno=%u\n", __FILE__, __LINE__, #expr, errno); \
-        _assert_(#expr); \
-    } while (false)
+    _assert_(expr, "%s", #expr)
 
 #define _syscall(expr) ({ \
     __typeof__(expr) _value; \
@@ -68,7 +69,7 @@
         case EINTR: \
             continue; \
         default: \
-            _assert(false); \
+            _assert_(false, "errno=%u", errno); \
     } while (true); \
     _value; \
 })
