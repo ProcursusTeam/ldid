@@ -57,7 +57,7 @@ done
 
 set -x
 
-plist=(-Llibplist/src/.libs -lplist++)
+plist=(-Llibplist/src/.libs -lplist)
 
 "${flags[@]}" -c -std=c++11 -o "${out}"/ldid.o ldid.cpp
 "${flags[@]}" -o "${out}"/ldid "${out}"/ldid.o "${os[@]}" -x c lookup2.c -lxml2 -lcrypto "${plist[@]}"

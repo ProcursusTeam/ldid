@@ -48,7 +48,7 @@
 #include <openssl/pkcs12.h>
 #include <openssl/sha.h>
 
-#include <plist/plist++.h>
+#include <plist/plist.h>
 
 #include "ldid.hpp"
 
@@ -1674,27 +1674,32 @@ static size_t copy(std::streambuf &source, std::streambuf &target) {
     return total;
 }
 
-static PList::Structure *plist(const std::string &data) {
-    if (!Starts(data, "bplist00"))
-        return PList::Structure::FromXml(data);
-    std::vector<char> bytes(data.data(), data.data() + data.size());
-    return PList::Structure::FromBin(bytes);
+static plist_t plist(const std::string &data) {
+    plist_t plist(NULL);
+    if (Starts(data, "bplist00"))
+        plist_from_bin(data.data(), data.size(), &plist);
+    else
+        plist_from_xml(data.data(), data.size(), &plist);
+    _assert(plist != NULL);
+    return plist;
 }
 
-static void plist_d(std::streambuf &buffer, const Functor<void (PList::Dictionary *)> &code) {
+static void plist_d(std::streambuf &buffer, const Functor<void (plist_t)> &code) {
     std::stringbuf data;
     copy(buffer, data);
-    PList::Structure *structure(plist(data.str()));
-    _scope({ delete structure; });
-    auto dictionary(dynamic_cast<PList::Dictionary *>(structure));
-    _assert(dictionary != NULL);
-    code(dictionary);
+    auto node(plist(data.str()));
+    _scope({ plist_free(node); });
+    _assert(plist_get_node_type(node) == PLIST_DICT);
+    code(node);
 }
 
-static std::string plist_s(PList::Node *node) {
-    auto value(dynamic_cast<PList::String *>(node));
-    _assert(value != NULL);
-    return value->GetValue();
+static std::string plist_s(plist_t node) {
+    _assert(node != NULL);
+    _assert(plist_get_node_type(node) == PLIST_STRING);
+    char *data;
+    plist_get_string_val(node, &data);
+    _scope({ free(data); });
+    return data;
 }
 
 enum Mode {
@@ -1779,9 +1784,9 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
     static const std::string info("Info.plist");
 
     _assert_(folder.Open(info, fun([&](std::streambuf &buffer) {
-        plist_d(buffer, fun([&](PList::Dictionary *dictionary) {
-            executable = plist_s(((*dictionary)["CFBundleExecutable"]));
-            identifier = plist_s(((*dictionary)["CFBundleIdentifier"]));
+        plist_d(buffer, fun([&](plist_t node) {
+            executable = plist_s(plist_dict_get_item(node, "CFBundleExecutable"));
+            identifier = plist_s(plist_dict_get_item(node, "CFBundleIdentifier"));
         }));
     })), "open(): Info.plist");
 
@@ -1793,7 +1798,7 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
     static const std::string signature("_CodeSignature/CodeResources");
 
     folder.Open(signature, fun([&](std::streambuf &buffer) {
-        plist_d(buffer, fun([&](PList::Dictionary *dictionary) {
+        plist_d(buffer, fun([&](plist_t node) {
             // XXX: maybe attempt to preserve existing rules
         }));
     }));
@@ -1852,10 +1857,12 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
         _assert(hash.size() == SHA_DIGEST_LENGTH);
     }));
 
-    PList::Dictionary plist;
+    auto plist(plist_new_dict());
+    _scope({ plist_free(plist); });
 
     for (const auto &version : versions) {
-        PList::Dictionary files;
+        auto files(plist_new_dict());
+        plist_dict_set_item(plist, ("files" + version.first).c_str(), files);
 
         for (const auto &rule : version.second)
             rule.Compile();
@@ -1864,22 +1871,21 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
             for (const auto &rule : version.second)
                 if (rule(hash.first)) {
                     if (rule.mode_ == NoMode)
-                        files.Set(hash.first, PList::Data(hash.second));
+                        plist_dict_set_item(files, hash.first.c_str(), plist_new_data(hash.second.data(), hash.second.size()));
                     else if (rule.mode_ == OptionalMode) {
-                        PList::Dictionary entry;
-                        entry.Set("hash", PList::Data(hash.second));
-                        entry.Set("optional", PList::Boolean(true));
-                        files.Set(hash.first, entry);
+                        auto entry(plist_new_dict());
+                        plist_dict_set_item(entry, "hash", plist_new_data(hash.second.data(), hash.second.size()));
+                        plist_dict_set_item(entry, "optional", plist_new_bool(true));
+                        plist_dict_set_item(files, hash.first.c_str(), entry);
                     }
 
                     break;
                 }
-
-        plist.Set("files" + version.first, files);
     }
 
     for (const auto &version : versions) {
-        PList::Dictionary rules;
+        auto rules(plist_new_dict());
+        plist_dict_set_item(plist, ("rules" + version.first).c_str(), rules);
 
         std::multiset<const Rule *, RuleCode> ordered;
         for (const auto &rule : version.second)
@@ -1887,42 +1893,42 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
 
         for (const auto &rule : ordered)
             if (rule->weight_ == 1 && rule->mode_ == NoMode)
-                rules.Set(rule->code_, PList::Boolean(true));
+                plist_dict_set_item(rules, rule->code_.c_str(), plist_new_bool(true));
             else {
-                PList::Dictionary entry;
+                auto entry(plist_new_dict());
+                plist_dict_set_item(rules, rule->code_.c_str(), entry);
 
                 switch (rule->mode_) {
                     case NoMode:
                         break;
                     case OmitMode:
-                        entry.Set("omit", PList::Boolean(true));
+                        plist_dict_set_item(entry, "omit", plist_new_bool(true));
                         break;
                     case OptionalMode:
-                        entry.Set("optional", PList::Boolean(true));
+                        plist_dict_set_item(entry, "optional", plist_new_bool(true));
                         break;
                     case NestedMode:
-                        entry.Set("nested", PList::Boolean(true));
+                        plist_dict_set_item(entry, "nested", plist_new_bool(true));
                         break;
                     case TopMode:
-                        entry.Set("top", PList::Boolean(true));
+                        plist_dict_set_item(entry, "top", plist_new_bool(true));
                         break;
                 }
 
                 if (rule->weight_ >= 10000)
-                    entry.Set("weight", PList::Integer(rule->weight_));
+                    plist_dict_set_item(entry, "weight", plist_new_uint(rule->weight_));
                 else if (rule->weight_ != 1)
-                    entry.Set("weight", PList::Real(rule->weight_));
-
-                rules.Set(rule->code_, entry);
+                    plist_dict_set_item(entry, "weight", plist_new_real(rule->weight_));
             }
-
-        plist.Set("rules" + version.first, rules);
     }
 
     folder.Save(signature, fun([&](std::streambuf &save) {
         HashProxy proxy(local[signature], save);
-        auto xml(plist.ToXml());
-        put(proxy, xml.data(), xml.size());
+        char *xml(NULL);
+        uint32_t size;
+        plist_to_xml(plist, &xml, &size);
+        _scope({ free(xml); });
+        put(proxy, xml, size);
     }));
 
     folder.Open(executable, fun([&](std::streambuf &buffer) {
