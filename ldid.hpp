@@ -91,8 +91,21 @@ class UnionFolder :
     public Folder
 {
   private:
+    class StringBuffer :
+        public std::stringbuf
+    {
+      public:
+        StringBuffer() {
+        }
+
+        StringBuffer(const StringBuffer &rhs) :
+            std::stringbuf(rhs.str())
+        {
+        }
+    };
+
     Folder &parent_;
-    std::map<std::string, std::stringbuf> files_;
+    std::map<std::string, StringBuffer> files_;
 
   public:
     UnionFolder(Folder &parent);
