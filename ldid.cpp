@@ -1643,22 +1643,22 @@ void DiskFolder::Find(const std::string &path, const Functor<void (const std::st
     Find(path, "", code);
 }
 
-SubFolder::SubFolder(Folder *parent, const std::string &path) :
+SubFolder::SubFolder(Folder &parent, const std::string &path) :
     parent_(parent),
     path_(path)
 {
 }
 
 void SubFolder::Save(const std::string &path, const Functor<void (std::streambuf &)> &code) {
-    return parent_->Save(path_ + path, code);
+    return parent_.Save(path_ + path, code);
 }
 
 bool SubFolder::Open(const std::string &path, const Functor<void (std::streambuf &)> &code) {
-    return parent_->Open(path_ + path, code);
+    return parent_.Open(path_ + path, code);
 }
 
 void SubFolder::Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code) {
-    return parent_->Find(path_ + path, code);
+    return parent_.Find(path_ + path, code);
 }
 
 static size_t copy(std::streambuf &source, std::streambuf &target) {
@@ -1837,7 +1837,7 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
         if (!nested(name))
             return;
         auto bundle(root + Split(name).dir);
-        SubFolder subfolder(&folder, bundle);
+        SubFolder subfolder(folder, bundle);
         Bundle(bundle, subfolder, key, local);
     }));
 

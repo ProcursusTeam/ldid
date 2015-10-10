@@ -76,11 +76,11 @@ class SubFolder :
     public Folder
 {
   private:
-    Folder *parent_;
+    Folder &parent_;
     std::string path_;
 
   public:
-    SubFolder(Folder *parent, const std::string &path);
+    SubFolder(Folder &parent, const std::string &path);
 
     virtual void Save(const std::string &path, const Functor<void (std::streambuf &)> &code);
     virtual bool Open(const std::string &path, const Functor<void (std::streambuf &)> &code);
