@@ -46,7 +46,24 @@
 #include <openssl/pem.h>
 #include <openssl/pkcs7.h>
 #include <openssl/pkcs12.h>
+
+#ifdef __APPLE__
+#include <CommonCrypto/CommonDigest.h>
+#define LDID_SHA1_DIGEST_LENGTH CC_SHA1_DIGEST_LENGTH
+#define LDID_SHA1 CC_SHA1
+#define LDID_SHA1_CTX CC_SHA1_CTX
+#define LDID_SHA1_Init CC_SHA1_Init
+#define LDID_SHA1_Update CC_SHA1_Update
+#define LDID_SHA1_Final CC_SHA1_Final
+#else
 #include <openssl/sha.h>
+#define LDID_SHA1_DIGEST_LENGTH SHA_DIGEST_LENGTH
+#define LDID_SHA1 SHA1
+#define LDID_SHA1_CTX SHA_CTX
+#define LDID_SHA1_Init SHA1_Init
+#define LDID_SHA1_Update SHA1_Update
+#define LDID_SHA1_Final SHA1_Final
+#endif
 
 #include <plist/plist.h>
 
@@ -843,7 +860,7 @@ struct CodeDirectory {
 extern "C" uint32_t hash(uint8_t *k, uint32_t length, uint32_t initval);
 
 static void sha1(uint8_t *hash, const void *data, size_t size) {
-    SHA1(static_cast<const uint8_t *>(data), size, hash);
+    LDID_SHA1(static_cast<const uint8_t *>(data), size, hash);
 }
 
 struct CodesignAllocation {
@@ -1317,22 +1334,22 @@ class HashBuffer :
 {
   private:
     std::vector<char> &hash_;
-    SHA_CTX context_;
+    LDID_SHA1_CTX context_;
 
   public:
     HashBuffer(std::vector<char> &hash) :
         hash_(hash)
     {
-        SHA1_Init(&context_);
+        LDID_SHA1_Init(&context_);
     }
 
     ~HashBuffer() {
-        hash_.resize(SHA_DIGEST_LENGTH);
-        SHA1_Final(reinterpret_cast<uint8_t *>(hash_.data()), &context_);
+        hash_.resize(LDID_SHA1_DIGEST_LENGTH);
+        LDID_SHA1_Final(reinterpret_cast<uint8_t *>(hash_.data()), &context_);
     }
 
     virtual std::streamsize xsputn(const char_type *data, std::streamsize size) {
-        SHA1_Update(&context_, data, size);
+        LDID_SHA1_Update(&context_, data, size);
         return size;
     }
 
@@ -1455,7 +1472,7 @@ void Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
             special = std::max(special, slot.first);
 
         uint32_t normal((size + PageSize_ - 1) / PageSize_);
-        alloc = Align(alloc + (special + normal) * SHA_DIGEST_LENGTH, 16);
+        alloc = Align(alloc + (special + normal) * LDID_SHA1_DIGEST_LENGTH, 16);
         return alloc;
     }), fun([&](std::streambuf &output, size_t limit, const std::string &overlap, const char *top) -> size_t {
         Blobs blobs;
@@ -1488,12 +1505,12 @@ void Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
             CodeDirectory directory;
             directory.version = Swap(uint32_t(0x00020001));
             directory.flags = Swap(uint32_t(0));
-            directory.hashOffset = Swap(uint32_t(sizeof(Blob) + sizeof(CodeDirectory) + identifier.size() + 1 + SHA_DIGEST_LENGTH * special));
+            directory.hashOffset = Swap(uint32_t(sizeof(Blob) + sizeof(CodeDirectory) + identifier.size() + 1 + LDID_SHA1_DIGEST_LENGTH * special));
             directory.identOffset = Swap(uint32_t(sizeof(Blob) + sizeof(CodeDirectory)));
             directory.nSpecialSlots = Swap(special);
             directory.codeLimit = Swap(uint32_t(limit));
             directory.nCodeSlots = Swap(normal);
-            directory.hashSize = SHA_DIGEST_LENGTH;
+            directory.hashSize = LDID_SHA1_DIGEST_LENGTH;
             directory.hashType = CS_HASHTYPE_SHA1;
             directory.spare1 = 0x00;
             directory.pageSize = PageShift_;
@@ -1502,8 +1519,8 @@ void Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
 
             put(data, identifier.c_str(), identifier.size() + 1);
 
-            uint8_t storage[special + normal][SHA_DIGEST_LENGTH];
-            uint8_t (*hashes)[SHA_DIGEST_LENGTH] = storage + special;
+            uint8_t storage[special + normal][LDID_SHA1_DIGEST_LENGTH];
+            uint8_t (*hashes)[LDID_SHA1_DIGEST_LENGTH] = storage + special;
 
             memset(storage, 0, sizeof(*storage) * special);
 
@@ -1889,7 +1906,7 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
             copy(data, proxy);
         }));
 
-        _assert(hash.size() == SHA_DIGEST_LENGTH);
+        _assert(hash.size() == LDID_SHA1_DIGEST_LENGTH);
     }));
 
     auto plist(plist_new_dict());
@@ -2056,7 +2073,7 @@ int main(int argc, char *argv[]) {
                 unsigned number(strtoul(slot, &arge, 0));
                 _assert(arge == colon);
                 std::vector<char> &hash(slots[number]);
-                hash.resize(SHA_DIGEST_LENGTH);
+                hash.resize(LDID_SHA1_DIGEST_LENGTH);
                 sha1(reinterpret_cast<uint8_t *>(hash.data()), file.data(), file.size());
             } break;
 
@@ -2234,7 +2251,7 @@ int main(int argc, char *argv[]) {
                         uint32_t begin = Swap(super->index[index].offset);
                         struct CodeDirectory *directory = reinterpret_cast<struct CodeDirectory *>(blob + begin);
 
-                        uint8_t (*hashes)[SHA_DIGEST_LENGTH] = reinterpret_cast<uint8_t (*)[SHA_DIGEST_LENGTH]>(blob + begin + Swap(directory->hashOffset));
+                        uint8_t (*hashes)[LDID_SHA1_DIGEST_LENGTH] = reinterpret_cast<uint8_t (*)[LDID_SHA1_DIGEST_LENGTH]>(blob + begin + Swap(directory->hashOffset));
                         uint32_t pages = Swap(directory->nCodeSlots);
 
                         if (pages != 1)
