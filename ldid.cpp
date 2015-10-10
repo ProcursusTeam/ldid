@@ -1661,6 +1661,41 @@ void SubFolder::Find(const std::string &path, const Functor<void (const std::str
     return parent_.Find(path_ + path, code);
 }
 
+UnionFolder::UnionFolder(Folder &parent) :
+    parent_(parent)
+{
+}
+
+void UnionFolder::Save(const std::string &path, const Functor<void (std::streambuf &)> &code) {
+    return parent_.Save(path, code);
+}
+
+bool UnionFolder::Open(const std::string &path, const Functor<void (std::streambuf &)> &code) {
+    auto file(files_.find(path));
+    if (file == files_.end())
+        return parent_.Open(path, code);
+
+    auto &data(file->second);
+    data.pubseekpos(0, std::ios::in);
+    code(data);
+    return true;
+}
+
+void UnionFolder::Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code) {
+    parent_.Find(path, fun([&](const std::string &name, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &save) {
+        if (files_.find(name) == files_.end())
+            code(name, save);
+    }));
+
+    for (auto &file : files_)
+        code(file.first, fun([&](const Functor<void (std::streambuf &, std::streambuf &)> &code) {
+            parent_.Save(file.first, fun([&](std::streambuf &save) {
+                file.second.pubseekpos(0, std::ios::in);
+                code(file.second, save);
+            }));
+        }));
+}
+
 static size_t copy(std::streambuf &source, std::streambuf &target) {
     size_t total(0);
     for (;;) {

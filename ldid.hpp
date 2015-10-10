@@ -87,6 +87,25 @@ class SubFolder :
     virtual void Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code);
 };
 
+class UnionFolder :
+    public Folder
+{
+  private:
+    Folder &parent_;
+    std::map<std::string, std::stringbuf> files_;
+
+  public:
+    UnionFolder(Folder &parent);
+
+    virtual void Save(const std::string &path, const Functor<void (std::streambuf &)> &code);
+    virtual bool Open(const std::string &path, const Functor<void (std::streambuf &)> &code);
+    virtual void Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code);
+
+    std::stringbuf &operator [](const std::string &path) {
+        return files_[path];
+    }
+};
+
 std::string Bundle(const std::string &root, Folder &folder, const std::string &key, std::map<std::string, std::vector<char>> &remote);
 
 typedef std::map<uint32_t, std::vector<char>> Slots;
