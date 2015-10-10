@@ -106,7 +106,7 @@ class UnionFolder :
     }
 };
 
-std::string Bundle(const std::string &root, Folder &folder, const std::string &key, std::map<std::string, std::vector<char>> &remote);
+std::string Bundle(const std::string &root, Folder &folder, const std::string &key, std::map<std::string, std::vector<char>> &remote, const std::string &entitlements);
 
 typedef std::map<uint32_t, std::vector<char>> Slots;
 

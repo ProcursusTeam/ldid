@@ -1812,7 +1812,7 @@ struct RuleCode {
     }
 };
 
-std::string Bundle(const std::string &root, Folder &folder, const std::string &key, std::map<std::string, std::vector<char>> &remote) {
+std::string Bundle(const std::string &root, Folder &folder, const std::string &key, std::map<std::string, std::vector<char>> &remote, const std::string &entitlements) {
     std::string executable;
     std::string identifier;
 
@@ -1873,7 +1873,7 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
             return;
         auto bundle(root + Split(name).dir);
         SubFolder subfolder(folder, bundle);
-        Bundle(bundle, subfolder, key, local);
+        Bundle(bundle, subfolder, key, local, "");
     }));
 
     folder.Find("", fun([&](const std::string &name, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &code) {
@@ -1978,7 +1978,7 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
             slots[3] = local.at(signature);
 
             HashProxy proxy(local[executable], save);
-            Sign(data.data(), data.size(), proxy, identifier, "", key, slots);
+            Sign(data.data(), data.size(), proxy, identifier, entitlements, key, slots);
         }));
     }));
 
@@ -2137,7 +2137,7 @@ int main(int argc, char *argv[]) {
             _assert(!flag_r);
             ldid::DiskFolder folder(path);
             std::map<std::string, std::vector<char>> hashes;
-            path += "/" + Bundle("", folder, key, hashes);
+            path += "/" + Bundle("", folder, key, hashes, entitlements);
         } else if (flag_S || flag_r) {
             Map input(path, O_RDONLY, PROT_READ, MAP_PRIVATE);
 
