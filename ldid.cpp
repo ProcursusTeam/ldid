@@ -857,7 +857,9 @@ struct CodeDirectory {
     uint32_t spare2;
 } _packed;
 
+#ifndef LDID_NOFLAGT
 extern "C" uint32_t hash(uint8_t *k, uint32_t length, uint32_t initval);
+#endif
 
 static void sha1(uint8_t *hash, const void *data, size_t size) {
     LDID_SHA1(static_cast<const uint8_t *>(data), size, hash);
@@ -2020,7 +2022,9 @@ int main(int argc, char *argv[]) {
     bool flag_r(false);
     bool flag_e(false);
 
+#ifndef LDID_NOFLAGT
     bool flag_T(false);
+#endif
 
     bool flag_S(false);
     bool flag_s(false);
@@ -2035,8 +2039,10 @@ int main(int argc, char *argv[]) {
 
     const char *flag_I(NULL);
 
+#ifndef LDID_NOFLAGT
     bool timeh(false);
     uint32_t timev(0);
+#endif
 
     Map entitlements;
     Map key;
@@ -2116,6 +2122,7 @@ int main(int argc, char *argv[]) {
                 key.open(argv[argi] + 2, O_RDONLY, PROT_READ, MAP_PRIVATE);
             break;
 
+#ifndef LDID_NOFLAGT
             case 'T': {
                 flag_T = true;
                 if (argv[argi][2] == '-')
@@ -2126,6 +2133,7 @@ int main(int argc, char *argv[]) {
                     _assert(arge == argv[argi] + strlen(argv[argi]));
                 }
             } break;
+#endif
 
             case 'I': {
                 flag_I = argv[argi] + 2;
@@ -2172,7 +2180,15 @@ int main(int argc, char *argv[]) {
             Commit(path, temp);
         }
 
-        Map mapping(path, flag_T || flag_s);
+        bool modify(false);
+#ifndef LDID_NOFLAGT
+        if (flag_T)
+            modify = true;
+#endif
+        if (flag_s)
+            modify = true;
+
+        Map mapping(path, modify);
         FatHeader fat_header(mapping.data(), mapping.size());
 
         _foreach (mach_header, fat_header.GetMachHeaders()) {
@@ -2197,6 +2213,7 @@ int main(int argc, char *argv[]) {
                     signature = reinterpret_cast<struct linkedit_data_command *>(load_command);
                 else if (cmd == LC_ENCRYPTION_INFO || cmd == LC_ENCRYPTION_INFO_64)
                     encryption = reinterpret_cast<struct encryption_info_command *>(load_command);
+#ifndef LDID_NOFLAGT
                 else if (cmd == LC_ID_DYLIB) {
                     volatile struct dylib_command *dylib_command(reinterpret_cast<struct dylib_command *>(load_command));
 
@@ -2213,6 +2230,7 @@ int main(int argc, char *argv[]) {
                         dylib_command->dylib.timestamp = mach_header.Swap(timed);
                     }
                 }
+#endif
             }
 
             if (flag_D) {
