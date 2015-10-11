@@ -3,8 +3,10 @@
 
 #include <cstdlib>
 #include <map>
+#include <sstream>
 #include <streambuf>
 #include <string>
+#include <vector>
 
 namespace ldid {
 
