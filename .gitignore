@@ -3,4 +3,5 @@ out
 ldid
 ldid.deb
 debs
+*.o
 _
