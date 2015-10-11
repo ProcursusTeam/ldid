@@ -42,10 +42,12 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+#ifndef LDID_NOSMIME
 #include <openssl/err.h>
 #include <openssl/pem.h>
 #include <openssl/pkcs7.h>
 #include <openssl/pkcs12.h>
+#endif
 
 #ifdef __APPLE__
 #include <CommonCrypto/CommonDigest.h>
@@ -65,7 +67,9 @@
 #define LDID_SHA1_Final SHA1_Final
 #endif
 
+#ifndef LDID_NOPLIST
 #include <plist/plist.h>
+#endif
 
 #include "ldid.hpp"
 
@@ -74,11 +78,20 @@
 #define _assert__(line) \
     _assert___(line)
 
+#ifdef __EXCEPTIONS
 #define _assert_(expr, format, ...) \
     do if (!(expr)) { \
         fprintf(stderr, "%s(%u): _assert(): " format "\n", __FILE__, __LINE__, ## __VA_ARGS__); \
         throw __FILE__ "(" _assert__(__LINE__) "): _assert(" #expr ")"; \
     } while (false)
+#else
+// XXX: this is not acceptable
+#define _assert_(expr, format, ...) \
+    do if (!(expr)) { \
+        fprintf(stderr, "%s(%u): _assert(): " format "\n", __FILE__, __LINE__, ## __VA_ARGS__); \
+        exit(-1); \
+    } while (false)
+#endif
 
 #define _assert(expr) \
     _assert_(expr, "%s", #expr)
@@ -1204,6 +1217,7 @@ static size_t put(std::streambuf &output, uint32_t magic, const Blobs &blobs) {
     return offset;
 }
 
+#ifndef LDID_NOSMIME
 class Buffer {
   private:
     BIO *bio_;
@@ -1317,6 +1331,7 @@ class Signature {
         return value_;
     }
 };
+#endif
 
 class NullBuffer :
     public std::streambuf
@@ -1547,6 +1562,7 @@ void Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
             insert(blobs, CSSLOT_CODEDIRECTORY, CSMAGIC_CODEDIRECTORY, data);
         }
 
+#ifndef LDID_NOSMIME
         if (!key.empty()) {
             std::stringbuf data;
             const std::string &sign(blobs[CSSLOT_CODEDIRECTORY]);
@@ -1561,6 +1577,7 @@ void Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
 
             insert(blobs, CSSLOT_SIGNATURESLOT, CSMAGIC_BLOBWRAPPER, data);
         }
+#endif
 
         return put(output, CSMAGIC_EMBEDDED_SIGNATURE, blobs);
     }));
@@ -1728,6 +1745,7 @@ static size_t copy(std::streambuf &source, std::streambuf &target) {
     return total;
 }
 
+#ifndef LDID_NOPLIST
 static plist_t plist(const std::string &data) {
     plist_t plist(NULL);
     if (Starts(data, "bplist00"))
@@ -1755,6 +1773,7 @@ static std::string plist_s(plist_t node) {
     _scope({ free(data); });
     return data;
 }
+#endif
 
 enum Mode {
     NoMode,
@@ -1831,6 +1850,7 @@ struct RuleCode {
     }
 };
 
+#ifndef LDID_NOPLIST
 std::string Bundle(const std::string &root, Folder &folder, const std::string &key, std::map<std::string, std::vector<char>> &remote, const std::string &entitlements) {
     std::string executable;
     std::string identifier;
@@ -2006,11 +2026,14 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
 
     return executable;
 }
+#endif
 
 }
 
 int main(int argc, char *argv[]) {
+#ifndef LDID_NOSMIME
     OpenSSL_add_all_algorithms();
+#endif
 
     union {
         uint16_t word;
@@ -2159,10 +2182,14 @@ int main(int argc, char *argv[]) {
         _syscall(stat(path.c_str(), &info));
 
         if (S_ISDIR(info.st_mode)) {
+#ifndef LDID_NOPLIST
             _assert(!flag_r);
             ldid::DiskFolder folder(path);
             std::map<std::string, std::vector<char>> hashes;
             path += "/" + Bundle("", folder, key, hashes, entitlements);
+#else
+            _assert(false);
+#endif
         } else if (flag_S || flag_r) {
             Map input(path, O_RDONLY, PROT_READ, MAP_PRIVATE);
 
