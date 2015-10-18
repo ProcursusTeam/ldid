@@ -227,6 +227,16 @@ struct load_command {
 #define LC_DYLD_INFO_ONLY     uint32_t(0x22 | LC_REQ_DYLD)
 #define LC_ENCRYPTION_INFO_64 uint32_t(0x2c)
 
+union Version {
+    struct {
+        uint8_t patch;
+        uint8_t minor;
+        uint16_t major;
+    } _packed;
+
+    uint32_t value;
+};
+
 struct dylib {
     uint32_t name;
     uint32_t timestamp;
@@ -2057,6 +2067,8 @@ int main(int argc, char *argv[]) {
     bool flag_A(false);
     bool flag_a(false);
 
+    bool flag_u(false);
+
     uint32_t flag_CPUType(_not(uint32_t));
     uint32_t flag_CPUSubtype(_not(uint32_t));
 
@@ -2158,6 +2170,10 @@ int main(int argc, char *argv[]) {
             } break;
 #endif
 
+            case 'u': {
+                flag_u = true;
+            } break;
+
             case 'I': {
                 flag_I = argv[argi] + 2;
             } break;
@@ -2240,6 +2256,18 @@ int main(int argc, char *argv[]) {
                     signature = reinterpret_cast<struct linkedit_data_command *>(load_command);
                 else if (cmd == LC_ENCRYPTION_INFO || cmd == LC_ENCRYPTION_INFO_64)
                     encryption = reinterpret_cast<struct encryption_info_command *>(load_command);
+                else if (cmd == LC_LOAD_DYLIB) {
+                    volatile struct dylib_command *dylib_command(reinterpret_cast<struct dylib_command *>(load_command));
+                    const char *name(reinterpret_cast<const char *>(load_command) + mach_header.Swap(dylib_command->dylib.name));
+
+                    if (strcmp(name, "/System/Library/Frameworks/UIKit.framework/UIKit") == 0) {
+                        if (flag_u) {
+                            Version version;
+                            version.value = mach_header.Swap(dylib_command->dylib.current_version);
+                            printf("uikit=%u.%u.%u\n", version.major, version.minor, version.patch);
+                        }
+                    }
+                }
 #ifndef LDID_NOFLAGT
                 else if (cmd == LC_ID_DYLIB) {
                     volatile struct dylib_command *dylib_command(reinterpret_cast<struct dylib_command *>(load_command));
