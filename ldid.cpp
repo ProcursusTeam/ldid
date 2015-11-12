@@ -907,6 +907,7 @@ struct CodesignAllocation {
     }
 };
 
+#ifndef LDID_NOTOOLS
 class File {
   private:
     int file_;
@@ -1005,6 +1006,7 @@ class Map {
         return std::string(static_cast<char *>(data_), size_);
     }
 };
+#endif
 
 namespace ldid {
 
@@ -1408,6 +1410,7 @@ class HashProxy :
     }
 };
 
+#ifndef LDID_NOTOOLS
 static bool Starts(const std::string &lhs, const std::string &rhs) {
     return lhs.size() >= rhs.size() && lhs.compare(0, rhs.size(), rhs) == 0;
 }
@@ -1462,6 +1465,7 @@ static void Commit(const std::string &path, const std::string &temp) {
 
     _syscall(rename(temp.c_str(), path.c_str()));
 }
+#endif
 
 namespace ldid {
 
@@ -1593,6 +1597,7 @@ void Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
     }));
 }
 
+#ifndef LDID_NOTOOLS
 static void Unsign(void *idata, size_t isize, std::streambuf &output) {
     Allocate(idata, isize, output, fun([](size_t size) -> size_t {
         return 0;
@@ -1688,6 +1693,7 @@ bool DiskFolder::Open(const std::string &path, const Functor<void (std::streambu
 void DiskFolder::Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)>&code) {
     Find(path, "", code);
 }
+#endif
 
 SubFolder::SubFolder(Folder &parent, const std::string &path) :
     parent_(parent),
@@ -1742,6 +1748,7 @@ void UnionFolder::Find(const std::string &path, const Functor<void (const std::s
         }));
 }
 
+#ifndef LDID_NOTOOLS
 static size_t copy(std::streambuf &source, std::streambuf &target) {
     size_t total(0);
     for (;;) {
@@ -2038,8 +2045,10 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
 }
 #endif
 
+#endif
 }
 
+#ifndef LDID_NOTOOLS
 int main(int argc, char *argv[]) {
 #ifndef LDID_NOSMIME
     OpenSSL_add_all_algorithms();
@@ -2344,3 +2353,4 @@ int main(int argc, char *argv[]) {
 
     return filee;
 }
+#endif
