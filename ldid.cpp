@@ -542,9 +542,6 @@ static inline int64_t Swap(int64_t value) {
     return Swap(static_cast<uint64_t>(value));
 }
 
-template <typename Target_>
-class Pointer;
-
 class Swapped {
   protected:
     bool swapped_;
@@ -669,85 +666,9 @@ class MachHeader :
         return load_commands;
     }
 
-    std::vector<segment_command *> GetSegments(const char *segment_name) const {
-        std::vector<struct segment_command *> segment_commands;
-
-        _foreach (load_command, GetLoadCommands()) {
-            if (Swap(load_command->cmd) == LC_SEGMENT) {
-                segment_command *segment_command = reinterpret_cast<struct segment_command *>(load_command);
-                if (strncmp(segment_command->segname, segment_name, 16) == 0)
-                    segment_commands.push_back(segment_command);
-            }
-        }
-
-        return segment_commands;
-    }
-
-    std::vector<segment_command_64 *> GetSegments64(const char *segment_name) const {
-        std::vector<struct segment_command_64 *> segment_commands;
-
-        _foreach (load_command, GetLoadCommands()) {
-            if (Swap(load_command->cmd) == LC_SEGMENT_64) {
-                segment_command_64 *segment_command = reinterpret_cast<struct segment_command_64 *>(load_command);
-                if (strncmp(segment_command->segname, segment_name, 16) == 0)
-                    segment_commands.push_back(segment_command);
-            }
-        }
-
-        return segment_commands;
-    }
-
-    std::vector<section *> GetSections(const char *segment_name, const char *section_name) const {
-        std::vector<section *> sections;
-
-        _foreach (segment, GetSegments(segment_name)) {
-            section *section = (struct section *) (segment + 1);
-
-            uint32_t sect;
-            for (sect = 0; sect != Swap(segment->nsects); ++sect) {
-                if (strncmp(section->sectname, section_name, 16) == 0)
-                    sections.push_back(section);
-                ++section;
-            }
-        }
-
-        return sections;
-    }
-
     template <typename Target_>
-    Pointer<Target_> GetPointer(uint32_t address, const char *segment_name = NULL) const {
-        load_command *load_command = (struct load_command *) (mach_header_ + 1);
-        uint32_t cmd;
-
-        for (cmd = 0; cmd != Swap(mach_header_->ncmds); ++cmd) {
-            if (Swap(load_command->cmd) == LC_SEGMENT) {
-                segment_command *segment_command = (struct segment_command *) load_command;
-                if (segment_name != NULL && strncmp(segment_command->segname, segment_name, 16) != 0)
-                    goto next_command;
-
-                section *sections = (struct section *) (segment_command + 1);
-
-                uint32_t sect;
-                for (sect = 0; sect != Swap(segment_command->nsects); ++sect) {
-                    section *section = &sections[sect];
-                    //printf("%s %u %p %p %u\n", segment_command->segname, sect, address, section->addr, section->size);
-                    if (address >= Swap(section->addr) && address < Swap(section->addr) + Swap(section->size)) {
-                        //printf("0x%.8x %s\n", address, segment_command->segname);
-                        return Pointer<Target_>(this, reinterpret_cast<Target_ *>(address - Swap(section->addr) + Swap(section->offset) + (char *) mach_header_));
-                    }
-                }
-            }
-
-          next_command:
-            load_command = (struct load_command *) ((char *) load_command + Swap(load_command->cmdsize));
-        }
-
-        return Pointer<Target_>(this);
-    }
-
-    template <typename Target_>
-    Pointer<Target_> GetOffset(uint32_t offset) {
-        return Pointer<Target_>(this, reinterpret_cast<Target_ *>(offset + (uint8_t *) mach_header_));
+    Target_ *GetOffset(uint32_t offset) const {
+        return reinterpret_cast<Target_ *>(offset + (uint8_t *) mach_header_);
     }
 };
 
@@ -815,38 +736,6 @@ class FatHeader :
 
     operator struct fat_header *() const {
         return fat_header_;
-    }
-};
-
-template <typename Target_>
-class Pointer {
-  private:
-    const MachHeader *framework_;
-    const Target_ *pointer_;
-
-  public:
-    Pointer(const MachHeader *framework = NULL, const Target_ *pointer = NULL) :
-        framework_(framework),
-        pointer_(pointer)
-    {
-    }
-
-    operator const Target_ *() const {
-        return pointer_;
-    }
-
-    const Target_ *operator ->() const {
-        return pointer_;
-    }
-
-    Pointer<Target_> &operator ++() {
-        ++pointer_;
-        return *this;
-    }
-
-    template <typename Value_>
-    Value_ Swap(Value_ value) {
-        return framework_->Swap(value);
     }
 };
 
