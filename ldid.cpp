@@ -798,6 +798,11 @@ static void sha1(uint8_t *hash, const void *data, size_t size) {
     LDID_SHA1(static_cast<const uint8_t *>(data), size, hash);
 }
 
+static void sha1(std::vector<char> &hash, const void *data, size_t size) {
+    hash.resize(LDID_SHA1_DIGEST_LENGTH);
+    sha1(reinterpret_cast<uint8_t *>(hash.data()), data, size);
+}
+
 struct CodesignAllocation {
     FatMachHeader mach_header_;
     uint32_t offset_;
@@ -2051,9 +2056,7 @@ int main(int argc, char *argv[]) {
                 char *arge;
                 unsigned number(strtoul(slot, &arge, 0));
                 _assert(arge == colon);
-                std::vector<char> &hash(slots[number]);
-                hash.resize(LDID_SHA1_DIGEST_LENGTH);
-                sha1(reinterpret_cast<uint8_t *>(hash.data()), file.data(), file.size());
+                sha1(slots[number], file.data(), file.size());
             } break;
 
             case 'D': flag_D = true; break;
