@@ -2203,7 +2203,8 @@ int main(int argc, char *argv[]) {
             break;
 
             case 'K':
-                key.open(argv[argi] + 2, O_RDONLY, PROT_READ, MAP_PRIVATE);
+                if (argv[argi][2] != '\0')
+                    key.open(argv[argi] + 2, O_RDONLY, PROT_READ, MAP_PRIVATE);
             break;
 
 #ifndef LDID_NOFLAGT
