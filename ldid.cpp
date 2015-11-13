@@ -425,6 +425,7 @@ struct section_64 {
     uint32_t flags;
     uint32_t reserved1;
     uint32_t reserved2;
+    uint32_t reserved3;
 } _packed;
 
 struct linkedit_data_command {
@@ -664,6 +665,27 @@ class MachHeader :
         }
 
         return load_commands;
+    }
+
+    void ForSection(const ldid::Functor<void (const char *, const char *, void *, size_t)> &code) const {
+        _foreach (load_command, GetLoadCommands())
+            switch (Swap(load_command->cmd)) {
+                case LC_SEGMENT: {
+                    auto segment(reinterpret_cast<struct segment_command *>(load_command));
+                    code(segment->segname, NULL, GetOffset<void>(segment->fileoff), segment->filesize);
+                    auto section(reinterpret_cast<struct section *>(segment + 1));
+                    for (uint32_t i(0), e(Swap(segment->nsects)); i != e; ++i, ++section)
+                        code(segment->segname, section->sectname, GetOffset<void>(segment->fileoff + section->offset), section->size);
+                } break;
+
+                case LC_SEGMENT_64: {
+                    auto segment(reinterpret_cast<struct segment_command_64 *>(load_command));
+                    code(segment->segname, NULL, GetOffset<void>(segment->fileoff), segment->filesize);
+                    auto section(reinterpret_cast<struct section_64 *>(segment + 1));
+                    for (uint32_t i(0), e(Swap(segment->nsects)); i != e; ++i, ++section)
+                        code(segment->segname, section->sectname, GetOffset<void>(segment->fileoff + section->offset), section->size);
+                } break;
+            }
     }
 
     template <typename Target_>
@@ -925,7 +947,7 @@ class Map {
 
 namespace ldid {
 
-static void Allocate(const void *idata, size_t isize, std::streambuf &output, const Functor<size_t (size_t)> &allocate, const Functor<size_t (std::streambuf &output, size_t, const std::string &, const char *)> &save) {
+static void Allocate(const void *idata, size_t isize, std::streambuf &output, const Functor<size_t (const MachHeader &, size_t)> &allocate, const Functor<size_t (const MachHeader &, std::streambuf &output, size_t, const std::string &, const char *)> &save) {
     FatHeader source(const_cast<void *>(idata), isize);
 
     size_t offset(0);
@@ -961,7 +983,7 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
             size = end;
         }
 
-        size_t alloc(allocate(size));
+        size_t alloc(allocate(mach_header, size));
 
         auto *fat_arch(mach_header.GetFatArch());
         uint32_t align;
@@ -1111,7 +1133,7 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
         pad(output, allocation.limit_ - allocation.size_);
         position += allocation.limit_ - allocation.size_;
 
-        size_t saved(save(output, allocation.limit_, overlap, top));
+        size_t saved(save(mach_header, output, allocation.limit_, overlap, top));
         if (allocation.alloc_ > saved)
             pad(output, allocation.alloc_ - saved);
         position += allocation.alloc_;
@@ -1404,7 +1426,7 @@ static void Commit(const std::string &path, const std::string &temp) {
 namespace ldid {
 
 void Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &key, const Slots &slots) {
-    Allocate(idata, isize, output, fun([&](size_t size) -> size_t {
+    Allocate(idata, isize, output, fun([&](const MachHeader &mach_header, size_t size) -> size_t {
         size_t alloc(sizeof(struct SuperBlob));
 
         uint32_t special(0);
@@ -1436,10 +1458,15 @@ void Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
         _foreach (slot, slots)
             special = std::max(special, slot.first);
 
+        mach_header.ForSection(fun([&](const char *segment, const char *section, void *data, size_t size) {
+            if (strcmp(segment, "__TEXT") == 0 && section != NULL && strcmp(section, "__info_plist") == 0)
+                special = std::max(special, CSSLOT_INFOSLOT);
+        }));
+
         uint32_t normal((size + PageSize_ - 1) / PageSize_);
         alloc = Align(alloc + (special + normal) * LDID_SHA1_DIGEST_LENGTH, 16);
         return alloc;
-    }), fun([&](std::streambuf &output, size_t limit, const std::string &overlap, const char *top) -> size_t {
+    }), fun([&](const MachHeader &mach_header, std::streambuf &output, size_t limit, const std::string &overlap, const char *top) -> size_t {
         Blobs blobs;
 
         if (true) {
@@ -1460,10 +1487,17 @@ void Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
         if (true) {
             std::stringbuf data;
 
+            Slots posts(slots);
+
+            mach_header.ForSection(fun([&](const char *segment, const char *section, void *data, size_t size) {
+                if (strcmp(segment, "__TEXT") == 0 && section != NULL && strcmp(section, "__info_plist") == 0)
+                    sha1(posts[CSSLOT_INFOSLOT], data, size);
+            }));
+
             uint32_t special(0);
             _foreach (blob, blobs)
                 special = std::max(special, blob.first);
-            _foreach (slot, slots)
+            _foreach (slot, posts)
                 special = std::max(special, slot.first);
             uint32_t normal((limit + PageSize_ - 1) / PageSize_);
 
@@ -1494,7 +1528,7 @@ void Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
                 sha1((uint8_t *) (hashes - blob.first), local, Swap(local->length));
             }
 
-            _foreach (slot, slots) {
+            _foreach (slot, posts) {
                 _assert(sizeof(*hashes) == slot.second.size());
                 memcpy(hashes - slot.first, slot.second.data(), slot.second.size());
             }
@@ -1533,9 +1567,9 @@ void Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
 
 #ifndef LDID_NOTOOLS
 static void Unsign(void *idata, size_t isize, std::streambuf &output) {
-    Allocate(idata, isize, output, fun([](size_t size) -> size_t {
+    Allocate(idata, isize, output, fun([](const MachHeader &mach_header, size_t size) -> size_t {
         return 0;
-    }), fun([](std::streambuf &output, size_t limit, const std::string &overlap, const char *top) -> size_t {
+    }), fun([](const MachHeader &mach_header, std::streambuf &output, size_t limit, const std::string &overlap, const char *top) -> size_t {
         return 0;
     }));
 }
