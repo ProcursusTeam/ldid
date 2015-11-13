@@ -165,6 +165,27 @@ Scope<Function_> _scope(const Function_ &function) {
 #define _scope(function) \
     _scope_(__COUNTER__, function)
 
+#define CPU_ARCH_MASK  uint32_t(0xff000000)
+#define CPU_ARCH_ABI64 uint32_t(0x01000000)
+
+#define CPU_TYPE_ANY     uint32_t(-1)
+#define CPU_TYPE_VAX     uint32_t( 1)
+#define CPU_TYPE_MC680x0 uint32_t( 6)
+#define CPU_TYPE_X86     uint32_t( 7)
+#define CPU_TYPE_MC98000 uint32_t(10)
+#define CPU_TYPE_HPPA    uint32_t(11)
+#define CPU_TYPE_ARM     uint32_t(12)
+#define CPU_TYPE_MC88000 uint32_t(13)
+#define CPU_TYPE_SPARC   uint32_t(14)
+#define CPU_TYPE_I860    uint32_t(15)
+#define CPU_TYPE_POWERPC uint32_t(18)
+
+#define CPU_TYPE_I386 CPU_TYPE_X86
+
+#define CPU_TYPE_ARM64     (CPU_ARCH_ABI64 | CPU_TYPE_ARM)
+#define CPU_TYPE_POWERPC64 (CPU_ARCH_ABI64 | CPU_TYPE_POWERPC)
+#define CPU_TYPE_X86_64    (CPU_ARCH_ABI64 | CPU_TYPE_X86)
+
 struct fat_header {
     uint32_t magic;
     uint32_t nfat_arch;
@@ -1049,7 +1070,26 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
         size_t alloc(allocate(size));
 
         auto *fat_arch(mach_header.GetFatArch());
-        uint32_t align(fat_arch == NULL ? 0 : source.Swap(fat_arch->align));
+        uint32_t align;
+
+        if (fat_arch != NULL)
+            align = source.Swap(fat_arch->align);
+        else switch (mach_header.GetCPUType()) {
+            case CPU_TYPE_POWERPC:
+            case CPU_TYPE_POWERPC64:
+            case CPU_TYPE_X86:
+            case CPU_TYPE_X86_64:
+                align = 0xc;
+                break;
+            case CPU_TYPE_ARM:
+            case CPU_TYPE_ARM64:
+                align = 0xe;
+                break;
+            default:
+                align = 0x0;
+                break;
+        }
+
         offset = Align(offset, 1 << align);
 
         uint32_t limit(size);
@@ -1106,7 +1146,7 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
                         break;
                     size_t size(mach_header.Swap(allocation.limit_ + allocation.alloc_ - mach_header.Swap(segment_command->fileoff)));
                     segment_command->filesize = size;
-                    segment_command->vmsize = Align(size, PageSize_);
+                    segment_command->vmsize = Align(size, 1 << allocation.align_);
                 } break;
 
                 case LC_SEGMENT_64: {
@@ -1115,7 +1155,7 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
                         break;
                     size_t size(mach_header.Swap(allocation.limit_ + allocation.alloc_ - mach_header.Swap(segment_command->fileoff)));
                     segment_command->filesize = size;
-                    segment_command->vmsize = Align(size, PageSize_);
+                    segment_command->vmsize = Align(size, 1 << allocation.align_);
                 } break;
             }
 
