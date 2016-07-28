@@ -1703,17 +1703,18 @@ bool UnionFolder::Open(const std::string &path, const Functor<void (std::streamb
 
 void UnionFolder::Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code) {
     parent_.Find(path, fun([&](const std::string &name, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &save) {
-        if (files_.find(name) == files_.end())
+        if (files_.find(path + name) == files_.end())
             code(name, save);
     }));
 
     for (auto &file : files_)
-        code(file.first, fun([&](const Functor<void (std::streambuf &, std::streambuf &)> &code) {
-            parent_.Save(file.first, fun([&](std::streambuf &save) {
-                file.second.pubseekpos(0, std::ios::in);
-                code(file.second, save);
+        if (file.first.size() >= path.size() && file.first.substr(0, path.size()) == path)
+            code(file.first.substr(path.size()), fun([&](const Functor<void (std::streambuf &, std::streambuf &)> &code) {
+                parent_.Save(file.first, fun([&](std::streambuf &save) {
+                    file.second.pubseekpos(0, std::ios::in);
+                    code(file.second, save);
+                }));
             }));
-        }));
 }
 
 #ifndef LDID_NOTOOLS
