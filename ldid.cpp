@@ -1850,12 +1850,13 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
         }));
     })), "open(): Info.plist");
 
+    static const std::string directory("_CodeSignature/");
+    static const std::string signature(directory + "CodeResources");
+
     std::map<std::string, std::multiset<Rule>> versions;
 
     auto &rules1(versions[""]);
     auto &rules2(versions["2"]);
-
-    static const std::string signature("_CodeSignature/CodeResources");
 
     folder.Open(signature, fun([&](std::streambuf &buffer) {
         plist_d(buffer, fun([&](plist_t node) {
@@ -1902,7 +1903,8 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
     }));
 
     folder.Find("", fun([&](const std::string &name, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &code) {
-        if (name == executable || name == signature)
+        // BundleDiskRep::adjustResources -> builder.addExclusion
+        if (name == executable || Starts(name, directory) || Starts(name, "_MASReceipt/") || name == "CodeResources")
             return;
 
         auto &hash(local[name]);
