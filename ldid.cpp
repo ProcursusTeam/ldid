@@ -810,6 +810,10 @@ struct CodeDirectory {
     uint8_t spare1;
     uint8_t pageSize;
     uint32_t spare2;
+    uint32_t scatterOffset;
+    uint32_t teamIDOffset;
+    uint32_t spare3;
+    uint64_t codeLimit64;
 } _packed;
 
 #ifndef LDID_NOFLAGT
@@ -1426,6 +1430,26 @@ static void Commit(const std::string &path, const std::string &temp) {
 namespace ldid {
 
 void Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &key, const Slots &slots) {
+    std::string team;
+
+#ifndef LDID_NOSMIME
+    if (!key.empty()) {
+        std::stringbuf data;
+        Stuff stuff(key);
+        auto name(X509_get_subject_name(stuff));
+        _assert(name != NULL);
+        auto index(X509_NAME_get_index_by_NID(name, NID_organizationalUnitName, -1));
+        _assert(index >= 0);
+        auto next(X509_NAME_get_index_by_NID(name, NID_organizationalUnitName, index));
+        _assert(next == -1);
+        auto entry(X509_NAME_get_entry(name, index));
+        _assert(entry != NULL);
+        auto asn(X509_NAME_ENTRY_get_data(entry));
+        _assert(asn != NULL);
+        team.assign(reinterpret_cast<char *>(ASN1_STRING_data(asn)), ASN1_STRING_length(asn));
+    }
+#endif
+
     Allocate(idata, isize, output, fun([&](const MachHeader &mach_header, size_t size) -> size_t {
         size_t alloc(sizeof(struct SuperBlob));
 
@@ -1447,6 +1471,9 @@ void Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
         alloc += sizeof(struct Blob);
         alloc += sizeof(struct CodeDirectory);
         alloc += identifier.size() + 1;
+
+        if (!team.empty())
+            alloc += team.size() + 1;
 
         if (!key.empty()) {
             alloc += sizeof(struct BlobIndex);
@@ -1502,10 +1529,8 @@ void Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
             uint32_t normal((limit + PageSize_ - 1) / PageSize_);
 
             CodeDirectory directory;
-            directory.version = Swap(uint32_t(0x00020001));
+            directory.version = Swap(uint32_t(0x00020200));
             directory.flags = Swap(uint32_t(0));
-            directory.hashOffset = Swap(uint32_t(sizeof(Blob) + sizeof(CodeDirectory) + identifier.size() + 1 + LDID_SHA1_DIGEST_LENGTH * special));
-            directory.identOffset = Swap(uint32_t(sizeof(Blob) + sizeof(CodeDirectory)));
             directory.nSpecialSlots = Swap(special);
             directory.codeLimit = Swap(uint32_t(limit));
             directory.nCodeSlots = Swap(normal);
@@ -1514,9 +1539,30 @@ void Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
             directory.spare1 = 0x00;
             directory.pageSize = PageShift_;
             directory.spare2 = Swap(uint32_t(0));
+            directory.scatterOffset = Swap(uint32_t(0));
+            directory.spare3 = Swap(uint32_t(0));
+            directory.codeLimit64 = Swap(uint64_t(0));
+
+            uint32_t offset(sizeof(Blob) + sizeof(CodeDirectory));
+
+            directory.identOffset = Swap(uint32_t(offset));
+            offset += identifier.size() + 1;
+
+            if (team.empty())
+                directory.teamIDOffset = Swap(uint32_t(0));
+            else {
+                directory.teamIDOffset = Swap(uint32_t(offset));
+                offset += team.size() + 1;
+            }
+
+            offset += LDID_SHA1_DIGEST_LENGTH * special;
+            directory.hashOffset = Swap(uint32_t(offset));
+            offset += LDID_SHA1_DIGEST_LENGTH * normal;
+
             put(data, &directory, sizeof(directory));
 
             put(data, identifier.c_str(), identifier.size() + 1);
+            put(data, team.c_str(), team.size() + 1);
 
             uint8_t storage[special + normal][LDID_SHA1_DIGEST_LENGTH];
             uint8_t (*hashes)[LDID_SHA1_DIGEST_LENGTH] = storage + special;
