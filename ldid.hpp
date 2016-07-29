@@ -49,8 +49,8 @@ FunctorImpl<decltype(&Function_::operator())> fun(const Function_ &value) {
 
 class Folder {
   public:
-    virtual void Save(const std::string &path, const Functor<void (std::streambuf &)> &code) = 0;
-    virtual bool Open(const std::string &path, const Functor<void (std::streambuf &)> &code) = 0;
+    virtual void Save(const std::string &path, const void *flag, const Functor<void (std::streambuf &)> &code) = 0;
+    virtual bool Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code) = 0;
     virtual void Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code) = 0;
 };
 
@@ -69,8 +69,8 @@ class DiskFolder :
     DiskFolder(const std::string &path);
     ~DiskFolder();
 
-    virtual void Save(const std::string &path, const Functor<void (std::streambuf &)> &code);
-    virtual bool Open(const std::string &path, const Functor<void (std::streambuf &)> &code);
+    virtual void Save(const std::string &path, const void *flag, const Functor<void (std::streambuf &)> &code);
+    virtual bool Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code);
     virtual void Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code);
 };
 
@@ -84,8 +84,8 @@ class SubFolder :
   public:
     SubFolder(Folder &parent, const std::string &path);
 
-    virtual void Save(const std::string &path, const Functor<void (std::streambuf &)> &code);
-    virtual bool Open(const std::string &path, const Functor<void (std::streambuf &)> &code);
+    virtual void Save(const std::string &path, const void *flag, const Functor<void (std::streambuf &)> &code);
+    virtual bool Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code);
     virtual void Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code);
 };
 
@@ -110,16 +110,16 @@ class UnionFolder :
     std::set<std::string> deletes_;
 
     std::map<std::string, std::string> remaps_;
-    std::map<std::string, StringBuffer> resets_;
+    std::map<std::string, std::pair<StringBuffer, const void *>> resets_;
 
     std::string Map(const std::string &path);
-    void Map(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code, const std::string &file, const Functor<void (std::streambuf &, const Functor<void (std::streambuf &, std::streambuf &)> &)> &save);
+    void Map(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code, const std::string &file, const Functor<void (const Functor<void (std::streambuf &, const void *)> &)> &save);
 
   public:
     UnionFolder(Folder &parent);
 
-    virtual void Save(const std::string &path, const Functor<void (std::streambuf &)> &code);
-    virtual bool Open(const std::string &path, const Functor<void (std::streambuf &)> &code);
+    virtual void Save(const std::string &path, const void *flag, const Functor<void (std::streambuf &)> &code);
+    virtual bool Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code);
     virtual void Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code);
 
     void operator ()(const std::string &from) {
@@ -131,9 +131,11 @@ class UnionFolder :
         remaps_[to] = from;
     }
 
-    std::stringbuf &operator [](const std::string &path) {
-        operator ()(path);
-        return resets_[path];
+    std::stringbuf &operator ()(const std::string &from, const void *flag) {
+        operator ()(from);
+        auto &reset(resets_[from]);
+        reset.second = flag;
+        return reset.first;
     }
 };
 
