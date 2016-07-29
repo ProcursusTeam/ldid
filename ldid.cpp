@@ -1837,6 +1837,16 @@ struct RuleCode {
 };
 
 #ifndef LDID_NOPLIST
+void Sign(std::streambuf &buffer, std::vector<char> &hash, std::streambuf &save, const std::string &identifier, const std::string &entitlements, const std::string &key, const Slots &slots) {
+    // XXX: this is a miserable fail
+    std::stringbuf temp;
+    copy(buffer, temp);
+    auto data(temp.str());
+
+    HashProxy proxy(hash, save);
+    Sign(data.data(), data.size(), proxy, identifier, entitlements, key, slots);
+}
+
 std::string Bundle(const std::string &root, Folder &folder, const std::string &key, std::map<std::string, std::vector<char>> &remote, const std::string &entitlements) {
     std::string executable;
     std::string identifier;
@@ -1893,6 +1903,7 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
     std::map<std::string, std::vector<char>> local;
 
     static Expression nested("^PlugIns/[^/]*\\.appex/Info\\.plist$");
+    static Expression dylib("^[^/]*\\.dylib$");
 
     folder.Find("", fun([&](const std::string &name, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &code) {
         if (!nested(name))
@@ -1912,8 +1923,13 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
             return;
 
         code(fun([&](std::streambuf &data, std::streambuf &save) {
-            HashProxy proxy(hash, save);
-            copy(data, proxy);
+            if (dylib(name)) {
+                Slots slots;
+                Sign(data, hash, save, identifier, "", key, slots);
+            } else {
+                HashProxy proxy(hash, save);
+                copy(data, proxy);
+            }
         }));
 
         _assert(hash.size() == LDID_SHA1_DIGEST_LENGTH);
@@ -1994,18 +2010,11 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
     }));
 
     folder.Open(executable, fun([&](std::streambuf &buffer) {
-        // XXX: this is a miserable fail
-        std::stringbuf temp;
-        copy(buffer, temp);
-        auto data(temp.str());
-
         folder.Save(executable, fun([&](std::streambuf &save) {
             Slots slots;
             slots[1] = local.at(info);
             slots[3] = local.at(signature);
-
-            HashProxy proxy(local[executable], save);
-            Sign(data.data(), data.size(), proxy, identifier, entitlements, key, slots);
+            Sign(buffer, local[executable], save, identifier, entitlements, key, slots);
         }));
     }));
 
