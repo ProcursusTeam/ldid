@@ -107,7 +107,13 @@ class UnionFolder :
     };
 
     Folder &parent_;
-    std::map<std::string, StringBuffer> files_;
+    std::set<std::string> deletes_;
+
+    std::map<std::string, std::string> remaps_;
+    std::map<std::string, StringBuffer> resets_;
+
+    std::string Map(const std::string &path);
+    void Map(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code, const std::string &file, const Functor<void (std::streambuf &, const Functor<void (std::streambuf &, std::streambuf &)> &)> &save);
 
   public:
     UnionFolder(Folder &parent);
@@ -116,8 +122,18 @@ class UnionFolder :
     virtual bool Open(const std::string &path, const Functor<void (std::streambuf &)> &code);
     virtual void Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code);
 
+    void operator ()(const std::string &from) {
+        deletes_.insert(from);
+    }
+
+    void operator ()(const std::string &from, const std::string &to) {
+        operator ()(from);
+        remaps_[to] = from;
+    }
+
     std::stringbuf &operator [](const std::string &path) {
-        return files_[path];
+        operator ()(path);
+        return resets_[path];
     }
 };
 

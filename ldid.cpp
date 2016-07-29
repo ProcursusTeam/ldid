@@ -1727,19 +1727,35 @@ void SubFolder::Find(const std::string &path, const Functor<void (const std::str
     return parent_.Find(path_ + path, code);
 }
 
+std::string UnionFolder::Map(const std::string &path) {
+    auto remap(remaps_.find(path));
+    if (remap == remaps_.end())
+        return path;
+    return remap->second;
+}
+
+void UnionFolder::Map(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code, const std::string &file, const Functor<void (std::streambuf &, const Functor<void (std::streambuf &, std::streambuf &)> &)> &save) {
+    if (file.size() >= path.size() && file.substr(0, path.size()) == path)
+        code(file.substr(path.size()), fun([&](const Functor<void (std::streambuf &, std::streambuf &)> &code) {
+            parent_.Save(file, fun([&](std::streambuf &data) {
+                save(data, code);
+            }));
+        }));
+}
+
 UnionFolder::UnionFolder(Folder &parent) :
     parent_(parent)
 {
 }
 
 void UnionFolder::Save(const std::string &path, const Functor<void (std::streambuf &)> &code) {
-    return parent_.Save(path, code);
+    return parent_.Save(Map(path), code);
 }
 
 bool UnionFolder::Open(const std::string &path, const Functor<void (std::streambuf &)> &code) {
-    auto file(files_.find(path));
-    if (file == files_.end())
-        return parent_.Open(path, code);
+    auto file(resets_.find(path));
+    if (file == resets_.end())
+        return parent_.Open(Map(path), code);
 
     auto &data(file->second);
     data.pubseekpos(0, std::ios::in);
@@ -1749,18 +1765,22 @@ bool UnionFolder::Open(const std::string &path, const Functor<void (std::streamb
 
 void UnionFolder::Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code) {
     parent_.Find(path, fun([&](const std::string &name, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &save) {
-        if (files_.find(path + name) == files_.end())
+        if (deletes_.find(path + name) == deletes_.end())
             code(name, save);
     }));
 
-    for (auto &file : files_)
-        if (file.first.size() >= path.size() && file.first.substr(0, path.size()) == path)
-            code(file.first.substr(path.size()), fun([&](const Functor<void (std::streambuf &, std::streambuf &)> &code) {
-                parent_.Save(file.first, fun([&](std::streambuf &save) {
-                    file.second.pubseekpos(0, std::ios::in);
-                    code(file.second, save);
-                }));
+    for (auto &reset : resets_)
+        Map(path, code, reset.first, fun([&](std::streambuf &save, const Functor<void (std::streambuf &, std::streambuf &)> &code) {
+            reset.second.pubseekpos(0, std::ios::in);
+            code(reset.second, save);
+        }));
+
+    for (auto &remap : remaps_)
+        Map(path, code, remap.first, fun([&](std::streambuf &save, const Functor<void (std::streambuf &, std::streambuf &)> &code) {
+            parent_.Open(remap.second, fun([&](std::streambuf &data) {
+                code(data, save);
             }));
+        }));
 }
 
 #ifndef LDID_NOTOOLS
