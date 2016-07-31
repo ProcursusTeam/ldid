@@ -459,15 +459,15 @@ struct encryption_info_command {
 #define BIND_OPCODE_DO_BIND_ADD_ADDR_IMM_SCALED      0xb0
 #define BIND_OPCODE_DO_BIND_ULEB_TIMES_SKIPPING_ULEB 0xc0
 
-inline void get(std::streambuf &stream, void *data, size_t size) {
+static inline void get(std::streambuf &stream, void *data, size_t size) {
     _assert(stream.sgetn(static_cast<char *>(data), size) == size);
 }
 
-inline void put(std::streambuf &stream, const void *data, size_t size) {
+static inline void put(std::streambuf &stream, const void *data, size_t size) {
     _assert(stream.sputn(static_cast<const char *>(data), size) == size);
 }
 
-inline void pad(std::streambuf &stream, size_t size) {
+static inline void pad(std::streambuf &stream, size_t size) {
     char padding[size];
     memset(padding, 0, size);
     put(stream, padding, size);
@@ -1907,7 +1907,7 @@ struct RuleCode {
 };
 
 #ifndef LDID_NOPLIST
-void Sign(std::streambuf &buffer, std::vector<char> &hash, std::streambuf &save, const std::string &identifier, const std::string &entitlements, const std::string &key, const Slots &slots) {
+static void Sign(std::streambuf &buffer, std::vector<char> &hash, std::streambuf &save, const std::string &identifier, const std::string &entitlements, const std::string &key, const Slots &slots) {
     // XXX: this is a miserable fail
     std::stringbuf temp;
     copy(buffer, temp);
