@@ -459,12 +459,27 @@ struct encryption_info_command {
 #define BIND_OPCODE_DO_BIND_ADD_ADDR_IMM_SCALED      0xb0
 #define BIND_OPCODE_DO_BIND_ULEB_TIMES_SKIPPING_ULEB 0xc0
 
+static std::streamsize read(std::streambuf &stream, void *data, size_t size) {
+    auto writ(stream.sgetn(static_cast<char *>(data), size));
+    _assert(writ >= 0);
+    return writ;
+}
+
 static inline void get(std::streambuf &stream, void *data, size_t size) {
-    _assert(stream.sgetn(static_cast<char *>(data), size) == size);
+    _assert(read(stream, data, size) == size);
 }
 
 static inline void put(std::streambuf &stream, const void *data, size_t size) {
     _assert(stream.sputn(static_cast<const char *>(data), size) == size);
+}
+
+static size_t most(std::streambuf &stream, void *data, size_t size) {
+    size_t total(size);
+    while (size > 0)
+        if (auto writ = read(stream, data, size))
+            size -= writ;
+        else break;
+    return total - size;
 }
 
 static inline void pad(std::streambuf &stream, size_t size) {
@@ -1907,9 +1922,10 @@ struct RuleCode {
 };
 
 #ifndef LDID_NOPLIST
-static void Sign(std::streambuf &buffer, std::vector<char> &hash, std::streambuf &save, const std::string &identifier, const std::string &entitlements, const std::string &key, const Slots &slots) {
+static void Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, std::vector<char> &hash, std::streambuf &save, const std::string &identifier, const std::string &entitlements, const std::string &key, const Slots &slots) {
     // XXX: this is a miserable fail
     std::stringbuf temp;
+    put(temp, prefix, size);
     copy(buffer, temp);
     auto data(temp.str());
 
@@ -1973,7 +1989,6 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
     std::map<std::string, std::vector<char>> local;
 
     static Expression nested("^PlugIns/[^/]*\\.appex/Info\\.plist$");
-    static Expression dylib("^[^/]*\\.dylib$");
 
     folder.Find("", fun([&](const std::string &name, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &code) {
         if (!nested(name))
@@ -1993,13 +2008,33 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
             return;
 
         code(fun([&](std::streambuf &data, std::streambuf &save) {
-            if (dylib(name)) {
-                Slots slots;
-                Sign(data, hash, save, identifier, "", key, slots);
-            } else {
-                HashProxy proxy(hash, save);
-                copy(data, proxy);
-            }
+            union {
+                struct {
+                    uint32_t magic;
+                    uint32_t count;
+                };
+
+                uint8_t bytes[8];
+            } header;
+
+            auto size(most(data, &header.bytes, sizeof(header.bytes)));
+            if (size == sizeof(header.bytes))
+                switch (Swap(header.magic)) {
+                    case FAT_MAGIC:
+                        // Java class file format
+                        if (Swap(header.count) >= 40)
+                            break;
+                    case FAT_CIGAM:
+                    case MH_MAGIC: case MH_MAGIC_64:
+                    case MH_CIGAM: case MH_CIGAM_64:
+                        Slots slots;
+                        Sign(header.bytes, size, data, hash, save, identifier, "", key, slots);
+                        return;
+                }
+
+            HashProxy proxy(hash, save);
+            put(proxy, header.bytes, size);
+            copy(data, proxy);
         }));
 
         _assert(hash.size() == LDID_SHA1_DIGEST_LENGTH);
@@ -2084,7 +2119,7 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
             Slots slots;
             slots[1] = local.at(info);
             slots[3] = local.at(signature);
-            Sign(buffer, local[executable], save, identifier, entitlements, key, slots);
+            Sign(NULL, 0, buffer, local[executable], save, identifier, entitlements, key, slots);
         }));
     }));
 
