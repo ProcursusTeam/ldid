@@ -51,7 +51,7 @@ class Folder {
   public:
     virtual void Save(const std::string &path, const void *flag, const Functor<void (std::streambuf &)> &code) = 0;
     virtual bool Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code) = 0;
-    virtual void Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code) = 0;
+    virtual void Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) = 0;
 };
 
 class DiskFolder :
@@ -63,7 +63,7 @@ class DiskFolder :
 
     std::string Path(const std::string &path);
 
-    void Find(const std::string &root, const std::string &base, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)>&code);
+    void Find(const std::string &root, const std::string &base, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link);
 
   public:
     DiskFolder(const std::string &path);
@@ -71,7 +71,7 @@ class DiskFolder :
 
     virtual void Save(const std::string &path, const void *flag, const Functor<void (std::streambuf &)> &code);
     virtual bool Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code);
-    virtual void Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code);
+    virtual void Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link);
 };
 
 class SubFolder :
@@ -86,7 +86,7 @@ class SubFolder :
 
     virtual void Save(const std::string &path, const void *flag, const Functor<void (std::streambuf &)> &code);
     virtual bool Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code);
-    virtual void Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code);
+    virtual void Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link);
 };
 
 class UnionFolder :
@@ -120,7 +120,7 @@ class UnionFolder :
 
     virtual void Save(const std::string &path, const void *flag, const Functor<void (std::streambuf &)> &code);
     virtual bool Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code);
-    virtual void Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code);
+    virtual void Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link);
 
     void operator ()(const std::string &from) {
         deletes_.insert(from);

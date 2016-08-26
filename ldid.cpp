@@ -1351,14 +1351,8 @@ class NullBuffer :
 
 class Hash {
   public:
-    bool ready_;
     char sha1_[LDID_SHA1_DIGEST_LENGTH];
     char sha256_[LDID_SHA256_DIGEST_LENGTH];
-
-    Hash() :
-        ready_(false)
-    {
-    }
 
     operator std::vector<char>() const {
         return {sha1_, sha1_ + sizeof(sha1_)};
@@ -1385,7 +1379,6 @@ class HashBuffer :
     ~HashBuffer() {
         LDID_SHA1_Final(reinterpret_cast<uint8_t *>(hash_.sha1_), &sha1_);
         LDID_SHA256_Final(reinterpret_cast<uint8_t *>(hash_.sha256_), &sha256_);
-        hash_.ready_ = true;
     }
 
     virtual std::streamsize xsputn(const char_type *data, std::streamsize size) {
@@ -1693,7 +1686,23 @@ DiskFolder::~DiskFolder() {
             Commit(commit.first, commit.second);
 }
 
-void DiskFolder::Find(const std::string &root, const std::string &base, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)>&code) {
+#ifndef __WIN32__
+std::string readlink(const std::string &path) {
+    for (size_t size(1024); ; size *= 2) {
+        std::string data;
+        data.resize(size);
+
+        int writ(_syscall(::readlink(path.c_str(), &data[0], data.size())));
+        if (size_t(writ) >= size)
+            continue;
+
+        data.resize(writ);
+        return data;
+    }
+}
+#endif
+
+void DiskFolder::Find(const std::string &root, const std::string &base, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) {
     std::string path(Path(root) + base);
 
     DIR *dir(opendir(path.c_str()));
@@ -1727,13 +1736,16 @@ void DiskFolder::Find(const std::string &root, const std::string &base, const Fu
             case DT_REG:
                 directory = false;
                 break;
+            case DT_LNK:
+                link(base + name, fun([&]() { return readlink(path + name); }));
+                continue;
             default:
                 _assert_(false, "d_type=%u", child->d_type);
         }
 #endif
 
         if (directory)
-            Find(root, base + name + "/", code);
+            Find(root, base + name + "/", code, link);
         else
             code(base + name, fun([&](const Functor<void (std::streambuf &, std::streambuf &)> &code) {
                 std::string access(root + base + name);
@@ -1764,8 +1776,8 @@ bool DiskFolder::Open(const std::string &path, const Functor<void (std::streambu
     return true;
 }
 
-void DiskFolder::Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)>&code) {
-    Find(path, "", code);
+void DiskFolder::Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) {
+    Find(path, "", code, link);
 }
 #endif
 
@@ -1783,8 +1795,8 @@ bool SubFolder::Open(const std::string &path, const Functor<void (std::streambuf
     return parent_.Open(path_ + path, code);
 }
 
-void SubFolder::Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code) {
-    return parent_.Find(path_ + path, code);
+void SubFolder::Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) {
+    return parent_.Find(path_ + path, code, link);
 }
 
 std::string UnionFolder::Map(const std::string &path) {
@@ -1826,10 +1838,13 @@ bool UnionFolder::Open(const std::string &path, const Functor<void (std::streamb
     return true;
 }
 
-void UnionFolder::Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code) {
+void UnionFolder::Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) {
     parent_.Find(path, fun([&](const std::string &name, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &save) {
         if (deletes_.find(path + name) == deletes_.end())
             code(name, save);
+    }), fun([&](const std::string &name, const Functor<std::string ()> &read) {
+        if (deletes_.find(path + name) == deletes_.end())
+            link(name, read);
     }));
 
     for (auto &reset : resets_)
@@ -1978,7 +1993,7 @@ static void Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, Has
     Sign(data.data(), data.size(), proxy, identifier, entitlements, requirement, key, slots);
 }
 
-std::string Bundle(const std::string &root, Folder &folder, const std::string &key, std::map<std::string, Hash> &remote, const std::string &entitlements, const std::string &requirement) {
+std::string Bundle(const std::string &root, Folder &folder, const std::string &key, std::set<std::string> &remote, const std::string &entitlements, const std::string &requirement) {
     std::string executable;
     std::string identifier;
 
@@ -2031,7 +2046,8 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
         rules2.insert(Rule{20, NoMode, "^version\\.plist$"});
     }
 
-    std::map<std::string, Hash> local;
+    std::map<std::string, Hash> hashes;
+    std::set<std::string> local;
 
     static Expression nested("^PlugIns/[^/]*\\.appex/Info\\.plist$");
 
@@ -2041,16 +2057,21 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
         auto bundle(root + Split(name).dir);
         SubFolder subfolder(folder, bundle);
         Bundle(bundle, subfolder, key, local, "", "");
+    }), fun([&](const std::string &name, const Functor<std::string ()> &read) {
     }));
+
+    std::map<std::string, std::string> links;
 
     folder.Find("", fun([&](const std::string &name, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &code) {
         // BundleDiskRep::adjustResources -> builder.addExclusion
         if (name == executable || Starts(name, directory) || Starts(name, "_MASReceipt/") || name == "CodeResources")
             return;
 
-        auto &hash(local[name]);
-        if (hash.ready_)
+        if (local.find(name) != local.end())
             return;
+        local.insert(name);
+
+        auto &hash(hashes[name]);
 
         code(fun([&](std::streambuf &data, std::streambuf &save) {
             union {
@@ -2081,8 +2102,9 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
             put(proxy, header.bytes, size);
             copy(data, proxy);
         }));
-
-        _assert(hash.ready_);
+    }), fun([&](const std::string &name, const Functor<std::string ()> &read) {
+        links[name] = read();
+        local.insert(name);
     }));
 
     auto plist(plist_new_dict());
@@ -2097,7 +2119,7 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
 
         bool old(&version.second == &rules1);
 
-        for (const auto &hash : local)
+        for (const auto &hash : hashes)
             for (const auto &rule : version.second)
                 if (rule(hash.first)) {
                     if (rule.mode_ == NestedMode) {
@@ -2112,6 +2134,22 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
                         if (rule.mode_ == OptionalMode)
                             plist_dict_set_item(entry, "optional", plist_new_bool(true));
                         plist_dict_set_item(files, hash.first.c_str(), entry);
+                    }
+
+                    break;
+                }
+
+        for (const auto &link : links)
+            for (const auto &rule : version.second)
+                if (rule(link.first)) {
+                    if (rule.mode_ == NestedMode) {
+                        // XXX: implement
+                    } else if (rule.mode_ != OmitMode) {
+                        auto entry(plist_new_dict());
+                        plist_dict_set_item(entry, "symlink", plist_new_string(link.second.c_str()));
+                        if (rule.mode_ == OptionalMode)
+                            plist_dict_set_item(entry, "optional", plist_new_bool(true));
+                        plist_dict_set_item(files, link.first.c_str(), entry);
                     }
 
                     break;
@@ -2158,7 +2196,7 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
     }
 
     folder.Save(signature, NULL, fun([&](std::streambuf &save) {
-        HashProxy proxy(local[signature], save);
+        HashProxy proxy(hashes[signature], save);
         char *xml(NULL);
         uint32_t size;
         plist_to_xml(plist, &xml, &size);
@@ -2169,21 +2207,24 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
     folder.Open(executable, fun([&](std::streambuf &buffer, const void *flag) {
         folder.Save(executable, flag, fun([&](std::streambuf &save) {
             Slots slots;
-            slots[1] = local.at(info);
-            slots[3] = local.at(signature);
-            Sign(NULL, 0, buffer, local[executable], save, identifier, entitlements, requirement, key, slots);
+            slots[1] = hashes.at(info);
+            slots[3] = hashes.at(signature);
+            Sign(NULL, 0, buffer, hashes[executable], save, identifier, entitlements, requirement, key, slots);
         }));
     }));
 
-    for (const auto &hash : local)
-        remote[root + hash.first] = hash.second;
+    local.insert(signature);
+    local.insert(executable);
+
+    for (const auto &name : local)
+        remote.insert(root + name);
 
     return executable;
 }
 
 std::string Bundle(const std::string &root, Folder &folder, const std::string &key, const std::string &entitlements, const std::string &requirement) {
-    std::map<std::string, Hash> hashes;
-    return Bundle(root, folder, key, hashes, entitlements, requirement);
+    std::set<std::string> local;
+    return Bundle(root, folder, key, local, entitlements, requirement);
 }
 #endif
 
