@@ -143,11 +143,16 @@ class UnionFolder :
     }
 };
 
-std::string Bundle(const std::string &root, Folder &folder, const std::string &key, const std::string &entitlements, const std::string &requirement);
+struct Bundle {
+    std::string path;
+    std::vector<char> hash;
+};
+
+Bundle Sign(const std::string &root, Folder &folder, const std::string &key, const std::string &entitlements, const std::string &requirement);
 
 typedef std::map<uint32_t, std::vector<char>> Slots;
 
-void Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &requirement, const std::string &key, const Slots &slots);
+std::vector<char> Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &requirement, const std::string &key, const Slots &slots);
 
 }
 

@@ -1184,13 +1184,15 @@ static void insert(Blobs &blobs, uint32_t slot, const std::stringbuf &buffer) {
     std::swap(blobs[slot], value);
 }
 
-static void insert(Blobs &blobs, uint32_t slot, uint32_t magic, const std::stringbuf &buffer) {
+static const std::string &insert(Blobs &blobs, uint32_t slot, uint32_t magic, const std::stringbuf &buffer) {
     auto value(buffer.str());
     Blob blob;
     blob.magic = Swap(magic);
     blob.length = Swap(uint32_t(sizeof(blob) + value.size()));
     value.insert(0, reinterpret_cast<char *>(&blob), sizeof(blob));
-    std::swap(blobs[slot], value);
+    auto &save(blobs[slot]);
+    std::swap(save, value);
+    return save;
 }
 
 static size_t put(std::streambuf &output, uint32_t magic, const Blobs &blobs) {
@@ -1474,7 +1476,9 @@ static void Commit(const std::string &path, const std::string &temp) {
 
 namespace ldid {
 
-void Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &requirement, const std::string &key, const Slots &slots) {
+std::vector<char> Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &requirement, const std::string &key, const Slots &slots) {
+    std::vector<char> hash(LDID_SHA1_DIGEST_LENGTH);
+
     std::string team;
 
 #ifndef LDID_NOSMIME
@@ -1638,7 +1642,8 @@ void Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
 
             put(data, storage, sizeof(storage));
 
-            insert(blobs, CSSLOT_CODEDIRECTORY, CSMAGIC_CODEDIRECTORY, data);
+            const auto &save(insert(blobs, CSSLOT_CODEDIRECTORY, CSMAGIC_CODEDIRECTORY, data));
+            sha1(hash, save.data(), save.size());
         }
 
 #ifndef LDID_NOSMIME
@@ -1660,6 +1665,8 @@ void Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
 
         return put(output, CSMAGIC_EMBEDDED_SIGNATURE, blobs);
     }));
+
+    return hash;
 }
 
 #ifndef LDID_NOTOOLS
@@ -1928,22 +1935,31 @@ enum Mode {
 class Expression {
   private:
     regex_t regex_;
+    std::vector<std::string> matches_;
 
   public:
     Expression(const std::string &code) {
-        _assert_(regcomp(&regex_, code.c_str(), REG_EXTENDED | REG_NOSUB) == 0, "regcomp()");
+        _assert_(regcomp(&regex_, code.c_str(), REG_EXTENDED) == 0, "regcomp()");
+        matches_.resize(regex_.re_nsub + 1);
     }
 
     ~Expression() {
         regfree(&regex_);
     }
 
-    bool operator ()(const std::string &data) const {
-        auto value(regexec(&regex_, data.c_str(), 0, NULL, 0));
+    bool operator ()(const std::string &data) {
+        regmatch_t matches[matches_.size()];
+        auto value(regexec(&regex_, data.c_str(), matches_.size(), matches, 0));
         if (value == REG_NOMATCH)
             return false;
         _assert_(value == 0, "regexec()");
+        for (size_t i(0); i != matches_.size(); ++i)
+            matches_[i].assign(data.data() + matches[i].rm_so, matches[i].rm_eo - matches[i].rm_so);
         return true;
+    }
+
+    const std::string &operator [](size_t index) const {
+        return matches_[index];
     }
 };
 
@@ -1993,7 +2009,7 @@ struct RuleCode {
 };
 
 #ifndef LDID_NOPLIST
-static void Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, Hash &hash, std::streambuf &save, const std::string &identifier, const std::string &entitlements, const std::string &requirement, const std::string &key, const Slots &slots) {
+static std::vector<char> Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, Hash &hash, std::streambuf &save, const std::string &identifier, const std::string &entitlements, const std::string &requirement, const std::string &key, const Slots &slots) {
     // XXX: this is a miserable fail
     std::stringbuf temp;
     put(temp, prefix, size);
@@ -2001,14 +2017,20 @@ static void Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, Has
     auto data(temp.str());
 
     HashProxy proxy(hash, save);
-    Sign(data.data(), data.size(), proxy, identifier, entitlements, requirement, key, slots);
+    return Sign(data.data(), data.size(), proxy, identifier, entitlements, requirement, key, slots);
 }
 
-std::string Bundle(const std::string &root, Folder &folder, const std::string &key, std::set<std::string> &remote, const std::string &entitlements, const std::string &requirement) {
+Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std::set<std::string> &remote, const std::string &entitlements, const std::string &requirement) {
     std::string executable;
     std::string identifier;
 
-    static const std::string info("Info.plist");
+    bool mac(false);
+
+    std::string info("Info.plist");
+    if (!folder.Look(info) && folder.Look("Resources/" + info)) {
+        mac = true;
+        info = "Resources/" + info;
+    }
 
     folder.Open(info, fun([&](std::streambuf &buffer, const void *flag) {
         plist_d(buffer, fun([&](plist_t node) {
@@ -2016,6 +2038,11 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
             identifier = plist_s(plist_dict_get_item(node, "CFBundleIdentifier"));
         }));
     }));
+
+    if (!mac && folder.Look("MacOS/" + executable)) {
+        executable = "MacOS/" + executable;
+        mac = true;
+    }
 
     static const std::string directory("_CodeSignature/");
     static const std::string signature(directory + "CodeResources");
@@ -2025,27 +2052,29 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
     auto &rules1(versions[""]);
     auto &rules2(versions["2"]);
 
+    const std::string resources(mac ? "Resources/" : "");
+
     if (true) {
-        rules1.insert(Rule{1, NoMode, "^"});
-        rules1.insert(Rule{10000, OmitMode, "^(Frameworks/[^/]+\\.framework/|PlugIns/[^/]+\\.appex/|PlugIns/[^/]+\\.appex/Frameworks/[^/]+\\.framework/|())SC_Info/[^/]+\\.(sinf|supf|supp)$"});
-        rules1.insert(Rule{1000, OptionalMode, "^.*\\.lproj/"});
-        rules1.insert(Rule{1100, OmitMode, "^.*\\.lproj/locversion.plist$"});
-        rules1.insert(Rule{10000, OmitMode, "^Watch/[^/]+\\.app/(Frameworks/[^/]+\\.framework/|PlugIns/[^/]+\\.appex/|PlugIns/[^/]+\\.appex/Frameworks/[^/]+\\.framework/)SC_Info/[^/]+\\.(sinf|supf|supp)$"});
+        rules1.insert(Rule{1, NoMode, "^" + resources});
+        if (!mac) rules1.insert(Rule{10000, OmitMode, "^(Frameworks/[^/]+\\.framework/|PlugIns/[^/]+\\.appex/|PlugIns/[^/]+\\.appex/Frameworks/[^/]+\\.framework/|())SC_Info/[^/]+\\.(sinf|supf|supp)$"});
+        rules1.insert(Rule{1000, OptionalMode, "^" + resources + ".*\\.lproj/"});
+        rules1.insert(Rule{1100, OmitMode, "^" + resources + ".*\\.lproj/locversion.plist$"});
+        if (!mac) rules1.insert(Rule{10000, OmitMode, "^Watch/[^/]+\\.app/(Frameworks/[^/]+\\.framework/|PlugIns/[^/]+\\.appex/|PlugIns/[^/]+\\.appex/Frameworks/[^/]+\\.framework/)SC_Info/[^/]+\\.(sinf|supf|supp)$"});
         rules1.insert(Rule{1, NoMode, "^version.plist$"});
     }
 
     if (true) {
         rules2.insert(Rule{11, NoMode, ".*\\.dSYM($|/)"});
-        rules2.insert(Rule{20, NoMode, "^"});
+        rules2.insert(Rule{20, NoMode, "^" + resources});
         rules2.insert(Rule{2000, OmitMode, "^(.*/)?\\.DS_Store$"});
-        rules2.insert(Rule{10000, OmitMode, "^(Frameworks/[^/]+\\.framework/|PlugIns/[^/]+\\.appex/|PlugIns/[^/]+\\.appex/Frameworks/[^/]+\\.framework/|())SC_Info/[^/]+\\.(sinf|supf|supp)$"});
+        if (!mac) rules2.insert(Rule{10000, OmitMode, "^(Frameworks/[^/]+\\.framework/|PlugIns/[^/]+\\.appex/|PlugIns/[^/]+\\.appex/Frameworks/[^/]+\\.framework/|())SC_Info/[^/]+\\.(sinf|supf|supp)$"});
         rules2.insert(Rule{10, NestedMode, "^(Frameworks|SharedFrameworks|PlugIns|Plug-ins|XPCServices|Helpers|MacOS|Library/(Automator|Spotlight|LoginItems))/"});
         rules2.insert(Rule{1, NoMode, "^.*"});
-        rules2.insert(Rule{1000, OptionalMode, "^.*\\.lproj/"});
-        rules2.insert(Rule{1100, OmitMode, "^.*\\.lproj/locversion.plist$"});
+        rules2.insert(Rule{1000, OptionalMode, "^" + resources + ".*\\.lproj/"});
+        rules2.insert(Rule{1100, OmitMode, "^" + resources + ".*\\.lproj/locversion.plist$"});
         rules2.insert(Rule{20, OmitMode, "^Info\\.plist$"});
         rules2.insert(Rule{20, OmitMode, "^PkgInfo$"});
-        rules2.insert(Rule{10000, OmitMode, "^Watch/[^/]+\\.app/(Frameworks/[^/]+\\.framework/|PlugIns/[^/]+\\.appex/|PlugIns/[^/]+\\.appex/Frameworks/[^/]+\\.framework/)SC_Info/[^/]+\\.(sinf|supf|supp)$"});
+        if (!mac) rules2.insert(Rule{10000, OmitMode, "^Watch/[^/]+\\.app/(Frameworks/[^/]+\\.framework/|PlugIns/[^/]+\\.appex/|PlugIns/[^/]+\\.appex/Frameworks/[^/]+\\.framework/)SC_Info/[^/]+\\.(sinf|supf|supp)$"});
         rules2.insert(Rule{10, NestedMode, "^[^/]+$"});
         rules2.insert(Rule{20, NoMode, "^embedded\\.provisionprofile$"});
         rules2.insert(Rule{20, NoMode, "^version\\.plist$"});
@@ -2054,27 +2083,42 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
     std::map<std::string, Hash> hashes;
     std::set<std::string> local;
 
-    static Expression nested("^PlugIns/[^/]*\\.appex/Info\\.plist$");
+    std::string failure(mac ? "Contents/|Versions/[^/]*/Resources/" : "");
+    Expression nested("^(Frameworks/[^/]*\\.framework|PlugIns/[^/]*\\.appex)/(" + failure + ")Info\\.plist$");
+    std::map<std::string, Bundle> bundles;
 
     folder.Find("", fun([&](const std::string &name, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &code) {
         if (!nested(name))
             return;
         auto bundle(root + Split(name).dir);
+        bundle.resize(bundle.size() - resources.size());
         SubFolder subfolder(folder, bundle);
-        Bundle(bundle, subfolder, key, local, "", "");
+        bundles[nested[1]] = Sign(bundle, subfolder, key, local, "", "");
     }), fun([&](const std::string &name, const Functor<std::string ()> &read) {
     }));
 
     std::map<std::string, std::string> links;
 
-    folder.Find("", fun([&](const std::string &name, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &code) {
+    auto exclude([&](const std::string &name) {
         // BundleDiskRep::adjustResources -> builder.addExclusion
         if (name == executable || Starts(name, directory) || Starts(name, "_MASReceipt/") || name == "CodeResources")
-            return;
+            return true;
 
         if (local.find(name) != local.end())
-            return;
+            return true;
         local.insert(name);
+
+        for (const auto &bundle : bundles) {
+            if (Starts(name, bundle.first + "/"))
+                return true;
+        }
+
+        return false;
+    });
+
+    folder.Find("", fun([&](const std::string &name, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &code) {
+        if (exclude(name))
+            return;
 
         auto &hash(hashes[name]);
 
@@ -2108,8 +2152,10 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
             copy(data, proxy);
         }));
     }), fun([&](const std::string &name, const Functor<std::string ()> &read) {
+        if (exclude(name))
+            return;
+
         links[name] = read();
-        local.insert(name);
     }));
 
     auto plist(plist_new_dict());
@@ -2127,9 +2173,7 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
         for (const auto &hash : hashes)
             for (const auto &rule : version.second)
                 if (rule(hash.first)) {
-                    if (rule.mode_ == NestedMode) {
-                        // XXX: implement
-                    } else if (rule.mode_ == NoMode && old)
+                    if (rule.mode_ == NoMode && old)
                         plist_dict_set_item(files, hash.first.c_str(), plist_new_data(hash.second.sha1_, sizeof(hash.second.sha1_)));
                     else if (rule.mode_ != OmitMode) {
                         auto entry(plist_new_dict());
@@ -2147,9 +2191,7 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
         for (const auto &link : links)
             for (const auto &rule : version.second)
                 if (rule(link.first)) {
-                    if (rule.mode_ == NestedMode) {
-                        // XXX: implement
-                    } else if (rule.mode_ != OmitMode) {
+                    if (rule.mode_ != OmitMode) {
                         auto entry(plist_new_dict());
                         plist_dict_set_item(entry, "symlink", plist_new_string(link.second.c_str()));
                         if (rule.mode_ == OptionalMode)
@@ -2159,6 +2201,13 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
 
                     break;
                 }
+
+        for (const auto &bundle : bundles) {
+            auto entry(plist_new_dict());
+            plist_dict_set_item(entry, "cdhash", plist_new_data(bundle.second.hash.data(), bundle.second.hash.size()));
+            plist_dict_set_item(entry, "requirement", plist_new_string("anchor apple generic"));
+            plist_dict_set_item(files, bundle.first.c_str(), entry);
+        }
     }
 
     for (const auto &version : versions) {
@@ -2209,12 +2258,15 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
         put(proxy, xml, size);
     }));
 
+    Bundle bundle;
+    bundle.path = executable;
+
     folder.Open(executable, fun([&](std::streambuf &buffer, const void *flag) {
         folder.Save(executable, flag, fun([&](std::streambuf &save) {
             Slots slots;
             slots[1] = hashes.at(info);
             slots[3] = hashes.at(signature);
-            Sign(NULL, 0, buffer, hashes[executable], save, identifier, entitlements, requirement, key, slots);
+            bundle.hash = Sign(NULL, 0, buffer, hashes[executable], save, identifier, entitlements, requirement, key, slots);
         }));
     }));
 
@@ -2224,12 +2276,12 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
     for (const auto &name : local)
         remote.insert(root + name);
 
-    return executable;
+    return bundle;
 }
 
-std::string Bundle(const std::string &root, Folder &folder, const std::string &key, const std::string &entitlements, const std::string &requirement) {
+Bundle Sign(const std::string &root, Folder &folder, const std::string &key, const std::string &entitlements, const std::string &requirement) {
     std::set<std::string> local;
-    return Bundle(root, folder, key, local, entitlements, requirement);
+    return Sign(root, folder, key, local, entitlements, requirement);
 }
 #endif
 
@@ -2406,7 +2458,7 @@ int main(int argc, char *argv[]) {
 #ifndef LDID_NOPLIST
             _assert(!flag_r);
             ldid::DiskFolder folder(path);
-            path += "/" + Bundle("", folder, key, entitlements, requirement);
+            path += "/" + Sign("", folder, key, entitlements, requirement).path;
 #else
             _assert(false);
 #endif
