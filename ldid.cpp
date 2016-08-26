@@ -2414,7 +2414,7 @@ int main(int argc, char *argv[]) {
                 for (size_t index(0); index != Swap(super->count); ++index)
                     if (Swap(super->index[index].type) == CSSLOT_CODEDIRECTORY) {
                         uint32_t begin = Swap(super->index[index].offset);
-                        struct CodeDirectory *directory = reinterpret_cast<struct CodeDirectory *>(blob + begin);
+                        struct CodeDirectory *directory = reinterpret_cast<struct CodeDirectory *>(blob + begin + sizeof(Blob));
 
                         uint8_t (*hashes)[LDID_SHA1_DIGEST_LENGTH] = reinterpret_cast<uint8_t (*)[LDID_SHA1_DIGEST_LENGTH]>(blob + begin + Swap(directory->hashOffset));
                         uint32_t pages = Swap(directory->nCodeSlots);
