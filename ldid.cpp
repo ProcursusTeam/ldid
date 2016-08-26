@@ -1711,7 +1711,7 @@ void DiskFolder::Find(const std::string &root, const std::string &base, const Fu
 
 #ifdef __WIN32__
         struct stat info;
-        _syscall(stat(path.c_str(), &info));
+        _syscall(stat((path + name).c_str(), &info));
         if (false);
         else if (S_ISDIR(info.st_mode))
             directory = true;
