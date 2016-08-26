@@ -2096,7 +2096,7 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
     }), fun([&](const std::string &name, const Functor<std::string ()> &read) {
     }));
 
-    std::map<std::string, std::string> links;
+    std::set<std::string> excludes;
 
     auto exclude([&](const std::string &name) {
         // BundleDiskRep::adjustResources -> builder.addExclusion
@@ -2104,11 +2104,15 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
             return true;
 
         for (const auto &bundle : bundles)
-            if (Starts(name, bundle.first + "/"))
+            if (Starts(name, bundle.first + "/")) {
+                excludes.insert(name);
                 return true;
+            }
 
         return false;
     });
+
+    std::map<std::string, std::string> links;
 
     folder.Find("", fun([&](const std::string &name, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &code) {
         if (exclude(name))
@@ -2170,8 +2174,8 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
         for (const auto &hash : local)
             for (const auto &rule : version.second)
                 if (rule(hash.first)) {
-                    if (rule.mode_ == NestedMode);
-                    else if (rule.mode_ == NoMode && old)
+                    if (!old && mac && excludes.find(hash.first) != excludes.end());
+                    else if (old && rule.mode_ == NoMode)
                         plist_dict_set_item(files, hash.first.c_str(), plist_new_data(hash.second.sha1_, sizeof(hash.second.sha1_)));
                     else if (rule.mode_ != OmitMode) {
                         auto entry(plist_new_dict());
