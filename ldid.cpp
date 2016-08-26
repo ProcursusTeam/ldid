@@ -51,20 +51,36 @@
 
 #ifdef __APPLE__
 #include <CommonCrypto/CommonDigest.h>
+
 #define LDID_SHA1_DIGEST_LENGTH CC_SHA1_DIGEST_LENGTH
 #define LDID_SHA1 CC_SHA1
 #define LDID_SHA1_CTX CC_SHA1_CTX
 #define LDID_SHA1_Init CC_SHA1_Init
 #define LDID_SHA1_Update CC_SHA1_Update
 #define LDID_SHA1_Final CC_SHA1_Final
+
+#define LDID_SHA256_DIGEST_LENGTH CC_SHA256_DIGEST_LENGTH
+#define LDID_SHA256 CC_SHA256
+#define LDID_SHA256_CTX CC_SHA256_CTX
+#define LDID_SHA256_Init CC_SHA256_Init
+#define LDID_SHA256_Update CC_SHA256_Update
+#define LDID_SHA256_Final CC_SHA256_Final
 #else
 #include <openssl/sha.h>
+
 #define LDID_SHA1_DIGEST_LENGTH SHA_DIGEST_LENGTH
 #define LDID_SHA1 SHA1
 #define LDID_SHA1_CTX SHA_CTX
 #define LDID_SHA1_Init SHA1_Init
 #define LDID_SHA1_Update SHA1_Update
 #define LDID_SHA1_Final SHA1_Final
+
+#define LDID_SHA256_DIGEST_LENGTH SHA256_DIGEST_LENGTH
+#define LDID_SHA256 SHA256
+#define LDID_SHA256_CTX SHA256_CTX
+#define LDID_SHA256_Init SHA256_Init
+#define LDID_SHA256_Update SHA256_Update
+#define LDID_SHA256_Final SHA256_Final
 #endif
 
 #ifndef LDID_NOPLIST
@@ -1333,27 +1349,48 @@ class NullBuffer :
     }
 };
 
+class Hash {
+  public:
+    bool ready_;
+    char sha1_[LDID_SHA1_DIGEST_LENGTH];
+    char sha256_[LDID_SHA256_DIGEST_LENGTH];
+
+    Hash() :
+        ready_(false)
+    {
+    }
+
+    operator std::vector<char>() const {
+        return {sha1_, sha1_ + sizeof(sha1_)};
+    }
+};
+
 class HashBuffer :
     public std::streambuf
 {
   private:
-    std::vector<char> &hash_;
-    LDID_SHA1_CTX context_;
+    Hash &hash_;
+
+    LDID_SHA1_CTX sha1_;
+    LDID_SHA256_CTX sha256_;
 
   public:
-    HashBuffer(std::vector<char> &hash) :
+    HashBuffer(Hash &hash) :
         hash_(hash)
     {
-        LDID_SHA1_Init(&context_);
+        LDID_SHA1_Init(&sha1_);
+        LDID_SHA256_Init(&sha256_);
     }
 
     ~HashBuffer() {
-        hash_.resize(LDID_SHA1_DIGEST_LENGTH);
-        LDID_SHA1_Final(reinterpret_cast<uint8_t *>(hash_.data()), &context_);
+        LDID_SHA1_Final(reinterpret_cast<uint8_t *>(hash_.sha1_), &sha1_);
+        LDID_SHA256_Final(reinterpret_cast<uint8_t *>(hash_.sha256_), &sha256_);
+        hash_.ready_ = true;
     }
 
     virtual std::streamsize xsputn(const char_type *data, std::streamsize size) {
-        LDID_SHA1_Update(&context_, data, size);
+        LDID_SHA1_Update(&sha1_, data, size);
+        LDID_SHA256_Update(&sha256_, data, size);
         return size;
     }
 
@@ -1373,7 +1410,7 @@ class HashProxy :
     std::streambuf &buffer_;
 
   public:
-    HashProxy(std::vector<char> &hash, std::streambuf &buffer) :
+    HashProxy(Hash &hash, std::streambuf &buffer) :
         HashBuffer(hash),
         buffer_(buffer)
     {
@@ -1930,7 +1967,7 @@ struct RuleCode {
 };
 
 #ifndef LDID_NOPLIST
-static void Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, std::vector<char> &hash, std::streambuf &save, const std::string &identifier, const std::string &entitlements, const std::string &requirement, const std::string &key, const Slots &slots) {
+static void Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, Hash &hash, std::streambuf &save, const std::string &identifier, const std::string &entitlements, const std::string &requirement, const std::string &key, const Slots &slots) {
     // XXX: this is a miserable fail
     std::stringbuf temp;
     put(temp, prefix, size);
@@ -1941,7 +1978,7 @@ static void Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, std
     Sign(data.data(), data.size(), proxy, identifier, entitlements, requirement, key, slots);
 }
 
-std::string Bundle(const std::string &root, Folder &folder, const std::string &key, std::map<std::string, std::vector<char>> &remote, const std::string &entitlements, const std::string &requirement) {
+std::string Bundle(const std::string &root, Folder &folder, const std::string &key, std::map<std::string, Hash> &remote, const std::string &entitlements, const std::string &requirement) {
     std::string executable;
     std::string identifier;
 
@@ -1994,7 +2031,7 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
         rules2.insert(Rule{20, NoMode, "^version\\.plist$"});
     }
 
-    std::map<std::string, std::vector<char>> local;
+    std::map<std::string, Hash> local;
 
     static Expression nested("^PlugIns/[^/]*\\.appex/Info\\.plist$");
 
@@ -2012,7 +2049,7 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
             return;
 
         auto &hash(local[name]);
-        if (!hash.empty())
+        if (hash.ready_)
             return;
 
         code(fun([&](std::streambuf &data, std::streambuf &save) {
@@ -2045,7 +2082,7 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
             copy(data, proxy);
         }));
 
-        _assert(hash.size() == LDID_SHA1_DIGEST_LENGTH);
+        _assert(hash.ready_);
     }));
 
     auto plist(plist_new_dict());
@@ -2058,15 +2095,22 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
         for (const auto &rule : version.second)
             rule.Compile();
 
+        bool old(&version.second == &rules1);
+
         for (const auto &hash : local)
             for (const auto &rule : version.second)
                 if (rule(hash.first)) {
-                    if (rule.mode_ == NoMode)
-                        plist_dict_set_item(files, hash.first.c_str(), plist_new_data(hash.second.data(), hash.second.size()));
-                    else if (rule.mode_ == OptionalMode) {
+                    if (rule.mode_ == NestedMode) {
+                        // XXX: implement
+                    } else if (rule.mode_ == NoMode && old)
+                        plist_dict_set_item(files, hash.first.c_str(), plist_new_data(hash.second.sha1_, sizeof(hash.second.sha1_)));
+                    else if (rule.mode_ != OmitMode) {
                         auto entry(plist_new_dict());
-                        plist_dict_set_item(entry, "hash", plist_new_data(hash.second.data(), hash.second.size()));
-                        plist_dict_set_item(entry, "optional", plist_new_bool(true));
+                        plist_dict_set_item(entry, "hash", plist_new_data(hash.second.sha1_, sizeof(hash.second.sha1_)));
+                        if (!old)
+                            plist_dict_set_item(entry, "hash2", plist_new_data(hash.second.sha256_, sizeof(hash.second.sha256_)));
+                        if (rule.mode_ == OptionalMode)
+                            plist_dict_set_item(entry, "optional", plist_new_bool(true));
                         plist_dict_set_item(files, hash.first.c_str(), entry);
                     }
 
@@ -2135,6 +2179,11 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
         remote[root + hash.first] = hash.second;
 
     return executable;
+}
+
+std::string Bundle(const std::string &root, Folder &folder, const std::string &key, const std::string &entitlements, const std::string &requirement) {
+    std::map<std::string, Hash> hashes;
+    return Bundle(root, folder, key, hashes, entitlements, requirement);
 }
 #endif
 
@@ -2311,8 +2360,7 @@ int main(int argc, char *argv[]) {
 #ifndef LDID_NOPLIST
             _assert(!flag_r);
             ldid::DiskFolder folder(path);
-            std::map<std::string, std::vector<char>> hashes;
-            path += "/" + Bundle("", folder, key, hashes, entitlements, requirement);
+            path += "/" + Bundle("", folder, key, entitlements, requirement);
 #else
             _assert(false);
 #endif
