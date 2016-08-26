@@ -1749,12 +1749,12 @@ void DiskFolder::Find(const std::string &root, const std::string &base, const Fu
         else
             code(base + name, fun([&](const Functor<void (std::streambuf &, std::streambuf &)> &code) {
                 std::string access(root + base + name);
-                _assert_(Open(access, fun([&](std::streambuf &data, const void *flag) {
+                Open(access, fun([&](std::streambuf &data, const void *flag) {
                     auto from(path + name);
                     std::filebuf save;
                     commit_[from] = Temporary(save, from);
                     code(data, save);
-                })), "open(): %s", access.c_str());
+                }));
             }));
     }
 }
@@ -1766,14 +1766,15 @@ void DiskFolder::Save(const std::string &path, const void *flag, const Functor<v
     code(save);
 }
 
-bool DiskFolder::Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code) {
+bool DiskFolder::Look(const std::string &path) {
+    return _syscall(access(Path(path).c_str(), R_OK), ENOENT) == 0;
+}
+
+void DiskFolder::Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code) {
     std::filebuf data;
     auto result(data.open(Path(path).c_str(), std::ios::binary | std::ios::in));
-    if (result == NULL)
-        return false;
-    _assert(result == &data);
+    _assert_(result == &data, "DiskFolder::Open(%s)", path.c_str());
     code(data, NULL);
-    return true;
 }
 
 void DiskFolder::Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) {
@@ -1791,7 +1792,11 @@ void SubFolder::Save(const std::string &path, const void *flag, const Functor<vo
     return parent_.Save(path_ + path, flag, code);
 }
 
-bool SubFolder::Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code) {
+bool SubFolder::Look(const std::string &path) {
+    return parent_.Look(path_ + path);
+}
+
+void SubFolder::Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code) {
     return parent_.Open(path_ + path, code);
 }
 
@@ -1826,7 +1831,14 @@ void UnionFolder::Save(const std::string &path, const void *flag, const Functor<
     return parent_.Save(Map(path), flag, code);
 }
 
-bool UnionFolder::Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code) {
+bool UnionFolder::Look(const std::string &path) {
+    auto file(resets_.find(path));
+    if (file != resets_.end())
+        return true;
+    return parent_.Look(Map(path));
+}
+
+void UnionFolder::Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code) {
     auto file(resets_.find(path));
     if (file == resets_.end())
         return parent_.Open(Map(path), code);
@@ -1835,7 +1847,6 @@ bool UnionFolder::Open(const std::string &path, const Functor<void (std::streamb
     auto &data(entry.first);
     data.pubseekpos(0, std::ios::in);
     code(data, entry.second);
-    return true;
 }
 
 void UnionFolder::Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) {
@@ -1999,12 +2010,12 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
 
     static const std::string info("Info.plist");
 
-    _assert_(folder.Open(info, fun([&](std::streambuf &buffer, const void *flag) {
+    folder.Open(info, fun([&](std::streambuf &buffer, const void *flag) {
         plist_d(buffer, fun([&](plist_t node) {
             executable = plist_s(plist_dict_get_item(node, "CFBundleExecutable"));
             identifier = plist_s(plist_dict_get_item(node, "CFBundleIdentifier"));
         }));
-    })), "open(): Info.plist");
+    }));
 
     static const std::string directory("_CodeSignature/");
     static const std::string signature(directory + "CodeResources");
@@ -2013,12 +2024,6 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
 
     auto &rules1(versions[""]);
     auto &rules2(versions["2"]);
-
-    folder.Open(signature, fun([&](std::streambuf &buffer, const void *) {
-        plist_d(buffer, fun([&](plist_t node) {
-            // XXX: maybe attempt to preserve existing rules
-        }));
-    }));
 
     if (true) {
         rules1.insert(Rule{1, NoMode, "^"});
