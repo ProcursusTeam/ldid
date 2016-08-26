@@ -1701,7 +1701,9 @@ void DiskFolder::Find(const std::string &root, const std::string &base, const Fu
             code(base + name, fun([&](const Functor<void (std::streambuf &, std::streambuf &)> &code) {
                 std::string access(root + base + name);
                 _assert_(Open(access, fun([&](std::streambuf &data, const void *flag) {
-                    NullBuffer save;
+                    auto from(path + name);
+                    std::filebuf save;
+                    commit_[from] = Temporary(save, from);
                     code(data, save);
                 })), "open(): %s", access.c_str());
             }));
