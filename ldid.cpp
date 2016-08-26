@@ -1444,7 +1444,7 @@ static void Commit(const std::string &path, const std::string &temp) {
 
 namespace ldid {
 
-void Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &key, const Slots &slots) {
+void Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &requirement, const std::string &key, const Slots &slots) {
     std::string team;
 
 #ifndef LDID_NOSMIME
@@ -1471,7 +1471,10 @@ void Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
 
         special = std::max(special, CSSLOT_REQUIREMENTS);
         alloc += sizeof(struct BlobIndex);
-        alloc += 0xc;
+        if (!requirement.empty())
+            alloc += 0xc;
+        else
+            alloc += requirement.size();
 
         if (!entitlements.empty()) {
             special = std::max(special, CSSLOT_ENTITLEMENTS);
@@ -1513,8 +1516,12 @@ void Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
         if (true) {
             std::stringbuf data;
 
-            Blobs requirements;
-            put(data, CSMAGIC_REQUIREMENTS, requirements);
+            if (requirement.empty()) {
+                Blobs requirements;
+                put(data, CSMAGIC_REQUIREMENTS, requirements);
+            } else {
+                put(data, requirement.data(), requirement.size());
+            }
 
             insert(blobs, CSSLOT_REQUIREMENTS, data);
         }
@@ -1921,7 +1928,7 @@ struct RuleCode {
 };
 
 #ifndef LDID_NOPLIST
-static void Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, std::vector<char> &hash, std::streambuf &save, const std::string &identifier, const std::string &entitlements, const std::string &key, const Slots &slots) {
+static void Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, std::vector<char> &hash, std::streambuf &save, const std::string &identifier, const std::string &entitlements, const std::string &requirement, const std::string &key, const Slots &slots) {
     // XXX: this is a miserable fail
     std::stringbuf temp;
     put(temp, prefix, size);
@@ -1929,10 +1936,10 @@ static void Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, std
     auto data(temp.str());
 
     HashProxy proxy(hash, save);
-    Sign(data.data(), data.size(), proxy, identifier, entitlements, key, slots);
+    Sign(data.data(), data.size(), proxy, identifier, entitlements, requirement, key, slots);
 }
 
-std::string Bundle(const std::string &root, Folder &folder, const std::string &key, std::map<std::string, std::vector<char>> &remote, const std::string &entitlements) {
+std::string Bundle(const std::string &root, Folder &folder, const std::string &key, std::map<std::string, std::vector<char>> &remote, const std::string &entitlements, const std::string &requirement) {
     std::string executable;
     std::string identifier;
 
@@ -1994,7 +2001,7 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
             return;
         auto bundle(root + Split(name).dir);
         SubFolder subfolder(folder, bundle);
-        Bundle(bundle, subfolder, key, local, "");
+        Bundle(bundle, subfolder, key, local, "", "");
     }));
 
     folder.Find("", fun([&](const std::string &name, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &code) {
@@ -2027,7 +2034,7 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
                     case MH_MAGIC: case MH_MAGIC_64:
                     case MH_CIGAM: case MH_CIGAM_64:
                         Slots slots;
-                        Sign(header.bytes, size, data, hash, save, identifier, "", key, slots);
+                        Sign(header.bytes, size, data, hash, save, identifier, "", "", key, slots);
                         return;
                 }
 
@@ -2118,7 +2125,7 @@ std::string Bundle(const std::string &root, Folder &folder, const std::string &k
             Slots slots;
             slots[1] = local.at(info);
             slots[3] = local.at(signature);
-            Sign(NULL, 0, buffer, local[executable], save, identifier, entitlements, key, slots);
+            Sign(NULL, 0, buffer, local[executable], save, identifier, entitlements, requirement, key, slots);
         }));
     }));
 
@@ -2147,6 +2154,7 @@ int main(int argc, char *argv[]) {
 
     bool flag_r(false);
     bool flag_e(false);
+    bool flag_q(false);
 
 #ifndef LDID_NOFLAGT
     bool flag_T(false);
@@ -2173,6 +2181,7 @@ int main(int argc, char *argv[]) {
 #endif
 
     Map entitlements;
+    Map requirement;
     Map key;
     ldid::Slots slots;
 
@@ -2207,6 +2216,13 @@ int main(int argc, char *argv[]) {
                 unsigned number(strtoul(slot, &arge, 0));
                 _assert(arge == colon);
                 sha1(slots[number], file.data(), file.size());
+            } break;
+
+            case 'q': flag_q = true; break;
+
+            case 'Q': {
+                const char *xml = argv[argi] + 2;
+                requirement.open(xml, O_RDONLY, PROT_READ, MAP_PRIVATE);
             } break;
 
             case 'D': flag_D = true; break;
@@ -2294,7 +2310,7 @@ int main(int argc, char *argv[]) {
             _assert(!flag_r);
             ldid::DiskFolder folder(path);
             std::map<std::string, std::vector<char>> hashes;
-            path += "/" + Bundle("", folder, key, hashes, entitlements);
+            path += "/" + Bundle("", folder, key, hashes, entitlements, requirement);
 #else
             _assert(false);
 #endif
@@ -2309,7 +2325,7 @@ int main(int argc, char *argv[]) {
                 ldid::Unsign(input.data(), input.size(), output);
             else {
                 std::string identifier(flag_I ?: split.base.c_str());
-                ldid::Sign(input.data(), input.size(), output, identifier, entitlements, key, slots);
+                ldid::Sign(input.data(), input.size(), output, identifier, entitlements, requirement, key, slots);
             }
 
             Commit(path, temp);
@@ -2399,6 +2415,23 @@ int main(int argc, char *argv[]) {
                         uint32_t begin = Swap(super->index[index].offset);
                         struct Blob *entitlements = reinterpret_cast<struct Blob *>(blob + begin);
                         fwrite(entitlements + 1, 1, Swap(entitlements->length) - sizeof(*entitlements), stdout);
+                    }
+            }
+
+            if (flag_q) {
+                _assert(signature != NULL);
+
+                uint32_t data = mach_header.Swap(signature->dataoff);
+
+                uint8_t *top = reinterpret_cast<uint8_t *>(mach_header.GetBase());
+                uint8_t *blob = top + data;
+                struct SuperBlob *super = reinterpret_cast<struct SuperBlob *>(blob);
+
+                for (size_t index(0); index != Swap(super->count); ++index)
+                    if (Swap(super->index[index].type) == CSSLOT_REQUIREMENTS) {
+                        uint32_t begin = Swap(super->index[index].offset);
+                        struct Blob *requirement = reinterpret_cast<struct Blob *>(blob + begin);
+                        fwrite(requirement, 1, Swap(requirement->length), stdout);
                     }
             }
 
