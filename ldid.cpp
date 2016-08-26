@@ -2020,7 +2020,7 @@ static std::vector<char> Sign(const uint8_t *prefix, size_t size, std::streambuf
     return Sign(data.data(), data.size(), proxy, identifier, entitlements, requirement, key, slots);
 }
 
-Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std::set<std::string> &remote, const std::string &entitlements, const std::string &requirement) {
+Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std::map<std::string, Hash> &remote, const std::string &entitlements, const std::string &requirement) {
     std::string executable;
     std::string identifier;
 
@@ -2080,11 +2080,10 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
         rules2.insert(Rule{20, NoMode, "^version\\.plist$"});
     }
 
-    std::map<std::string, Hash> hashes;
-    std::set<std::string> local;
+    std::map<std::string, Hash> local;
 
     std::string failure(mac ? "Contents/|Versions/[^/]*/Resources/" : "");
-    Expression nested("^(Frameworks/[^/]*\\.framework|PlugIns/[^/]*\\.appex)/(" + failure + ")Info\\.plist$");
+    Expression nested("^(Frameworks/[^/]*\\.framework|PlugIns/[^/]*\\.appex(()|/[^/]*.app))/(" + failure + ")Info\\.plist$");
     std::map<std::string, Bundle> bundles;
 
     folder.Find("", fun([&](const std::string &name, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &code) {
@@ -2104,14 +2103,9 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
         if (name == executable || Starts(name, directory) || Starts(name, "_MASReceipt/") || name == "CodeResources")
             return true;
 
-        if (local.find(name) != local.end())
-            return true;
-        local.insert(name);
-
-        for (const auto &bundle : bundles) {
+        for (const auto &bundle : bundles)
             if (Starts(name, bundle.first + "/"))
                 return true;
-        }
 
         return false;
     });
@@ -2120,7 +2114,9 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
         if (exclude(name))
             return;
 
-        auto &hash(hashes[name]);
+        if (local.find(name) != local.end())
+            return;
+        auto &hash(local[name]);
 
         code(fun([&](std::streambuf &data, std::streambuf &save) {
             union {
@@ -2133,7 +2129,8 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
             } header;
 
             auto size(most(data, &header.bytes, sizeof(header.bytes)));
-            if (size == sizeof(header.bytes))
+
+            if (name != "_WatchKitStub/WK" && size == sizeof(header.bytes))
                 switch (Swap(header.magic)) {
                     case FAT_MAGIC:
                         // Java class file format
@@ -2170,10 +2167,11 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
 
         bool old(&version.second == &rules1);
 
-        for (const auto &hash : hashes)
+        for (const auto &hash : local)
             for (const auto &rule : version.second)
                 if (rule(hash.first)) {
-                    if (rule.mode_ == NoMode && old)
+                    if (rule.mode_ == NestedMode);
+                    else if (rule.mode_ == NoMode && old)
                         plist_dict_set_item(files, hash.first.c_str(), plist_new_data(hash.second.sha1_, sizeof(hash.second.sha1_)));
                     else if (rule.mode_ != OmitMode) {
                         auto entry(plist_new_dict());
@@ -2202,12 +2200,13 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
                     break;
                 }
 
-        for (const auto &bundle : bundles) {
-            auto entry(plist_new_dict());
-            plist_dict_set_item(entry, "cdhash", plist_new_data(bundle.second.hash.data(), bundle.second.hash.size()));
-            plist_dict_set_item(entry, "requirement", plist_new_string("anchor apple generic"));
-            plist_dict_set_item(files, bundle.first.c_str(), entry);
-        }
+        if (!old && mac)
+            for (const auto &bundle : bundles) {
+                auto entry(plist_new_dict());
+                plist_dict_set_item(entry, "cdhash", plist_new_data(bundle.second.hash.data(), bundle.second.hash.size()));
+                plist_dict_set_item(entry, "requirement", plist_new_string("anchor apple generic"));
+                plist_dict_set_item(files, bundle.first.c_str(), entry);
+            }
     }
 
     for (const auto &version : versions) {
@@ -2250,7 +2249,7 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
     }
 
     folder.Save(signature, NULL, fun([&](std::streambuf &save) {
-        HashProxy proxy(hashes[signature], save);
+        HashProxy proxy(local[signature], save);
         char *xml(NULL);
         uint32_t size;
         plist_to_xml(plist, &xml, &size);
@@ -2264,23 +2263,20 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
     folder.Open(executable, fun([&](std::streambuf &buffer, const void *flag) {
         folder.Save(executable, flag, fun([&](std::streambuf &save) {
             Slots slots;
-            slots[1] = hashes.at(info);
-            slots[3] = hashes.at(signature);
-            bundle.hash = Sign(NULL, 0, buffer, hashes[executable], save, identifier, entitlements, requirement, key, slots);
+            slots[1] = local.at(info);
+            slots[3] = local.at(signature);
+            bundle.hash = Sign(NULL, 0, buffer, local[executable], save, identifier, entitlements, requirement, key, slots);
         }));
     }));
 
-    local.insert(signature);
-    local.insert(executable);
-
-    for (const auto &name : local)
-        remote.insert(root + name);
+    for (const auto &entry : local)
+        remote[root + entry.first] = entry.second;
 
     return bundle;
 }
 
 Bundle Sign(const std::string &root, Folder &folder, const std::string &key, const std::string &entitlements, const std::string &requirement) {
-    std::set<std::string> local;
+    std::map<std::string, Hash> local;
     return Sign(root, folder, key, local, entitlements, requirement);
 }
 #endif
