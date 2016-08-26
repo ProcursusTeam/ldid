@@ -1449,7 +1449,6 @@ void Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
 
 #ifndef LDID_NOSMIME
     if (!key.empty()) {
-        std::stringbuf data;
         Stuff stuff(key);
         auto name(X509_get_subject_name(stuff));
         _assert(name != NULL);
