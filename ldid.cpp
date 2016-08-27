@@ -1171,6 +1171,8 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
         size_t saved(save(mach_header, output, allocation.limit_, overlap, top));
         if (allocation.alloc_ > saved)
             pad(output, allocation.alloc_ - saved);
+        else
+            _assert(allocation.alloc_ == saved);
         position += allocation.alloc_;
     }
 }
