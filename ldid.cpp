@@ -1505,7 +1505,7 @@ std::vector<char> Sign(const void *idata, size_t isize, std::streambuf &output, 
 
         special = std::max(special, CSSLOT_REQUIREMENTS);
         alloc += sizeof(struct BlobIndex);
-        if (!requirement.empty())
+        if (requirement.empty())
             alloc += 0xc;
         else
             alloc += requirement.size();
