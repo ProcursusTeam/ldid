@@ -1500,6 +1500,9 @@ std::vector<char> Sign(const void *idata, size_t isize, std::streambuf &output, 
     }
 #endif
 
+    // XXX: this is just a "sufficiently large number"
+    size_t certificate(0x3000);
+
     Allocate(idata, isize, output, fun([&](const MachHeader &mach_header, size_t size) -> size_t {
         size_t alloc(sizeof(struct SuperBlob));
 
@@ -1531,8 +1534,7 @@ std::vector<char> Sign(const void *idata, size_t isize, std::streambuf &output, 
         if (!key.empty()) {
             alloc += sizeof(struct BlobIndex);
             alloc += sizeof(struct Blob);
-            // XXX: this is just a "sufficiently large number"
-            alloc += 0x3000;
+            alloc += certificate;
         }
 
         _foreach (slot, slots)
@@ -1661,7 +1663,8 @@ std::vector<char> Sign(const void *idata, size_t isize, std::streambuf &output, 
             std::string value(result);
             put(data, value.data(), value.size());
 
-            insert(blobs, CSSLOT_SIGNATURESLOT, CSMAGIC_BLOBWRAPPER, data);
+            const auto &save(insert(blobs, CSSLOT_SIGNATURESLOT, CSMAGIC_BLOBWRAPPER, data));
+            _assert(save.size() <= certificate);
         }
 #endif
 
