@@ -1621,7 +1621,8 @@ std::vector<char> Sign(const void *idata, size_t isize, std::streambuf &output, 
             put(data, &directory, sizeof(directory));
 
             put(data, identifier.c_str(), identifier.size() + 1);
-            put(data, team.c_str(), team.size() + 1);
+            if (!team.empty())
+                put(data, team.c_str(), team.size() + 1);
 
             uint8_t storage[special + normal][LDID_SHA1_DIGEST_LENGTH];
             uint8_t (*hashes)[LDID_SHA1_DIGEST_LENGTH] = storage + special;
