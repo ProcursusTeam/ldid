@@ -2019,7 +2019,9 @@ static std::vector<char> Sign(const uint8_t *prefix, size_t size, std::streambuf
     // XXX: this is a miserable fail
     std::stringbuf temp;
     put(temp, prefix, size);
-    copy(buffer, temp);
+    size += copy(buffer, temp);
+    // XXX: this is a stupid hack
+    pad(temp, 0x10 - (size & 0xf));
     auto data(temp.str());
 
     HashProxy proxy(hash, save);
