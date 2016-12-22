@@ -982,6 +982,34 @@ class Map {
 
 namespace ldid {
 
+std::string Analyze(const void *data, size_t size) {
+    std::string entitlements;
+
+    FatHeader fat_header(const_cast<void *>(data), size);
+    _foreach (mach_header, fat_header.GetMachHeaders())
+        _foreach (load_command, mach_header.GetLoadCommands())
+            if (mach_header.Swap(load_command->cmd) == LC_CODE_SIGNATURE) {
+                auto signature(reinterpret_cast<struct linkedit_data_command *>(load_command));
+                auto offset(mach_header.Swap(signature->dataoff));
+                auto pointer(reinterpret_cast<uint8_t *>(mach_header.GetBase()) + offset);
+                auto super(reinterpret_cast<struct SuperBlob *>(pointer));
+
+                for (size_t index(0); index != Swap(super->count); ++index)
+                    if (Swap(super->index[index].type) == CSSLOT_ENTITLEMENTS) {
+                        auto begin(Swap(super->index[index].offset));
+                        auto blob(reinterpret_cast<struct Blob *>(pointer + begin));
+                        auto writ(Swap(blob->length) - sizeof(*blob));
+
+                        if (entitlements.empty())
+                            entitlements.assign(reinterpret_cast<char *>(blob + 1), writ);
+                        else
+                            _assert(entitlements.compare(0, entitlements.size(), reinterpret_cast<char *>(blob + 1), writ) == 0);
+                    }
+            }
+
+    return entitlements;
+}
+
 static void Allocate(const void *idata, size_t isize, std::streambuf &output, const Functor<size_t (const MachHeader &, size_t)> &allocate, const Functor<size_t (const MachHeader &, std::streambuf &output, size_t, const std::string &, const char *)> &save) {
     FatHeader source(const_cast<void *>(idata), isize);
 

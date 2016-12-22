@@ -152,6 +152,7 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, con
 
 typedef std::map<uint32_t, std::vector<char>> Slots;
 
+std::string Analyze(const void *data, size_t size);
 std::vector<char> Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &requirement, const std::string &key, const Slots &slots);
 
 }
