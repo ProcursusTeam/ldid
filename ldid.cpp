@@ -1381,6 +1381,11 @@ class NullBuffer :
     }
 };
 
+class Digest {
+  public:
+    uint8_t sha1_[LDID_SHA1_DIGEST_LENGTH];
+};
+
 class Hash {
   public:
     char sha1_[LDID_SHA1_DIGEST_LENGTH];
@@ -1652,14 +1657,14 @@ std::vector<char> Sign(const void *idata, size_t isize, std::streambuf &output, 
             if (!team.empty())
                 put(data, team.c_str(), team.size() + 1);
 
-            uint8_t storage[special + normal][LDID_SHA1_DIGEST_LENGTH];
-            uint8_t (*hashes)[LDID_SHA1_DIGEST_LENGTH] = storage + special;
+            std::vector<Digest> storage(special + normal);
+            auto *hashes(&storage[special]);
 
-            memset(storage, 0, sizeof(*storage) * special);
+            memset(storage.data(), 0, sizeof(Digest) * special);
 
             _foreach (blob, blobs) {
                 auto local(reinterpret_cast<const Blob *>(&blob.second[0]));
-                sha1((uint8_t *) (hashes - blob.first), local, Swap(local->length));
+                sha1((hashes - blob.first)->sha1_, local, Swap(local->length));
             }
 
             _foreach (slot, posts) {
@@ -1669,11 +1674,11 @@ std::vector<char> Sign(const void *idata, size_t isize, std::streambuf &output, 
 
             if (normal != 1)
                 for (size_t i = 0; i != normal - 1; ++i)
-                    sha1(hashes[i], (PageSize_ * i < overlap.size() ? overlap.data() : top) + PageSize_ * i, PageSize_);
+                    sha1(hashes[i].sha1_, (PageSize_ * i < overlap.size() ? overlap.data() : top) + PageSize_ * i, PageSize_);
             if (normal != 0)
-                sha1(hashes[normal - 1], top + PageSize_ * (normal - 1), ((limit - 1) % PageSize_) + 1);
+                sha1(hashes[normal - 1].sha1_, top + PageSize_ * (normal - 1), ((limit - 1) % PageSize_) + 1);
 
-            put(data, storage, sizeof(storage));
+            put(data, storage.data(), sizeof(Digest) * storage.size());
 
             const auto &save(insert(blobs, CSSLOT_CODEDIRECTORY, CSMAGIC_CODEDIRECTORY, data));
             sha1(hash, save.data(), save.size());
