@@ -2061,7 +2061,7 @@ static std::vector<char> Sign(const uint8_t *prefix, size_t size, std::streambuf
     return Sign(data.data(), data.size(), proxy, identifier, entitlements, requirement, key, slots);
 }
 
-Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std::map<std::string, Hash> &remote, const std::string &entitlements, const std::string &requirement) {
+Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std::map<std::string, Hash> &remote, const std::string &requirement, const Functor<std::string (const std::string &, const std::string &)> &alter) {
     std::string executable;
     std::string identifier;
 
@@ -2084,6 +2084,17 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
         executable = "MacOS/" + executable;
         mac = true;
     }
+
+    std::string entitlements;
+    folder.Open(executable, fun([&](std::streambuf &buffer, const void *flag) {
+        // XXX: this is a miserable fail
+        std::stringbuf temp;
+        auto size(copy(buffer, temp));
+        // XXX: this is a stupid hack
+        pad(temp, 0x10 - (size & 0xf));
+        auto data(temp.str());
+        entitlements = alter(root, Analyze(data.data(), data.size()));
+    }));
 
     static const std::string directory("_CodeSignature/");
     static const std::string signature(directory + "CodeResources");
@@ -2133,7 +2144,9 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
         auto bundle(root + Split(name).dir);
         bundle.resize(bundle.size() - resources.size());
         SubFolder subfolder(folder, bundle);
-        bundles[nested[1]] = Sign(bundle, subfolder, key, local, "", "");
+
+        bundles[nested[1]] = Sign(bundle, subfolder, key, local, "", Starts(name, "PlugIns/") ? alter :
+            static_cast<const Functor<std::string (const std::string &, const std::string &)> &>(fun([&](const std::string &, const std::string &entitlements) -> std::string { return entitlements; })));
     }), fun([&](const std::string &name, const Functor<std::string ()> &read) {
     }));
 
@@ -2320,9 +2333,9 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
     return bundle;
 }
 
-Bundle Sign(const std::string &root, Folder &folder, const std::string &key, const std::string &entitlements, const std::string &requirement) {
+Bundle Sign(const std::string &root, Folder &folder, const std::string &key, const std::string &requirement, const Functor<std::string (const std::string &, const std::string &)> &alter) {
     std::map<std::string, Hash> local;
-    return Sign(root, folder, key, local, entitlements, requirement);
+    return Sign(root, folder, key, local, requirement, alter);
 }
 #endif
 
@@ -2499,7 +2512,7 @@ int main(int argc, char *argv[]) {
 #ifndef LDID_NOPLIST
             _assert(!flag_r);
             ldid::DiskFolder folder(path);
-            path += "/" + Sign("", folder, key, entitlements, requirement).path;
+            path += "/" + Sign("", folder, key, requirement, ldid::fun([&](const std::string &, const std::string &) -> std::string { return entitlements; })).path;
 #else
             _assert(false);
 #endif
