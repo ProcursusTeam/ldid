@@ -1717,7 +1717,7 @@ static void Unsign(void *idata, size_t isize, std::streambuf &output) {
     }));
 }
 
-std::string DiskFolder::Path(const std::string &path) {
+std::string DiskFolder::Path(const std::string &path) const {
     return path_ + "/" + path;
 }
 
@@ -1748,7 +1748,7 @@ std::string readlink(const std::string &path) {
 }
 #endif
 
-void DiskFolder::Find(const std::string &root, const std::string &base, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) {
+void DiskFolder::Find(const std::string &root, const std::string &base, const Functor<void (const std::string &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) const {
     std::string path(Path(root) + base);
 
     DIR *dir(opendir(path.c_str()));
@@ -1793,37 +1793,35 @@ void DiskFolder::Find(const std::string &root, const std::string &base, const Fu
         if (directory)
             Find(root, base + name + "/", code, link);
         else
-            code(base + name, fun([&](const Functor<void (std::streambuf &, std::streambuf &)> &code) {
-                std::string access(root + base + name);
-                Open(access, fun([&](std::streambuf &data, const void *flag) {
-                    auto from(path + name);
-                    std::filebuf save;
-                    commit_[from] = Temporary(save, from);
-                    code(data, save);
-                }));
-            }));
+            code(base + name);
     }
 }
 
-void DiskFolder::Save(const std::string &path, const void *flag, const Functor<void (std::streambuf &)> &code) {
-    std::filebuf save;
-    auto from(Path(path));
-    commit_[from] = Temporary(save, from);
-    code(save);
+void DiskFolder::Save(const std::string &path, bool edit, const void *flag, const Functor<void (std::streambuf &)> &code) {
+    if (!edit) {
+        // XXX: use nullbuf
+        std::stringbuf save;
+        code(save);
+    } else {
+        std::filebuf save;
+        auto from(Path(path));
+        commit_[from] = Temporary(save, from);
+        code(save);
+    }
 }
 
-bool DiskFolder::Look(const std::string &path) {
+bool DiskFolder::Look(const std::string &path) const {
     return _syscall(access(Path(path).c_str(), R_OK), ENOENT) == 0;
 }
 
-void DiskFolder::Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code) {
+void DiskFolder::Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code) const {
     std::filebuf data;
     auto result(data.open(Path(path).c_str(), std::ios::binary | std::ios::in));
     _assert_(result == &data, "DiskFolder::Open(%s)", path.c_str());
     code(data, NULL);
 }
 
-void DiskFolder::Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) {
+void DiskFolder::Find(const std::string &path, const Functor<void (const std::string &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) const {
     Find(path, "", code, link);
 }
 #endif
@@ -1834,38 +1832,32 @@ SubFolder::SubFolder(Folder &parent, const std::string &path) :
 {
 }
 
-void SubFolder::Save(const std::string &path, const void *flag, const Functor<void (std::streambuf &)> &code) {
-    return parent_.Save(path_ + path, flag, code);
+void SubFolder::Save(const std::string &path, bool edit, const void *flag, const Functor<void (std::streambuf &)> &code) {
+    return parent_.Save(path_ + path, edit, flag, code);
 }
 
-bool SubFolder::Look(const std::string &path) {
+bool SubFolder::Look(const std::string &path) const {
     return parent_.Look(path_ + path);
 }
 
-void SubFolder::Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code) {
+void SubFolder::Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code) const {
     return parent_.Open(path_ + path, code);
 }
 
-void SubFolder::Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) {
+void SubFolder::Find(const std::string &path, const Functor<void (const std::string &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) const {
     return parent_.Find(path_ + path, code, link);
 }
 
-std::string UnionFolder::Map(const std::string &path) {
+std::string UnionFolder::Map(const std::string &path) const {
     auto remap(remaps_.find(path));
     if (remap == remaps_.end())
         return path;
     return remap->second;
 }
 
-void UnionFolder::Map(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code, const std::string &file, const Functor<void (const Functor<void (std::streambuf &, const void *)> &)> &save) {
+void UnionFolder::Map(const std::string &path, const Functor<void (const std::string &)> &code, const std::string &file, const Functor<void (const Functor<void (std::streambuf &, const void *)> &)> &save) const {
     if (file.size() >= path.size() && file.substr(0, path.size()) == path)
-        code(file.substr(path.size()), fun([&](const Functor<void (std::streambuf &, std::streambuf &)> &code) {
-            save(fun([&](std::streambuf &data, const void *flag) {
-                parent_.Save(file, flag, fun([&](std::streambuf &save) {
-                    code(data, save);
-                }));
-            }));
-        }));
+        code(file.substr(path.size()));
 }
 
 UnionFolder::UnionFolder(Folder &parent) :
@@ -1873,18 +1865,18 @@ UnionFolder::UnionFolder(Folder &parent) :
 {
 }
 
-void UnionFolder::Save(const std::string &path, const void *flag, const Functor<void (std::streambuf &)> &code) {
-    return parent_.Save(Map(path), flag, code);
+void UnionFolder::Save(const std::string &path, bool edit, const void *flag, const Functor<void (std::streambuf &)> &code) {
+    return parent_.Save(Map(path), edit, flag, code);
 }
 
-bool UnionFolder::Look(const std::string &path) {
+bool UnionFolder::Look(const std::string &path) const {
     auto file(resets_.find(path));
     if (file != resets_.end())
         return true;
     return parent_.Look(Map(path));
 }
 
-void UnionFolder::Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code) {
+void UnionFolder::Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code) const {
     auto file(resets_.find(path));
     if (file == resets_.end())
         return parent_.Open(Map(path), code);
@@ -1895,10 +1887,10 @@ void UnionFolder::Open(const std::string &path, const Functor<void (std::streamb
     code(data, entry.second);
 }
 
-void UnionFolder::Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) {
-    parent_.Find(path, fun([&](const std::string &name, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &save) {
+void UnionFolder::Find(const std::string &path, const Functor<void (const std::string &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) const {
+    parent_.Find(path, fun([&](const std::string &name) {
         if (deletes_.find(path + name) == deletes_.end())
-            code(name, save);
+            code(name);
     }), fun([&](const std::string &name, const Functor<std::string ()> &read) {
         if (deletes_.find(path + name) == deletes_.end())
             link(name, read);
@@ -2138,7 +2130,7 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
     Expression nested("^(Frameworks/[^/]*\\.framework|PlugIns/[^/]*\\.appex(()|/[^/]*.app))/(" + failure + ")Info\\.plist$");
     std::map<std::string, Bundle> bundles;
 
-    folder.Find("", fun([&](const std::string &name, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &code) {
+    folder.Find("", fun([&](const std::string &name) {
         if (!nested(name))
             return;
         auto bundle(root + Split(name).dir);
@@ -2168,7 +2160,7 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
 
     std::map<std::string, std::string> links;
 
-    folder.Find("", fun([&](const std::string &name, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &code) {
+    folder.Find("", fun([&](const std::string &name) {
         if (exclude(name))
             return;
 
@@ -2176,7 +2168,7 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
             return;
         auto &hash(local[name]);
 
-        code(fun([&](std::streambuf &data, std::streambuf &save) {
+        folder.Open(name, fun([&](std::streambuf &data, const void *flag) {
             union {
                 struct {
                     uint32_t magic;
@@ -2197,14 +2189,18 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
                     case FAT_CIGAM:
                     case MH_MAGIC: case MH_MAGIC_64:
                     case MH_CIGAM: case MH_CIGAM_64:
-                        Slots slots;
-                        Sign(header.bytes, size, data, hash, save, identifier, "", "", key, slots);
+                        folder.Save(name, true, flag, fun([&](std::streambuf &save) {
+                            Slots slots;
+                            Sign(header.bytes, size, data, hash, save, identifier, "", "", key, slots);
+                        }));
                         return;
                 }
 
-            HashProxy proxy(hash, save);
-            put(proxy, header.bytes, size);
-            copy(data, proxy);
+            folder.Save(name, false, flag, fun([&](std::streambuf &save) {
+                HashProxy proxy(hash, save);
+                put(proxy, header.bytes, size);
+                copy(data, proxy);
+            }));
         }));
     }), fun([&](const std::string &name, const Functor<std::string ()> &read) {
         if (exclude(name))
@@ -2306,7 +2302,7 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
             }
     }
 
-    folder.Save(signature, NULL, fun([&](std::streambuf &save) {
+    folder.Save(signature, true, NULL, fun([&](std::streambuf &save) {
         HashProxy proxy(local[signature], save);
         char *xml(NULL);
         uint32_t size;
@@ -2319,7 +2315,7 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
     bundle.path = executable;
 
     folder.Open(executable, fun([&](std::streambuf &buffer, const void *flag) {
-        folder.Save(executable, flag, fun([&](std::streambuf &save) {
+        folder.Save(executable, true, flag, fun([&](std::streambuf &save) {
             Slots slots;
             slots[1] = local.at(info);
             slots[3] = local.at(signature);

@@ -50,10 +50,10 @@ FunctorImpl<decltype(&Function_::operator())> fun(const Function_ &value) {
 
 class Folder {
   public:
-    virtual void Save(const std::string &path, const void *flag, const Functor<void (std::streambuf &)> &code) = 0;
-    virtual bool Look(const std::string &path) = 0;
-    virtual void Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code) = 0;
-    virtual void Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) = 0;
+    virtual void Save(const std::string &path, bool edit, const void *flag, const Functor<void (std::streambuf &)> &code) = 0;
+    virtual bool Look(const std::string &path) const = 0;
+    virtual void Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code) const = 0;
+    virtual void Find(const std::string &path, const Functor<void (const std::string &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) const = 0;
 };
 
 class DiskFolder :
@@ -63,18 +63,18 @@ class DiskFolder :
     const std::string path_;
     std::map<std::string, std::string> commit_;
 
-    std::string Path(const std::string &path);
+    std::string Path(const std::string &path) const;
 
-    void Find(const std::string &root, const std::string &base, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link);
+    void Find(const std::string &root, const std::string &base, const Functor<void (const std::string &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) const;
 
   public:
     DiskFolder(const std::string &path);
     ~DiskFolder();
 
-    virtual void Save(const std::string &path, const void *flag, const Functor<void (std::streambuf &)> &code);
-    virtual bool Look(const std::string &path);
-    virtual void Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code);
-    virtual void Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link);
+    virtual void Save(const std::string &path, bool edit, const void *flag, const Functor<void (std::streambuf &)> &code);
+    virtual bool Look(const std::string &path) const;
+    virtual void Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code) const;
+    virtual void Find(const std::string &path, const Functor<void (const std::string &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) const;
 };
 
 class SubFolder :
@@ -87,10 +87,10 @@ class SubFolder :
   public:
     SubFolder(Folder &parent, const std::string &path);
 
-    virtual void Save(const std::string &path, const void *flag, const Functor<void (std::streambuf &)> &code);
-    virtual bool Look(const std::string &path);
-    virtual void Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code);
-    virtual void Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link);
+    virtual void Save(const std::string &path, bool edit, const void *flag, const Functor<void (std::streambuf &)> &code);
+    virtual bool Look(const std::string &path) const;
+    virtual void Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code) const;
+    virtual void Find(const std::string &path, const Functor<void (const std::string &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) const;
 };
 
 class UnionFolder :
@@ -114,18 +114,18 @@ class UnionFolder :
     std::set<std::string> deletes_;
 
     std::map<std::string, std::string> remaps_;
-    std::map<std::string, std::pair<StringBuffer, const void *>> resets_;
+    mutable std::map<std::string, std::pair<StringBuffer, const void *>> resets_;
 
-    std::string Map(const std::string &path);
-    void Map(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code, const std::string &file, const Functor<void (const Functor<void (std::streambuf &, const void *)> &)> &save);
+    std::string Map(const std::string &path) const;
+    void Map(const std::string &path, const Functor<void (const std::string &)> &code, const std::string &file, const Functor<void (const Functor<void (std::streambuf &, const void *)> &)> &save) const;
 
   public:
     UnionFolder(Folder &parent);
 
-    virtual void Save(const std::string &path, const void *flag, const Functor<void (std::streambuf &)> &code);
-    virtual bool Look(const std::string &path);
-    virtual void Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code);
-    virtual void Find(const std::string &path, const Functor<void (const std::string &, const Functor<void (const Functor<void (std::streambuf &, std::streambuf &)> &)> &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link);
+    virtual void Save(const std::string &path, bool edit, const void *flag, const Functor<void (std::streambuf &)> &code);
+    virtual bool Look(const std::string &path) const;
+    virtual void Open(const std::string &path, const Functor<void (std::streambuf &, const void *)> &code) const;
+    virtual void Find(const std::string &path, const Functor<void (const std::string &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) const;
 
     void operator ()(const std::string &from) {
         deletes_.insert(from);
