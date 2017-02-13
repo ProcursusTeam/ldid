@@ -63,8 +63,10 @@ class DiskFolder :
     const std::string path_;
     std::map<std::string, std::string> commit_;
 
+  protected:
     std::string Path(const std::string &path) const;
 
+  private:
     void Find(const std::string &root, const std::string &base, const Functor<void (const std::string &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) const;
 
   public:
