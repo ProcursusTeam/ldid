@@ -1888,14 +1888,6 @@ void UnionFolder::Open(const std::string &path, const Functor<void (std::streamb
 }
 
 void UnionFolder::Find(const std::string &path, const Functor<void (const std::string &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) const {
-    parent_.Find(path, fun([&](const std::string &name) {
-        if (deletes_.find(path + name) == deletes_.end())
-            code(name);
-    }), fun([&](const std::string &name, const Functor<std::string ()> &read) {
-        if (deletes_.find(path + name) == deletes_.end())
-            link(name, read);
-    }));
-
     for (auto &reset : resets_)
         Map(path, code, reset.first, fun([&](const Functor<void (std::streambuf &, const void *)> &code) {
             auto &entry(reset.second);
@@ -1909,6 +1901,14 @@ void UnionFolder::Find(const std::string &path, const Functor<void (const std::s
                 code(data, flag);
             }));
         }));
+
+    parent_.Find(path, fun([&](const std::string &name) {
+        if (deletes_.find(path + name) == deletes_.end())
+            code(name);
+    }), fun([&](const std::string &name, const Functor<std::string ()> &read) {
+        if (deletes_.find(path + name) == deletes_.end())
+            link(name, read);
+    }));
 }
 
 #ifndef LDID_NOTOOLS
