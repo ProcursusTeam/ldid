@@ -819,10 +819,14 @@ class FatHeader :
 #define CSSLOT_RESOURCEDIR   uint32_t(0x00003)
 #define CSSLOT_APPLICATION   uint32_t(0x00004)
 #define CSSLOT_ENTITLEMENTS  uint32_t(0x00005)
+#define CSSLOT_ALTERNATE     uint32_t(0x01000)
 
 #define CSSLOT_SIGNATURESLOT uint32_t(0x10000)
 
-#define CS_HASHTYPE_SHA1 1
+#define CS_HASHTYPE_SHA160_160 1
+#define CS_HASHTYPE_SHA256_256 2
+#define CS_HASHTYPE_SHA256_160 3
+#define CS_HASHTYPE_SHA386_386 4
 
 struct BlobIndex {
     uint32_t type;
@@ -863,13 +867,86 @@ struct CodeDirectory {
 extern "C" uint32_t hash(uint8_t *k, uint32_t length, uint32_t initval);
 #endif
 
-static void sha1(uint8_t *hash, const void *data, size_t size) {
-    LDID_SHA1(static_cast<const uint8_t *>(data), size, hash);
-}
+struct Algorithm {
+    size_t size_;
+    uint8_t type_;
 
-static void sha1(std::vector<char> &hash, const void *data, size_t size) {
-    hash.resize(LDID_SHA1_DIGEST_LENGTH);
-    sha1(reinterpret_cast<uint8_t *>(hash.data()), data, size);
+    Algorithm(size_t size, uint8_t type) :
+        size_(size),
+        type_(type)
+    {
+    }
+
+    virtual const uint8_t *operator [](const ldid::Hash &hash) const = 0;
+
+    virtual void operator ()(uint8_t *hash, const void *data, size_t size) const = 0;
+    virtual void operator ()(ldid::Hash &hash, const void *data, size_t size) const = 0;
+    virtual void operator ()(std::vector<char> &hash, const void *data, size_t size) const = 0;
+};
+
+struct AlgorithmSHA1 :
+    Algorithm
+{
+    AlgorithmSHA1() :
+        Algorithm(LDID_SHA1_DIGEST_LENGTH, CS_HASHTYPE_SHA160_160)
+    {
+    }
+
+    virtual const uint8_t *operator [](const ldid::Hash &hash) const {
+        return hash.sha1_;
+    }
+
+    void operator ()(uint8_t *hash, const void *data, size_t size) const {
+        LDID_SHA1(static_cast<const uint8_t *>(data), size, hash);
+    }
+
+    void operator ()(ldid::Hash &hash, const void *data, size_t size) const {
+        return operator()(hash.sha1_, data, size);
+    }
+
+    void operator ()(std::vector<char> &hash, const void *data, size_t size) const {
+        hash.resize(LDID_SHA1_DIGEST_LENGTH);
+        return operator ()(reinterpret_cast<uint8_t *>(hash.data()), data, size);
+    }
+};
+
+struct AlgorithmSHA256 :
+    Algorithm
+{
+    AlgorithmSHA256() :
+        Algorithm(LDID_SHA256_DIGEST_LENGTH, CS_HASHTYPE_SHA256_256)
+    {
+    }
+
+    virtual const uint8_t *operator [](const ldid::Hash &hash) const {
+        return hash.sha256_;
+    }
+
+    void operator ()(uint8_t *hash, const void *data, size_t size) const {
+        LDID_SHA256(static_cast<const uint8_t *>(data), size, hash);
+    }
+
+    void operator ()(ldid::Hash &hash, const void *data, size_t size) const {
+        return operator()(hash.sha256_, data, size);
+    }
+
+    void operator ()(std::vector<char> &hash, const void *data, size_t size) const {
+        hash.resize(LDID_SHA256_DIGEST_LENGTH);
+        return operator ()(reinterpret_cast<uint8_t *>(hash.data()), data, size);
+    }
+};
+
+static const std::vector<Algorithm *> &GetAlgorithms() {
+    static AlgorithmSHA1 sha1;
+    static AlgorithmSHA256 sha256;
+
+    static Algorithm *array[] = {
+        &sha1,
+        &sha256,
+    };
+
+    static std::vector<Algorithm *> algorithms(array, array + sizeof(array) / sizeof(array[0]));
+    return algorithms;
 }
 
 struct CodesignAllocation {
@@ -1398,27 +1475,17 @@ class Digest {
     uint8_t sha1_[LDID_SHA1_DIGEST_LENGTH];
 };
 
-class Hash {
-  public:
-    char sha1_[LDID_SHA1_DIGEST_LENGTH];
-    char sha256_[LDID_SHA256_DIGEST_LENGTH];
-
-    operator std::vector<char>() const {
-        return {sha1_, sha1_ + sizeof(sha1_)};
-    }
-};
-
 class HashBuffer :
     public std::streambuf
 {
   private:
-    Hash &hash_;
+    ldid::Hash &hash_;
 
     LDID_SHA1_CTX sha1_;
     LDID_SHA256_CTX sha256_;
 
   public:
-    HashBuffer(Hash &hash) :
+    HashBuffer(ldid::Hash &hash) :
         hash_(hash)
     {
         LDID_SHA1_Init(&sha1_);
@@ -1452,7 +1519,7 @@ class HashProxy :
     std::streambuf &buffer_;
 
   public:
-    HashProxy(Hash &hash, std::streambuf &buffer) :
+    HashProxy(ldid::Hash &hash, std::streambuf &buffer) :
         HashBuffer(hash),
         buffer_(buffer)
     {
@@ -1523,8 +1590,8 @@ static void Commit(const std::string &path, const std::string &temp) {
 
 namespace ldid {
 
-std::vector<char> Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &requirement, const std::string &key, const Slots &slots, const Functor<void (double)> &percent) {
-    std::vector<char> hash(LDID_SHA1_DIGEST_LENGTH);
+Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &requirement, const std::string &key, const Slots &slots, const Functor<void (double)> &percent) {
+    Hash hash;
 
     std::string team;
 
@@ -1551,7 +1618,17 @@ std::vector<char> Sign(const void *idata, size_t isize, std::streambuf &output, 
     Allocate(idata, isize, output, fun([&](const MachHeader &mach_header, size_t size) -> size_t {
         size_t alloc(sizeof(struct SuperBlob));
 
+        uint32_t normal((size + PageSize_ - 1) / PageSize_);
+
         uint32_t special(0);
+
+        _foreach (slot, slots)
+            special = std::max(special, slot.first);
+
+        mach_header.ForSection(fun([&](const char *segment, const char *section, void *data, size_t size) {
+            if (strcmp(segment, "__TEXT") == 0 && section != NULL && strcmp(section, "__info_plist") == 0)
+                special = std::max(special, CSSLOT_INFOSLOT);
+        }));
 
         special = std::max(special, CSSLOT_REQUIREMENTS);
         alloc += sizeof(struct BlobIndex);
@@ -1567,14 +1644,18 @@ std::vector<char> Sign(const void *idata, size_t isize, std::streambuf &output, 
             alloc += entitlements.size();
         }
 
-        special = std::max(special, CSSLOT_CODEDIRECTORY);
-        alloc += sizeof(struct BlobIndex);
-        alloc += sizeof(struct Blob);
-        alloc += sizeof(struct CodeDirectory);
-        alloc += identifier.size() + 1;
+        size_t directory(0);
+
+        directory += sizeof(struct BlobIndex);
+        directory += sizeof(struct Blob);
+        directory += sizeof(struct CodeDirectory);
+        directory += identifier.size() + 1;
 
         if (!team.empty())
-            alloc += team.size() + 1;
+            directory += team.size() + 1;
+
+        for (Algorithm *algorithm : GetAlgorithms())
+            alloc = Align(alloc + directory + (special + normal) * algorithm->size_, 16);
 
         if (!key.empty()) {
             alloc += sizeof(struct BlobIndex);
@@ -1582,16 +1663,6 @@ std::vector<char> Sign(const void *idata, size_t isize, std::streambuf &output, 
             alloc += certificate;
         }
 
-        _foreach (slot, slots)
-            special = std::max(special, slot.first);
-
-        mach_header.ForSection(fun([&](const char *segment, const char *section, void *data, size_t size) {
-            if (strcmp(segment, "__TEXT") == 0 && section != NULL && strcmp(section, "__info_plist") == 0)
-                special = std::max(special, CSSLOT_INFOSLOT);
-        }));
-
-        uint32_t normal((size + PageSize_ - 1) / PageSize_);
-        alloc = Align(alloc + (special + normal) * LDID_SHA1_DIGEST_LENGTH, 16);
         return alloc;
     }), fun([&](const MachHeader &mach_header, std::streambuf &output, size_t limit, const std::string &overlap, const char *top, const Functor<void (double)> &percent) -> size_t {
         Blobs blobs;
@@ -1615,15 +1686,21 @@ std::vector<char> Sign(const void *idata, size_t isize, std::streambuf &output, 
             insert(blobs, CSSLOT_ENTITLEMENTS, CSMAGIC_EMBEDDED_ENTITLEMENTS, data);
         }
 
-        if (true) {
+        Slots posts(slots);
+
+        mach_header.ForSection(fun([&](const char *segment, const char *section, void *data, size_t size) {
+            if (strcmp(segment, "__TEXT") == 0 && section != NULL && strcmp(section, "__info_plist") == 0) {
+                auto &slot(posts[CSSLOT_INFOSLOT]);
+                for (Algorithm *algorithm : GetAlgorithms())
+                    (*algorithm)(slot, data, size);
+            }
+        }));
+
+        unsigned total(0);
+        for (Algorithm *pointer : GetAlgorithms()) {
+            Algorithm &algorithm(*pointer);
+
             std::stringbuf data;
-
-            Slots posts(slots);
-
-            mach_header.ForSection(fun([&](const char *segment, const char *section, void *data, size_t size) {
-                if (strcmp(segment, "__TEXT") == 0 && section != NULL && strcmp(section, "__info_plist") == 0)
-                    sha1(posts[CSSLOT_INFOSLOT], data, size);
-            }));
 
             uint32_t special(0);
             _foreach (blob, blobs)
@@ -1638,8 +1715,8 @@ std::vector<char> Sign(const void *idata, size_t isize, std::streambuf &output, 
             directory.nSpecialSlots = Swap(special);
             directory.codeLimit = Swap(uint32_t(limit));
             directory.nCodeSlots = Swap(normal);
-            directory.hashSize = LDID_SHA1_DIGEST_LENGTH;
-            directory.hashType = CS_HASHTYPE_SHA1;
+            directory.hashSize = algorithm.size_;
+            directory.hashType = algorithm.type_;
             directory.spare1 = 0x00;
             directory.pageSize = PageShift_;
             directory.spare2 = Swap(uint32_t(0));
@@ -1659,9 +1736,9 @@ std::vector<char> Sign(const void *idata, size_t isize, std::streambuf &output, 
                 offset += team.size() + 1;
             }
 
-            offset += LDID_SHA1_DIGEST_LENGTH * special;
+            offset += special * algorithm.size_;
             directory.hashOffset = Swap(uint32_t(offset));
-            offset += LDID_SHA1_DIGEST_LENGTH * normal;
+            offset += normal * algorithm.size_;
 
             put(data, &directory, sizeof(directory));
 
@@ -1669,35 +1746,35 @@ std::vector<char> Sign(const void *idata, size_t isize, std::streambuf &output, 
             if (!team.empty())
                 put(data, team.c_str(), team.size() + 1);
 
-            std::vector<Digest> storage(special + normal);
-            auto *hashes(&storage[special]);
+            std::vector<uint8_t> storage((special + normal) * algorithm.size_);
+            auto *hashes(&storage[special * algorithm.size_]);
 
-            memset(storage.data(), 0, sizeof(Digest) * special);
+            memset(storage.data(), 0, special * algorithm.size_);
 
             _foreach (blob, blobs) {
                 auto local(reinterpret_cast<const Blob *>(&blob.second[0]));
-                sha1((hashes - blob.first)->sha1_, local, Swap(local->length));
+                algorithm(hashes - blob.first * algorithm.size_, local, Swap(local->length));
             }
 
-            _foreach (slot, posts) {
-                _assert(sizeof(*hashes) == slot.second.size());
-                memcpy(hashes - slot.first, slot.second.data(), slot.second.size());
-            }
+            _foreach (slot, posts)
+                memcpy(hashes - slot.first * algorithm.size_, algorithm[slot.second], algorithm.size_);
 
             percent(0);
             if (normal != 1)
                 for (size_t i = 0; i != normal - 1; ++i) {
-                    sha1(hashes[i].sha1_, (PageSize_ * i < overlap.size() ? overlap.data() : top) + PageSize_ * i, PageSize_);
+                    algorithm(hashes + i * algorithm.size_, (PageSize_ * i < overlap.size() ? overlap.data() : top) + PageSize_ * i, PageSize_);
                     percent(double(i) / normal);
                 }
             if (normal != 0)
-                sha1(hashes[normal - 1].sha1_, top + PageSize_ * (normal - 1), ((limit - 1) % PageSize_) + 1);
+                algorithm(hashes + (normal - 1) * algorithm.size_, top + PageSize_ * (normal - 1), ((limit - 1) % PageSize_) + 1);
             percent(1);
 
-            put(data, storage.data(), sizeof(Digest) * storage.size());
+            put(data, storage.data(), storage.size());
 
-            const auto &save(insert(blobs, CSSLOT_CODEDIRECTORY, CSMAGIC_CODEDIRECTORY, data));
-            sha1(hash, save.data(), save.size());
+            const auto &save(insert(blobs, total == 0 ? CSSLOT_CODEDIRECTORY : CSSLOT_ALTERNATE + total - 1, CSMAGIC_CODEDIRECTORY, data));
+            algorithm(hash, save.data(), save.size());
+
+            ++total;
         }
 
 #ifndef LDID_NOSMIME
@@ -2062,7 +2139,7 @@ struct RuleCode {
 };
 
 #ifndef LDID_NOPLIST
-static std::vector<char> Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, Hash &hash, std::streambuf &save, const std::string &identifier, const std::string &entitlements, const std::string &requirement, const std::string &key, const Slots &slots, size_t length, const Functor<void (double)> &percent) {
+static Hash Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, Hash &hash, std::streambuf &save, const std::string &identifier, const std::string &entitlements, const std::string &requirement, const std::string &key, const Slots &slots, size_t length, const Functor<void (double)> &percent) {
     // XXX: this is a miserable fail
     std::stringbuf temp;
     put(temp, prefix, size);
@@ -2251,12 +2328,12 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
                 if (rule(hash.first)) {
                     if (!old && mac && excludes.find(hash.first) != excludes.end());
                     else if (old && rule.mode_ == NoMode)
-                        plist_dict_set_item(files, hash.first.c_str(), plist_new_data(hash.second.sha1_, sizeof(hash.second.sha1_)));
+                        plist_dict_set_item(files, hash.first.c_str(), plist_new_data(reinterpret_cast<const char *>(hash.second.sha1_), sizeof(hash.second.sha1_)));
                     else if (rule.mode_ != OmitMode) {
                         auto entry(plist_new_dict());
-                        plist_dict_set_item(entry, "hash", plist_new_data(hash.second.sha1_, sizeof(hash.second.sha1_)));
+                        plist_dict_set_item(entry, "hash", plist_new_data(reinterpret_cast<const char *>(hash.second.sha1_), sizeof(hash.second.sha1_)));
                         if (!old)
-                            plist_dict_set_item(entry, "hash2", plist_new_data(hash.second.sha256_, sizeof(hash.second.sha256_)));
+                            plist_dict_set_item(entry, "hash2", plist_new_data(reinterpret_cast<const char *>(hash.second.sha256_), sizeof(hash.second.sha256_)));
                         if (rule.mode_ == OptionalMode)
                             plist_dict_set_item(entry, "optional", plist_new_bool(true));
                         plist_dict_set_item(files, hash.first.c_str(), entry);
@@ -2282,7 +2359,7 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
         if (!old && mac)
             for (const auto &bundle : bundles) {
                 auto entry(plist_new_dict());
-                plist_dict_set_item(entry, "cdhash", plist_new_data(bundle.second.hash.data(), bundle.second.hash.size()));
+                plist_dict_set_item(entry, "cdhash", plist_new_data(reinterpret_cast<const char *>(bundle.second.hash.sha256_), sizeof(bundle.second.hash.sha256_)));
                 plist_dict_set_item(entry, "requirement", plist_new_string("anchor apple generic"));
                 plist_dict_set_item(files, bundle.first.c_str(), entry);
             }
@@ -2433,14 +2510,16 @@ int main(int argc, char *argv[]) {
             case 'e': flag_e = true; break;
 
             case 'E': {
-                const char *slot = argv[argi] + 2;
-                const char *colon = strchr(slot, ':');
+                const char *string = argv[argi] + 2;
+                const char *colon = strchr(string, ':');
                 _assert(colon != NULL);
                 Map file(colon + 1, O_RDONLY, PROT_READ, MAP_PRIVATE);
                 char *arge;
-                unsigned number(strtoul(slot, &arge, 0));
+                unsigned number(strtoul(string, &arge, 0));
                 _assert(arge == colon);
-                sha1(slots[number], file.data(), file.size());
+                auto &slot(slots[number]);
+                for (Algorithm *algorithm : GetAlgorithms())
+                    (*algorithm)(slot, file.data(), file.size());
             } break;
 
             case 'q': flag_q = true; break;
@@ -2680,9 +2759,9 @@ int main(int argc, char *argv[]) {
 
                         if (pages != 1)
                             for (size_t i = 0; i != pages - 1; ++i)
-                                sha1(hashes[i], top + PageSize_ * i, PageSize_);
+                                LDID_SHA1(top + PageSize_ * i, PageSize_, hashes[i]);
                         if (pages != 0)
-                            sha1(hashes[pages - 1], top + PageSize_ * (pages - 1), ((data - 1) % PageSize_) + 1);
+                            LDID_SHA1(top + PageSize_ * (pages - 1), ((data - 1) % PageSize_) + 1, hashes[pages - 1]);
                     }
             }
         }
