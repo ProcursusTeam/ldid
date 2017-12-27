@@ -99,24 +99,16 @@ class UnionFolder :
     public Folder
 {
   private:
-    class StringBuffer :
-        public std::stringbuf
-    {
-      public:
-        StringBuffer() {
-        }
-
-        StringBuffer(const StringBuffer &rhs) :
-            std::stringbuf(rhs.str())
-        {
-        }
+    struct Reset {
+        const void *flag_;
+        std::streambuf *data_;
     };
 
     Folder &parent_;
     std::set<std::string> deletes_;
 
     std::map<std::string, std::string> remaps_;
-    mutable std::map<std::string, std::pair<StringBuffer, const void *>> resets_;
+    mutable std::map<std::string, Reset> resets_;
 
     std::string Map(const std::string &path) const;
     void Map(const std::string &path, const Functor<void (const std::string &)> &code, const std::string &file, const Functor<void (const Functor<void (std::streambuf &, size_t, const void *)> &)> &save) const;
@@ -138,11 +130,11 @@ class UnionFolder :
         remaps_[to] = from;
     }
 
-    std::stringbuf &operator ()(const std::string &from, const void *flag) {
+    void operator ()(const std::string &from, const void *flag, std::streambuf &data) {
         operator ()(from);
         auto &reset(resets_[from]);
-        reset.second = flag;
-        return reset.first;
+        reset.flag_ = flag;
+        reset.data_ = &data;
     }
 };
 

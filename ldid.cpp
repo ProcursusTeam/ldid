@@ -1978,19 +1978,20 @@ void UnionFolder::Open(const std::string &path, const Functor<void (std::streamb
         return parent_.Open(Map(path), code);
     auto &entry(file->second);
 
-    auto &data(entry.first);
+    auto &data(*entry.data_);
     auto length(data.pubseekoff(0, std::ios::end, std::ios::in));
     data.pubseekpos(0, std::ios::in);
-    code(data, length, entry.second);
+    code(data, length, entry.flag_);
 }
 
 void UnionFolder::Find(const std::string &path, const Functor<void (const std::string &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) const {
     for (auto &reset : resets_)
         Map(path, code, reset.first, fun([&](const Functor<void (std::streambuf &, size_t, const void *)> &code) {
             auto &entry(reset.second);
-            auto length(entry.first.pubseekoff(0, std::ios::end, std::ios::in));
-            entry.first.pubseekpos(0, std::ios::in);
-            code(entry.first, length, entry.second);
+            auto &data(*entry.data_);
+            auto length(data.pubseekoff(0, std::ios::end, std::ios::in));
+            data.pubseekpos(0, std::ios::in);
+            code(data, length, entry.flag_);
         }));
 
     for (auto &remap : remaps_)
