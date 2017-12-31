@@ -1220,9 +1220,11 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
 
         if (symtab != NULL) {
             auto end(mach_header.Swap(symtab->stroff) + mach_header.Swap(symtab->strsize));
-            _assert(end <= size);
-            _assert(end >= size - 0x10);
-            size = end;
+            if (symtab->stroff != 0 || symtab->strsize != 0) {
+                _assert(end <= size);
+                _assert(end >= size - 0x10);
+                size = end;
+            }
         }
 
         size_t alloc(allocate(mach_header, size));
