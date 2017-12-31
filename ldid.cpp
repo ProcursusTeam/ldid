@@ -885,7 +885,7 @@ struct CodeDirectory {
     uint32_t codeLimit;
     uint8_t hashSize;
     uint8_t hashType;
-    uint8_t spare1;
+    uint8_t platform;
     uint8_t pageSize;
     uint32_t spare2;
     uint32_t scatterOffset;
@@ -893,6 +893,17 @@ struct CodeDirectory {
     //uint32_t spare3;
     //uint64_t codeLimit64;
 } _packed;
+
+enum CodeSignatureFlags {
+    kSecCodeSignatureHost = 0x0001,
+    kSecCodeSignatureAdhoc = 0x0002,
+    kSecCodeSignatureForceHard = 0x0100,
+    kSecCodeSignatureForceKill = 0x0200,
+    kSecCodeSignatureForceExpiration = 0x0400,
+    kSecCodeSignatureRestrict = 0x0800,
+    kSecCodeSignatureEnforcement = 0x1000,
+    kSecCodeSignatureLibraryValidation = 0x2000,
+};
 
 enum Kind : uint32_t {
     exprForm = 1, // prefix expr form
@@ -1769,7 +1780,7 @@ static void req(std::streambuf &buffer, uint8_t (&&data)[Size_]) {
     put(buffer, zeros, 3 - (Size_ + 3) % 4);
 }
 
-Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &requirements, const std::string &key, const Slots &slots, const Progress &progress) {
+Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &requirements, const std::string &key, const Slots &slots, uint32_t flags, bool platform, const Progress &progress) {
     Hash hash;
 
 
@@ -1906,13 +1917,13 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
 
             CodeDirectory directory;
             directory.version = Swap(uint32_t(0x00020200));
-            directory.flags = Swap(uint32_t(0));
+            directory.flags = Swap(uint32_t(flags));
             directory.nSpecialSlots = Swap(special);
             directory.codeLimit = Swap(uint32_t(limit));
             directory.nCodeSlots = Swap(normal);
             directory.hashSize = algorithm.size_;
             directory.hashType = algorithm.type_;
-            directory.spare1 = 0x00;
+            directory.platform = platform ? 0x01 : 0x00;
             directory.pageSize = PageShift_;
             directory.spare2 = Swap(uint32_t(0));
             directory.scatterOffset = Swap(uint32_t(0));
@@ -2384,7 +2395,7 @@ struct RuleCode {
 };
 
 #ifndef LDID_NOPLIST
-static Hash Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, Hash &hash, std::streambuf &save, const std::string &identifier, const std::string &entitlements, const std::string &requirements, const std::string &key, const Slots &slots, size_t length, const Progress &progress) {
+static Hash Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, Hash &hash, std::streambuf &save, const std::string &identifier, const std::string &entitlements, const std::string &requirements, const std::string &key, const Slots &slots, size_t length, uint32_t flags, bool platform, const Progress &progress) {
     // XXX: this is a miserable fail
     std::stringbuf temp;
     put(temp, prefix, size);
@@ -2394,7 +2405,7 @@ static Hash Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, Has
     auto data(temp.str());
 
     HashProxy proxy(hash, save);
-    return Sign(data.data(), data.size(), proxy, identifier, entitlements, requirements, key, slots, progress);
+    return Sign(data.data(), data.size(), proxy, identifier, entitlements, requirements, key, slots, flags, platform, percent);
 }
 
 Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std::map<std::string, Hash> &remote, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, const Progress &progress) {
@@ -2538,7 +2549,7 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
                     case MH_CIGAM: case MH_CIGAM_64:
                         folder.Save(name, true, flag, fun([&](std::streambuf &save) {
                             Slots slots;
-                            Sign(header.bytes, size, data, hash, save, identifier, "", "", key, slots, length, Progression(progress, root + name));
+                            Sign(header.bytes, size, data, hash, save, identifier, "", "", key, slots, length, 0, false, Progression(progress, root + name));
                         }));
                         return;
                 }
@@ -2667,7 +2678,7 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
             Slots slots;
             slots[1] = local.at(info);
             slots[3] = local.at(signature);
-            bundle.hash = Sign(NULL, 0, buffer, local[executable], save, identifier, entitlements, requirements, key, slots, length, Progression(progress, root + executable));
+            bundle.hash = Sign(NULL, 0, buffer, local[executable], save, identifier, entitlements, requirements, key, slots, length, 0, false, Progression(progress, root + executable));
         }));
     }));
 
@@ -2716,6 +2727,9 @@ int main(int argc, char *argv[]) {
     bool flag_a(false);
 
     bool flag_u(false);
+
+    uint32_t flags(0);
+    bool platform(false);
 
     uint32_t flag_CPUType(_not(uint32_t));
     uint32_t flag_CPUSubtype(_not(uint32_t));
@@ -2791,6 +2805,32 @@ int main(int argc, char *argv[]) {
                     flag_CPUSubtype = strtoul(colon + 1, &arge, 0);
                     _assert(arge == argv[argi] + strlen(argv[argi]));
                 }
+            break;
+
+            case 'C': {
+                const char *name = argv[argi] + 2;
+                if (false);
+                else if (strcmp(name, "host") == 0)
+                    flags |= kSecCodeSignatureHost;
+                else if (strcmp(name, "adhoc") == 0)
+                    flags |= kSecCodeSignatureAdhoc;
+                else if (strcmp(name, "hard") == 0)
+                    flags |= kSecCodeSignatureForceHard;
+                else if (strcmp(name, "kill") == 0)
+                    flags |= kSecCodeSignatureForceKill;
+                else if (strcmp(name, "expires") == 0)
+                    flags |= kSecCodeSignatureForceExpiration;
+                else if (strcmp(name, "restrict") == 0)
+                    flags |= kSecCodeSignatureRestrict;
+                else if (strcmp(name, "enforcement") == 0)
+                    flags |= kSecCodeSignatureEnforcement;
+                else if (strcmp(name, "library-validation") == 0)
+                    flags |= kSecCodeSignatureLibraryValidation;
+                else _assert(false);
+            } break;
+
+            case 'P':
+                platform = true;
             break;
 
             case 's':
@@ -2873,7 +2913,7 @@ int main(int argc, char *argv[]) {
                 ldid::Unsign(input.data(), input.size(), output, dummy_);
             else {
                 std::string identifier(flag_I ?: split.base.c_str());
-                ldid::Sign(input.data(), input.size(), output, identifier, entitlements, requirements, key, slots, dummy_);
+                ldid::Sign(input.data(), input.size(), output, identifier, entitlements, requirements, key, slots, flags, platform, dummy_);
             }
 
             Commit(path, temp);
