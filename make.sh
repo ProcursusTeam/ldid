@@ -10,16 +10,16 @@ else
     shift
 fi
 
+export DEVELOPER_DIR=/Applications/Xcode-5.1.1.app
+
 if "${ios}"; then
 
 out=ios
-sudo xcode-select --switch /Applications/Xcode-4.6.3.app
-flags=(cycc -- -miphoneos-version-min=2.0 -arch armv6)
+flags=(cycc -- -miphoneos-version-min=2.0 -arch armv6 -arch arm64)
 
 else
 
 out=out
-sudo xcode-select --switch /Applications/Xcode-5.1.1.app
 
 if which xcrun &>/dev/null; then
     flags=(xcrun -sdk macosx g++)

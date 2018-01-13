@@ -2405,7 +2405,7 @@ static Hash Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, Has
     auto data(temp.str());
 
     HashProxy proxy(hash, save);
-    return Sign(data.data(), data.size(), proxy, identifier, entitlements, requirements, key, slots, flags, platform, percent);
+    return Sign(data.data(), data.size(), proxy, identifier, entitlements, requirements, key, slots, flags, platform, progress);
 }
 
 Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std::map<std::string, Hash> &remote, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, const Progress &progress) {
