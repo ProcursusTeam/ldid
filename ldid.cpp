@@ -1657,11 +1657,13 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
         for (Algorithm *algorithm : GetAlgorithms())
             alloc = Align(alloc + directory + (special + normal) * algorithm->size_, 16);
 
+#ifndef LDID_NOSMIME
         if (!key.empty()) {
             alloc += sizeof(struct BlobIndex);
             alloc += sizeof(struct Blob);
             alloc += certificate;
         }
+#endif
 
         return alloc;
     }), fun([&](const MachHeader &mach_header, std::streambuf &output, size_t limit, const std::string &overlap, const char *top, const Functor<void (double)> &percent) -> size_t {
