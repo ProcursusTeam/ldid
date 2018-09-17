@@ -1488,10 +1488,35 @@ class Signature {
     PKCS7 *value_;
 
   public:
-    Signature(const Stuff &stuff, const Buffer &data) :
-        value_(PKCS7_sign(stuff, stuff, stuff, data, PKCS7_BINARY | PKCS7_DETACHED))
-    {
+    Signature(const Stuff &stuff, const Buffer &data, const std::string &xml) {
+        value_ = PKCS7_new();
         _assert(value_ != NULL);
+
+        _assert(PKCS7_set_type(value_, NID_pkcs7_signed));
+        _assert(PKCS7_content_new(value_, NID_pkcs7_data));
+
+        STACK_OF(X509) *certs(stuff);
+        for (unsigned i(0), e(sk_X509_num(certs)); i != e; i++)
+            _assert(PKCS7_add_certificate(value_, sk_X509_value(certs, e - i - 1)));
+
+        auto info(PKCS7_sign_add_signer(value_, stuff, stuff, NULL, PKCS7_NOSMIMECAP));
+        _assert(info != NULL);
+
+        PKCS7_set_detached(value_, 1);
+
+        ASN1_OCTET_STRING *string(ASN1_OCTET_STRING_new());
+        _assert(string != NULL);
+        try {
+            _assert(ASN1_STRING_set(string, xml.data(), xml.size()));
+
+            static auto nid(OBJ_create("1.2.840.113635.100.9.1", "", ""));
+            _assert(PKCS7_add_signed_attribute(info, nid, V_ASN1_OCTET_STRING, string));
+        } catch (...) {
+            ASN1_OCTET_STRING_free(string);
+            throw;
+        }
+
+        _assert(PKCS7_final(value_, data, PKCS7_BINARY));
     }
 
     ~Signature() {
@@ -1874,13 +1899,39 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
 
 #ifndef LDID_NOSMIME
         if (!key.empty()) {
+            auto plist(plist_new_dict());
+            _scope({ plist_free(plist); });
+
+            auto cdhashes(plist_new_array());
+            plist_dict_set_item(plist, "cdhashes", cdhashes);
+
+            unsigned total(0);
+            for (Algorithm *pointer : GetAlgorithms()) {
+                Algorithm &algorithm(*pointer);
+                (void) algorithm;
+
+                const auto &blob(blobs[total == 0 ? CSSLOT_CODEDIRECTORY : CSSLOT_ALTERNATE + total - 1]);
+                ++total;
+
+                std::vector<char> hash;
+                algorithm(hash, blob.data(), blob.size());
+                hash.resize(20);
+
+                plist_array_append_item(cdhashes, plist_new_data(hash.data(), hash.size()));
+            }
+
+            char *xml(NULL);
+            uint32_t size;
+            plist_to_xml(plist, &xml, &size);
+            _scope({ free(xml); });
+
             std::stringbuf data;
             const std::string &sign(blobs[CSSLOT_CODEDIRECTORY]);
 
             Stuff stuff(key);
             Buffer bio(sign);
 
-            Signature signature(stuff, sign);
+            Signature signature(stuff, sign, std::string(xml, size));
             Buffer result(signature);
             std::string value(result);
             put(data, value.data(), value.size());
