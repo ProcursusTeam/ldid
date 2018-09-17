@@ -94,23 +94,27 @@
 #define _assert__(line) \
     _assert___(line)
 
+#ifndef $
+#define $(value) value
+#endif
+
 #ifdef __EXCEPTIONS
 #define _assert_(expr, format, ...) \
     do if (!(expr)) { \
-        fprintf(stderr, "%s(%u): _assert(): " format "\n", __FILE__, __LINE__, ## __VA_ARGS__); \
-        throw __FILE__ "(" _assert__(__LINE__) "): _assert(" #expr ")"; \
+        fprintf(stderr, $("%s(%u): _assert(): " format "\n"), __FILE__, __LINE__, ## __VA_ARGS__); \
+        throw $(__FILE__ "(" _assert__(__LINE__) "): _assert(" #expr ")"); \
     } while (false)
 #else
 // XXX: this is not acceptable
 #define _assert_(expr, format, ...) \
     do if (!(expr)) { \
-        fprintf(stderr, "%s(%u): _assert(): " format "\n", __FILE__, __LINE__, ## __VA_ARGS__); \
+        fprintf(stderr, $("%s(%u): _assert(): " format "\n"), __FILE__, __LINE__, ## __VA_ARGS__); \
         exit(-1); \
     } while (false)
 #endif
 
 #define _assert(expr) \
-    _assert_(expr, "%s", #expr)
+    _assert_(expr, "%s", $(#expr))
 
 #define _syscall(expr, ...) [&] { for (;;) { \
     auto _value(expr); \
@@ -127,7 +131,7 @@
 } }()
 
 #define _trace() \
-    fprintf(stderr, "_trace(%s:%u): %s\n", __FILE__, __LINE__, __FUNCTION__)
+    fprintf(stderr, $("_trace(%s:%u): %s\n"), __FILE__, __LINE__, $(__FUNCTION__))
 
 #define _not(type) \
     ((type) ~ (type) 0)
