@@ -1590,7 +1590,7 @@ static void Commit(const std::string &path, const std::string &temp) {
 
 namespace ldid {
 
-Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &requirement, const std::string &key, const Slots &slots, const Functor<void (double)> &percent) {
+Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &requirements, const std::string &key, const Slots &slots, const Functor<void (double)> &percent) {
     Hash hash;
 
     std::string team;
@@ -1632,10 +1632,10 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
 
         special = std::max(special, CSSLOT_REQUIREMENTS);
         alloc += sizeof(struct BlobIndex);
-        if (requirement.empty())
+        if (requirements.empty())
             alloc += 0xc;
         else
-            alloc += requirement.size();
+            alloc += requirements.size();
 
         if (!entitlements.empty()) {
             special = std::max(special, CSSLOT_ENTITLEMENTS);
@@ -1672,11 +1672,11 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
         if (true) {
             std::stringbuf data;
 
-            if (requirement.empty()) {
+            if (requirements.empty()) {
                 Blobs requirements;
                 put(data, CSMAGIC_REQUIREMENTS, requirements);
             } else {
-                put(data, requirement.data(), requirement.size());
+                put(data, requirements.data(), requirements.size());
             }
 
             insert(blobs, CSSLOT_REQUIREMENTS, data);
@@ -2142,7 +2142,7 @@ struct RuleCode {
 };
 
 #ifndef LDID_NOPLIST
-static Hash Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, Hash &hash, std::streambuf &save, const std::string &identifier, const std::string &entitlements, const std::string &requirement, const std::string &key, const Slots &slots, size_t length, const Functor<void (double)> &percent) {
+static Hash Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, Hash &hash, std::streambuf &save, const std::string &identifier, const std::string &entitlements, const std::string &requirements, const std::string &key, const Slots &slots, size_t length, const Functor<void (double)> &percent) {
     // XXX: this is a miserable fail
     std::stringbuf temp;
     put(temp, prefix, size);
@@ -2152,10 +2152,10 @@ static Hash Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, Has
     auto data(temp.str());
 
     HashProxy proxy(hash, save);
-    return Sign(data.data(), data.size(), proxy, identifier, entitlements, requirement, key, slots, percent);
+    return Sign(data.data(), data.size(), proxy, identifier, entitlements, requirements, key, slots, percent);
 }
 
-Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std::map<std::string, Hash> &remote, const std::string &requirement, const Functor<std::string (const std::string &, const std::string &)> &alter, const Functor<void (const std::string &)> &progress, const Functor<void (double)> &percent) {
+Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std::map<std::string, Hash> &remote, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, const Functor<void (const std::string &)> &progress, const Functor<void (double)> &percent) {
     std::string executable;
     std::string identifier;
 
@@ -2425,7 +2425,7 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
             Slots slots;
             slots[1] = local.at(info);
             slots[3] = local.at(signature);
-            bundle.hash = Sign(NULL, 0, buffer, local[executable], save, identifier, entitlements, requirement, key, slots, length, percent);
+            bundle.hash = Sign(NULL, 0, buffer, local[executable], save, identifier, entitlements, requirements, key, slots, length, percent);
         }));
     }));
 
@@ -2435,9 +2435,9 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
     return bundle;
 }
 
-Bundle Sign(const std::string &root, Folder &folder, const std::string &key, const std::string &requirement, const Functor<std::string (const std::string &, const std::string &)> &alter, const Functor<void (const std::string &)> &progress, const Functor<void (double)> &percent) {
+Bundle Sign(const std::string &root, Folder &folder, const std::string &key, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, const Functor<void (const std::string &)> &progress, const Functor<void (double)> &percent) {
     std::map<std::string, Hash> local;
-    return Sign(root, folder, key, local, requirement, alter, progress, percent);
+    return Sign(root, folder, key, local, requirements, alter, progress, percent);
 }
 #endif
 
@@ -2486,7 +2486,7 @@ int main(int argc, char *argv[]) {
 #endif
 
     Map entitlements;
-    Map requirement;
+    Map requirements;
     Map key;
     ldid::Slots slots;
 
@@ -2529,7 +2529,7 @@ int main(int argc, char *argv[]) {
 
             case 'Q': {
                 const char *xml = argv[argi] + 2;
-                requirement.open(xml, O_RDONLY, PROT_READ, MAP_PRIVATE);
+                requirements.open(xml, O_RDONLY, PROT_READ, MAP_PRIVATE);
             } break;
 
             case 'D': flag_D = true; break;
@@ -2616,7 +2616,7 @@ int main(int argc, char *argv[]) {
 #ifndef LDID_NOPLIST
             _assert(!flag_r);
             ldid::DiskFolder folder(path);
-            path += "/" + Sign("", folder, key, requirement, ldid::fun([&](const std::string &, const std::string &) -> std::string { return entitlements; })
+            path += "/" + Sign("", folder, key, requirements, ldid::fun([&](const std::string &, const std::string &) -> std::string { return entitlements; })
                 , ldid::fun([&](const std::string &) {}), ldid::fun(dummy)
             ).path;
 #else
@@ -2633,7 +2633,7 @@ int main(int argc, char *argv[]) {
                 ldid::Unsign(input.data(), input.size(), output, ldid::fun(dummy));
             else {
                 std::string identifier(flag_I ?: split.base.c_str());
-                ldid::Sign(input.data(), input.size(), output, identifier, entitlements, requirement, key, slots, ldid::fun(dummy));
+                ldid::Sign(input.data(), input.size(), output, identifier, entitlements, requirements, key, slots, ldid::fun(dummy));
             }
 
             Commit(path, temp);

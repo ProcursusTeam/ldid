@@ -148,11 +148,11 @@ struct Bundle {
     Hash hash;
 };
 
-Bundle Sign(const std::string &root, Folder &folder, const std::string &key, const std::string &requirement, const Functor<std::string (const std::string &, const std::string &)> &alter, const Functor<void (const std::string &)> &progress, const Functor<void (double)> &percent);
+Bundle Sign(const std::string &root, Folder &folder, const std::string &key, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, const Functor<void (const std::string &)> &progress, const Functor<void (double)> &percent);
 
 typedef std::map<uint32_t, Hash> Slots;
 
-Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &requirement, const std::string &key, const Slots &slots, const Functor<void (double)> &percent);
+Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &requirements, const std::string &key, const Slots &slots, const Functor<void (double)> &percent);
 
 }
 
