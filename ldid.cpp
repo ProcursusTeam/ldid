@@ -2295,10 +2295,9 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
 
     if (true) {
         rules1.insert(Rule{1, NoMode, "^" + resources});
-        if (!mac) rules1.insert(Rule{10000, OmitMode, "^(Frameworks/[^/]+\\.framework/|PlugIns/[^/]+\\.appex/|PlugIns/[^/]+\\.appex/Frameworks/[^/]+\\.framework/|())SC_Info/[^/]+\\.(sinf|supf|supp)$"});
         rules1.insert(Rule{1000, OptionalMode, "^" + resources + ".*\\.lproj/"});
         rules1.insert(Rule{1100, OmitMode, "^" + resources + ".*\\.lproj/locversion.plist$"});
-        if (!mac) rules1.insert(Rule{10000, OmitMode, "^Watch/[^/]+\\.app/(Frameworks/[^/]+\\.framework/|PlugIns/[^/]+\\.appex/|PlugIns/[^/]+\\.appex/Frameworks/[^/]+\\.framework/)SC_Info/[^/]+\\.(sinf|supf|supp)$"});
+        rules1.insert(Rule{1010, NoMode, "^Base\\.lproj/"});
         rules1.insert(Rule{1, NoMode, "^version.plist$"});
     }
 
@@ -2306,14 +2305,13 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
         rules2.insert(Rule{11, NoMode, ".*\\.dSYM($|/)"});
         rules2.insert(Rule{20, NoMode, "^" + resources});
         rules2.insert(Rule{2000, OmitMode, "^(.*/)?\\.DS_Store$"});
-        if (!mac) rules2.insert(Rule{10000, OmitMode, "^(Frameworks/[^/]+\\.framework/|PlugIns/[^/]+\\.appex/|PlugIns/[^/]+\\.appex/Frameworks/[^/]+\\.framework/|())SC_Info/[^/]+\\.(sinf|supf|supp)$"});
         rules2.insert(Rule{10, NestedMode, "^(Frameworks|SharedFrameworks|PlugIns|Plug-ins|XPCServices|Helpers|MacOS|Library/(Automator|Spotlight|LoginItems))/"});
         rules2.insert(Rule{1, NoMode, "^.*"});
         rules2.insert(Rule{1000, OptionalMode, "^" + resources + ".*\\.lproj/"});
         rules2.insert(Rule{1100, OmitMode, "^" + resources + ".*\\.lproj/locversion.plist$"});
+        rules2.insert(Rule{1010, NoMode, "^Base\\.lproj/"});
         rules2.insert(Rule{20, OmitMode, "^Info\\.plist$"});
         rules2.insert(Rule{20, OmitMode, "^PkgInfo$"});
-        if (!mac) rules2.insert(Rule{10000, OmitMode, "^Watch/[^/]+\\.app/(Frameworks/[^/]+\\.framework/|PlugIns/[^/]+\\.appex/|PlugIns/[^/]+\\.appex/Frameworks/[^/]+\\.framework/)SC_Info/[^/]+\\.(sinf|supf|supp)$"});
         rules2.insert(Rule{10, NestedMode, "^[^/]+$"});
         rules2.insert(Rule{20, NoMode, "^embedded\\.provisionprofile$"});
         rules2.insert(Rule{20, NoMode, "^version\\.plist$"});
