@@ -863,6 +863,53 @@ struct CodeDirectory {
     //uint64_t codeLimit64;
 } _packed;
 
+enum Kind : uint32_t {
+    exprForm = 1, // prefix expr form
+};
+
+enum ExprOp : uint32_t {
+    opFalse, // unconditionally false
+    opTrue, // unconditionally true
+    opIdent, // match canonical code [string]
+    opAppleAnchor, // signed by Apple as Apple's product
+    opAnchorHash, // match anchor [cert hash]
+    opInfoKeyValue, // *legacy* - use opInfoKeyField [key; value]
+    opAnd, // binary prefix expr AND expr [expr; expr]
+    opOr, // binary prefix expr OR expr [expr; expr]
+    opCDHash, // match hash of CodeDirectory directly [cd hash]
+    opNot, // logical inverse [expr]
+    opInfoKeyField, // Info.plist key field [string; match suffix]
+    opCertField, // Certificate field [cert index; field name; match suffix]
+    opTrustedCert, // require trust settings to approve one particular cert [cert index]
+    opTrustedCerts, // require trust settings to approve the cert chain
+    opCertGeneric, // Certificate component by OID [cert index; oid; match suffix]
+    opAppleGenericAnchor, // signed by Apple in any capacity
+    opEntitlementField, // entitlement dictionary field [string; match suffix]
+    opCertPolicy, // Certificate policy by OID [cert index; oid; match suffix]
+    opNamedAnchor, // named anchor type
+    opNamedCode, // named subroutine
+    opPlatform, // platform constraint [integer]
+    exprOpCount // (total opcode count in use)
+};
+
+enum MatchOperation {
+    matchExists, // anything but explicit "false" - no value stored
+    matchEqual, // equal (CFEqual)
+    matchContains, // partial match (substring)
+    matchBeginsWith, // partial match (initial substring)
+    matchEndsWith, // partial match (terminal substring)
+    matchLessThan, // less than (string with numeric comparison)
+    matchGreaterThan, // greater than (string with numeric comparison)
+    matchLessEqual, // less or equal (string with numeric comparison)
+    matchGreaterEqual, // greater or equal (string with numeric comparison)
+};
+
+#define OID_ISO_MEMBER 42
+#define OID_US OID_ISO_MEMBER, 134, 72
+#define APPLE_OID OID_US, 0x86, 0xf7, 0x63
+#define APPLE_ADS_OID APPLE_OID, 0x64
+#define APPLE_EXTENSION_OID APPLE_ADS_OID, 6
+
 #ifndef LDID_NOFLAGT
 extern "C" uint32_t hash(uint8_t *k, uint32_t length, uint32_t initval);
 #endif
@@ -1590,27 +1637,85 @@ static void Commit(const std::string &path, const std::string &temp) {
 
 namespace ldid {
 
+static void get(std::string &value, X509_NAME *name, int nid) {
+    auto index(X509_NAME_get_index_by_NID(name, nid, -1));
+    _assert(index >= 0);
+    auto next(X509_NAME_get_index_by_NID(name, nid, index));
+    _assert(next == -1);
+    auto entry(X509_NAME_get_entry(name, index));
+    _assert(entry != NULL);
+    auto asn(X509_NAME_ENTRY_get_data(entry));
+    _assert(asn != NULL);
+    value.assign(reinterpret_cast<char *>(ASN1_STRING_data(asn)), ASN1_STRING_length(asn));
+}
+
+static void req(std::streambuf &buffer, uint32_t value) {
+    value = Swap(value);
+    put(buffer, &value, sizeof(value));
+}
+
+static void req(std::streambuf &buffer, const std::string &value) {
+    req(buffer, value.size());
+    put(buffer, value.data(), value.size());
+    static uint8_t zeros[] = {0,0,0,0};
+    put(buffer, zeros, 3 - (value.size() + 3) % 4);
+}
+
+template <size_t Size_>
+static void req(std::streambuf &buffer, uint8_t (&&data)[Size_]) {
+    req(buffer, Size_);
+    put(buffer, data, Size_);
+    static uint8_t zeros[] = {0,0,0,0};
+    put(buffer, zeros, 3 - (Size_ + 3) % 4);
+}
+
 Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &requirements, const std::string &key, const Slots &slots, const Functor<void (double)> &percent) {
     Hash hash;
 
+
     std::string team;
+    std::string common;
 
 #ifndef LDID_NOSMIME
     if (!key.empty()) {
         Stuff stuff(key);
         auto name(X509_get_subject_name(stuff));
         _assert(name != NULL);
-        auto index(X509_NAME_get_index_by_NID(name, NID_organizationalUnitName, -1));
-        _assert(index >= 0);
-        auto next(X509_NAME_get_index_by_NID(name, NID_organizationalUnitName, index));
-        _assert(next == -1);
-        auto entry(X509_NAME_get_entry(name, index));
-        _assert(entry != NULL);
-        auto asn(X509_NAME_ENTRY_get_data(entry));
-        _assert(asn != NULL);
-        team.assign(reinterpret_cast<char *>(ASN1_STRING_data(asn)), ASN1_STRING_length(asn));
+        get(team, name, NID_organizationalUnitName);
+        get(common, name, NID_commonName);
     }
 #endif
+
+
+    std::stringbuf backing;
+
+    if (!requirements.empty()) {
+        put(backing, requirements.data(), requirements.size());
+    } else {
+        Blobs blobs;
+
+        std::stringbuf requirement;
+        req(requirement, exprForm);
+        req(requirement, opAnd);
+        req(requirement, opIdent);
+        req(requirement, identifier);
+        req(requirement, opAnd);
+        req(requirement, opAppleGenericAnchor);
+        req(requirement, opAnd);
+        req(requirement, opCertField);
+        req(requirement, 0);
+        req(requirement, "subject.CN");
+        req(requirement, matchEqual);
+        req(requirement, common);
+        req(requirement, opCertGeneric);
+        req(requirement, 1);
+        req(requirement, (uint8_t []) {APPLE_EXTENSION_OID, 2, 1});
+        req(requirement, matchExists);
+        insert(blobs, 3, CSMAGIC_REQUIREMENT, requirement);
+
+        put(backing, CSMAGIC_REQUIREMENTS, blobs);
+    }
+
 
     // XXX: this is just a "sufficiently large number"
     size_t certificate(0x3000);
@@ -1632,10 +1737,7 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
 
         special = std::max(special, CSSLOT_REQUIREMENTS);
         alloc += sizeof(struct BlobIndex);
-        if (requirements.empty())
-            alloc += 0xc;
-        else
-            alloc += requirements.size();
+        alloc += backing.str().size();
 
         if (!entitlements.empty()) {
             special = std::max(special, CSSLOT_ENTITLEMENTS);
@@ -1670,16 +1772,7 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
         Blobs blobs;
 
         if (true) {
-            std::stringbuf data;
-
-            if (requirements.empty()) {
-                Blobs requirements;
-                put(data, CSMAGIC_REQUIREMENTS, requirements);
-            } else {
-                put(data, requirements.data(), requirements.size());
-            }
-
-            insert(blobs, CSSLOT_REQUIREMENTS, data);
+            insert(blobs, CSSLOT_REQUIREMENTS, backing);
         }
 
         if (!entitlements.empty()) {
