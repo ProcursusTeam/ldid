@@ -1454,8 +1454,13 @@ class Stuff {
     {
         _assert(value_ != NULL);
         _assert(PKCS12_parse(value_, "", &key_, &cert_, &ca_) != 0);
+
         _assert(key_ != NULL);
         _assert(cert_ != NULL);
+
+        if (ca_ == NULL)
+            ca_ = sk_X509_new_null();
+        _assert(ca_ != NULL);
     }
 
     Stuff(const std::string &data) :
