@@ -479,7 +479,32 @@ struct encryption_info_command {
 #define BIND_OPCODE_DO_BIND_ADD_ADDR_IMM_SCALED      0xb0
 #define BIND_OPCODE_DO_BIND_ULEB_TIMES_SKIPPING_ULEB 0xc0
 
-static auto dummy([](double) {});
+struct : ldid::Progress {
+    virtual void operator()(const std::string &value) const {
+    }
+
+    virtual void operator()(double value) const {
+    }
+} dummy_;
+
+struct Progression : ldid::Progress {
+    const ldid::Progress &progress_;
+    std::string name_;
+
+    Progression(const ldid::Progress &progress, const std::string &name) :
+        progress_(progress),
+        name_(name)
+    {
+    }
+
+    virtual void operator()(const std::string &value) const {
+        return progress_(name_ + " (" + value + ")");
+    }
+
+    virtual void operator()(double value) const {
+        return progress_(value);
+    }
+};
 
 static std::streamsize read(std::streambuf &stream, void *data, size_t size) {
     auto writ(stream.sgetn(static_cast<char *>(data), size));
@@ -495,13 +520,13 @@ static inline void put(std::streambuf &stream, const void *data, size_t size) {
     _assert(stream.sputn(static_cast<const char *>(data), size) == size);
 }
 
-static inline void put(std::streambuf &stream, const void *data, size_t size, const ldid::Functor<void (double)> &percent) {
-    percent(0);
+static inline void put(std::streambuf &stream, const void *data, size_t size, const ldid::Progress &progress) {
+    progress(0);
     for (size_t total(0); total != size;) {
         auto writ(std::min(size - total, size_t(4096 * 4)));
         _assert(stream.sputn(static_cast<const char *>(data) + total, writ) == writ);
         total += writ;
-        percent(double(total) / size);
+        progress(double(total) / size);
     }
 }
 
@@ -1017,14 +1042,16 @@ struct CodesignAllocation {
     uint32_t limit_;
     uint32_t alloc_;
     uint32_t align_;
+    const char *arch_;
 
-    CodesignAllocation(FatMachHeader mach_header, size_t offset, size_t size, size_t limit, size_t alloc, size_t align) :
+    CodesignAllocation(FatMachHeader mach_header, size_t offset, size_t size, size_t limit, size_t alloc, size_t align, const char *arch) :
         mach_header_(mach_header),
         offset_(offset),
         size_(size),
         limit_(limit),
         alloc_(alloc),
-        align_(align)
+        align_(align),
+        arch_(arch)
     {
     }
 };
@@ -1160,7 +1187,7 @@ std::string Analyze(const void *data, size_t size) {
     return entitlements;
 }
 
-static void Allocate(const void *idata, size_t isize, std::streambuf &output, const Functor<size_t (const MachHeader &, size_t)> &allocate, const Functor<size_t (const MachHeader &, std::streambuf &output, size_t, const std::string &, const char *, const Functor<void (double)> &)> &save, const Functor<void (double)> &percent) {
+static void Allocate(const void *idata, size_t isize, std::streambuf &output, const Functor<size_t (const MachHeader &, size_t)> &allocate, const Functor<size_t (const MachHeader &, std::streambuf &output, size_t, const std::string &, const char *, const Progress &)> &save, const Progress &progress) {
     FatHeader source(const_cast<void *>(idata), isize);
 
     size_t offset(0);
@@ -1219,13 +1246,35 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
                 break;
         }
 
+        const char *arch(NULL);
+        switch (mach_header.GetCPUType()) {
+            case CPU_TYPE_POWERPC:
+                arch = "ppc";
+                break;
+            case CPU_TYPE_POWERPC64:
+                arch = "ppc64";
+                break;
+            case CPU_TYPE_X86:
+                arch = "i386";
+                break;
+            case CPU_TYPE_X86_64:
+                arch = "x86_64";
+                break;
+            case CPU_TYPE_ARM:
+                arch = "arm";
+                break;
+            case CPU_TYPE_ARM64:
+                arch = "arm64";
+                break;
+        }
+
         offset = Align(offset, 1 << align);
 
         uint32_t limit(size);
         if (alloc != 0)
             limit = Align(limit, 0x10);
 
-        allocations.push_back(CodesignAllocation(mach_header, offset, size, limit, alloc, align));
+        allocations.push_back(CodesignAllocation(mach_header, offset, size, limit, alloc, align, arch));
         offset += size + alloc;
         offset = Align(offset, 0x10);
     }
@@ -1254,6 +1303,7 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
     }
 
     _foreach (allocation, allocations) {
+        progress(allocation.arch_);
         auto &mach_header(allocation.mach_header_);
 
         pad(output, allocation.offset_ - position);
@@ -1340,13 +1390,13 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
         std::string overlap(altern.str());
         overlap.append(top + overlap.size(), Align(overlap.size(), 0x1000) - overlap.size());
 
-        put(output, top + (position - begin), allocation.size_ - (position - begin), percent);
+        put(output, top + (position - begin), allocation.size_ - (position - begin), progress);
         position = begin + allocation.size_;
 
         pad(output, allocation.limit_ - allocation.size_);
         position += allocation.limit_ - allocation.size_;
 
-        size_t saved(save(mach_header, output, allocation.limit_, overlap, top, percent));
+        size_t saved(save(mach_header, output, allocation.limit_, overlap, top, progress));
         if (allocation.alloc_ > saved)
             pad(output, allocation.alloc_ - saved);
         else
@@ -1713,7 +1763,7 @@ static void req(std::streambuf &buffer, uint8_t (&&data)[Size_]) {
     put(buffer, zeros, 3 - (Size_ + 3) % 4);
 }
 
-Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &requirements, const std::string &key, const Slots &slots, const Functor<void (double)> &percent) {
+Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &requirements, const std::string &key, const Slots &slots, const Progress &progress) {
     Hash hash;
 
 
@@ -1812,7 +1862,7 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
 #endif
 
         return alloc;
-    }), fun([&](const MachHeader &mach_header, std::streambuf &output, size_t limit, const std::string &overlap, const char *top, const Functor<void (double)> &percent) -> size_t {
+    }), fun([&](const MachHeader &mach_header, std::streambuf &output, size_t limit, const std::string &overlap, const char *top, const Progress &progress) -> size_t {
         Blobs blobs;
 
         if (true) {
@@ -1898,15 +1948,15 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
             _foreach (slot, posts)
                 memcpy(hashes - slot.first * algorithm.size_, algorithm[slot.second], algorithm.size_);
 
-            percent(0);
+            progress(0);
             if (normal != 1)
                 for (size_t i = 0; i != normal - 1; ++i) {
                     algorithm(hashes + i * algorithm.size_, (PageSize_ * i < overlap.size() ? overlap.data() : top) + PageSize_ * i, PageSize_);
-                    percent(double(i) / normal);
+                    progress(double(i) / normal);
                 }
             if (normal != 0)
                 algorithm(hashes + (normal - 1) * algorithm.size_, top + PageSize_ * (normal - 1), ((limit - 1) % PageSize_) + 1);
-            percent(1);
+            progress(1);
 
             put(data, storage.data(), storage.size());
 
@@ -1961,18 +2011,18 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
 #endif
 
         return put(output, CSMAGIC_EMBEDDED_SIGNATURE, blobs);
-    }), percent);
+    }), progress);
 
     return hash;
 }
 
 #ifndef LDID_NOTOOLS
-static void Unsign(void *idata, size_t isize, std::streambuf &output, const Functor<void (double)> &percent) {
+static void Unsign(void *idata, size_t isize, std::streambuf &output, const Progress &progress) {
     Allocate(idata, isize, output, fun([](const MachHeader &mach_header, size_t size) -> size_t {
         return 0;
-    }), fun([](const MachHeader &mach_header, std::streambuf &output, size_t limit, const std::string &overlap, const char *top, const Functor<void (double)> &percent) -> size_t {
+    }), fun([](const MachHeader &mach_header, std::streambuf &output, size_t limit, const std::string &overlap, const char *top, const Progress &progress) -> size_t {
         return 0;
-    }), percent);
+    }), progress);
 }
 
 std::string DiskFolder::Path(const std::string &path) const {
@@ -2176,8 +2226,8 @@ void UnionFolder::Find(const std::string &path, const Functor<void (const std::s
 }
 
 #ifndef LDID_NOTOOLS
-static void copy(std::streambuf &source, std::streambuf &target, size_t length, const ldid::Functor<void (double)> &percent) {
-    percent(0);
+static void copy(std::streambuf &source, std::streambuf &target, size_t length, const Progress &progress) {
+    progress(0);
     size_t total(0);
     for (;;) {
         char data[4096 * 4];
@@ -2186,7 +2236,7 @@ static void copy(std::streambuf &source, std::streambuf &target, size_t length, 
             break;
         _assert(target.sputn(data, writ) == writ);
         total += writ;
-        percent(double(total) / length);
+        progress(double(total) / length);
     }
 }
 
@@ -2203,7 +2253,7 @@ static plist_t plist(const std::string &data) {
 
 static void plist_d(std::streambuf &buffer, size_t length, const Functor<void (plist_t)> &code) {
     std::stringbuf data;
-    copy(buffer, data, length, ldid::fun(dummy));
+    copy(buffer, data, length, dummy_);
     auto node(plist(data.str()));
     _scope({ plist_free(node); });
     _assert(plist_get_node_type(node) == PLIST_DICT);
@@ -2305,20 +2355,20 @@ struct RuleCode {
 };
 
 #ifndef LDID_NOPLIST
-static Hash Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, Hash &hash, std::streambuf &save, const std::string &identifier, const std::string &entitlements, const std::string &requirements, const std::string &key, const Slots &slots, size_t length, const Functor<void (double)> &percent) {
+static Hash Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, Hash &hash, std::streambuf &save, const std::string &identifier, const std::string &entitlements, const std::string &requirements, const std::string &key, const Slots &slots, size_t length, const Progress &progress) {
     // XXX: this is a miserable fail
     std::stringbuf temp;
     put(temp, prefix, size);
-    copy(buffer, temp, length - size, percent);
+    copy(buffer, temp, length - size, progress);
     // XXX: this is a stupid hack
     pad(temp, 0x10 - (length & 0xf));
     auto data(temp.str());
 
     HashProxy proxy(hash, save);
-    return Sign(data.data(), data.size(), proxy, identifier, entitlements, requirements, key, slots, percent);
+    return Sign(data.data(), data.size(), proxy, identifier, entitlements, requirements, key, slots, progress);
 }
 
-Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std::map<std::string, Hash> &remote, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, const Functor<void (const std::string &)> &progress, const Functor<void (double)> &percent) {
+Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std::map<std::string, Hash> &remote, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, const Progress &progress) {
     std::string executable;
     std::string identifier;
 
@@ -2342,11 +2392,13 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
         mac = true;
     }
 
+    progress(root + "*");
+
     std::string entitlements;
     folder.Open(executable, fun([&](std::streambuf &buffer, size_t length, const void *flag) {
         // XXX: this is a miserable fail
         std::stringbuf temp;
-        copy(buffer, temp, length, percent);
+        copy(buffer, temp, length, progress);
         // XXX: this is a stupid hack
         pad(temp, 0x10 - (length & 0xf));
         auto data(temp.str());
@@ -2402,7 +2454,7 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
 
         bundles[nested[1]] = Sign(bundle, subfolder, key, local, "", Starts(name, "PlugIns/") ? alter :
             static_cast<const Functor<std::string (const std::string &, const std::string &)> &>(fun([&](const std::string &, const std::string &entitlements) -> std::string { return entitlements; }))
-        , progress, percent);
+        , progress);
     }), fun([&](const std::string &name, const Functor<std::string ()> &read) {
     }));
 
@@ -2457,7 +2509,7 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
                     case MH_CIGAM: case MH_CIGAM_64:
                         folder.Save(name, true, flag, fun([&](std::streambuf &save) {
                             Slots slots;
-                            Sign(header.bytes, size, data, hash, save, identifier, "", "", key, slots, length, percent);
+                            Sign(header.bytes, size, data, hash, save, identifier, "", "", key, slots, length, Progression(progress, root + name));
                         }));
                         return;
                 }
@@ -2465,7 +2517,7 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
             folder.Save(name, false, flag, fun([&](std::streambuf &save) {
                 HashProxy proxy(hash, save);
                 put(proxy, header.bytes, size);
-                copy(data, proxy, length - size, percent);
+                copy(data, proxy, length - size, progress);
             }));
         }));
     }), fun([&](const std::string &name, const Functor<std::string ()> &read) {
@@ -2586,7 +2638,7 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
             Slots slots;
             slots[1] = local.at(info);
             slots[3] = local.at(signature);
-            bundle.hash = Sign(NULL, 0, buffer, local[executable], save, identifier, entitlements, requirements, key, slots, length, percent);
+            bundle.hash = Sign(NULL, 0, buffer, local[executable], save, identifier, entitlements, requirements, key, slots, length, Progression(progress, root + executable));
         }));
     }));
 
@@ -2596,9 +2648,9 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
     return bundle;
 }
 
-Bundle Sign(const std::string &root, Folder &folder, const std::string &key, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, const Functor<void (const std::string &)> &progress, const Functor<void (double)> &percent) {
+Bundle Sign(const std::string &root, Folder &folder, const std::string &key, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, const Progress &progress) {
     std::map<std::string, Hash> local;
-    return Sign(root, folder, key, local, requirements, alter, progress, percent);
+    return Sign(root, folder, key, local, requirements, alter, progress);
 }
 #endif
 
@@ -2777,9 +2829,7 @@ int main(int argc, char *argv[]) {
 #ifndef LDID_NOPLIST
             _assert(!flag_r);
             ldid::DiskFolder folder(path);
-            path += "/" + Sign("", folder, key, requirements, ldid::fun([&](const std::string &, const std::string &) -> std::string { return entitlements; })
-                , ldid::fun([&](const std::string &) {}), ldid::fun(dummy)
-            ).path;
+            path += "/" + Sign("", folder, key, requirements, ldid::fun([&](const std::string &, const std::string &) -> std::string { return entitlements; }), dummy_).path;
 #else
             _assert(false);
 #endif
@@ -2791,10 +2841,10 @@ int main(int argc, char *argv[]) {
             auto temp(Temporary(output, split));
 
             if (flag_r)
-                ldid::Unsign(input.data(), input.size(), output, ldid::fun(dummy));
+                ldid::Unsign(input.data(), input.size(), output, dummy_);
             else {
                 std::string identifier(flag_I ?: split.base.c_str());
-                ldid::Sign(input.data(), input.size(), output, identifier, entitlements, requirements, key, slots, ldid::fun(dummy));
+                ldid::Sign(input.data(), input.size(), output, identifier, entitlements, requirements, key, slots, dummy_);
             }
 
             Commit(path, temp);
