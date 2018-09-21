@@ -2453,7 +2453,7 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
         SubFolder subfolder(folder, bundle);
 
         bundles[nested[1]] = Sign(bundle, subfolder, key, local, "", Starts(name, "PlugIns/") ? alter :
-            static_cast<const Functor<std::string (const std::string &, const std::string &)> &>(fun([&](const std::string &, const std::string &entitlements) -> std::string { return entitlements; }))
+            static_cast<const Functor<std::string (const std::string &, const std::string &)> &>(fun([&](const std::string &, const std::string &) -> std::string { return entitlements; }))
         , progress);
     }), fun([&](const std::string &name, const Functor<std::string ()> &read) {
     }));
