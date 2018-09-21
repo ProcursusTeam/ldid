@@ -933,6 +933,8 @@ struct Algorithm {
     virtual void operator ()(uint8_t *hash, const void *data, size_t size) const = 0;
     virtual void operator ()(ldid::Hash &hash, const void *data, size_t size) const = 0;
     virtual void operator ()(std::vector<char> &hash, const void *data, size_t size) const = 0;
+
+    virtual const char *name() = 0;
 };
 
 struct AlgorithmSHA1 :
@@ -959,6 +961,10 @@ struct AlgorithmSHA1 :
         hash.resize(LDID_SHA1_DIGEST_LENGTH);
         return operator ()(reinterpret_cast<uint8_t *>(hash.data()), data, size);
     }
+
+    virtual const char *name() {
+        return "sha1";
+    }
 };
 
 struct AlgorithmSHA256 :
@@ -984,6 +990,10 @@ struct AlgorithmSHA256 :
     void operator ()(std::vector<char> &hash, const void *data, size_t size) const {
         hash.resize(LDID_SHA256_DIGEST_LENGTH);
         return operator ()(reinterpret_cast<uint8_t *>(hash.data()), data, size);
+    }
+
+    virtual const char *name() {
+        return "sha256";
     }
 };
 
