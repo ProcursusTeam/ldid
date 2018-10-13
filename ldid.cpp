@@ -1731,6 +1731,7 @@ static void Commit(const std::string &path, const std::string &temp) {
 
 namespace ldid {
 
+#ifndef LDID_NOSMIME
 static void get(std::string &value, X509_NAME *name, int nid) {
     auto index(X509_NAME_get_index_by_NID(name, nid, -1));
     _assert(index >= 0);
@@ -1742,6 +1743,7 @@ static void get(std::string &value, X509_NAME *name, int nid) {
     _assert(asn != NULL);
     value.assign(reinterpret_cast<char *>(ASN1_STRING_data(asn)), ASN1_STRING_length(asn));
 }
+#endif
 
 static void req(std::streambuf &buffer, uint32_t value) {
     value = Swap(value);
