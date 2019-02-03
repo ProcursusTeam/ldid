@@ -85,6 +85,8 @@
 
 #ifndef LDID_NOPLIST
 #include <plist/plist.h>
+#elif __APPLE__
+#include <CoreFoundation/CoreFoundation.h>
 #endif
 
 #include "ldid.hpp"
@@ -1970,11 +1972,21 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
 
 #ifndef LDID_NOSMIME
         if (!key.empty()) {
+#ifdef LDID_NOPLIST
+            auto plist(CFDictionaryCreateMutable(kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
+            _scope({ CFRelease(plist); });
+
+            auto cdhashes(CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks));
+            _scope({ CFRelease(cdhashes); });
+
+            CFDictionarySetValue(plist, CFSTR("cdhashes"), cdhashes);
+#else
             auto plist(plist_new_dict());
             _scope({ plist_free(plist); });
 
             auto cdhashes(plist_new_array());
             plist_dict_set_item(plist, "cdhashes", cdhashes);
+#endif
 
             unsigned total(0);
             for (Algorithm *pointer : GetAlgorithms()) {
@@ -1988,13 +2000,26 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
                 algorithm(hash, blob.data(), blob.size());
                 hash.resize(20);
 
+#ifdef LDID_NOPLIST
+                auto value(CFDataCreate(kCFAllocatorDefault, reinterpret_cast<const UInt8 *>(hash.data()), hash.size()));
+                _scope({ CFRelease(value); });
+                CFArrayAppendValue(cdhashes, value);
+#else
                 plist_array_append_item(cdhashes, plist_new_data(hash.data(), hash.size()));
+#endif
             }
 
+#ifdef LDID_NOPLIST
+            auto created(CFPropertyListCreateXMLData(kCFAllocatorDefault, plist));
+            _scope({ CFRelease(created); });
+            auto xml(reinterpret_cast<const char *>(CFDataGetBytePtr(created)));
+            auto size(CFDataGetLength(created));
+#else
             char *xml(NULL);
             uint32_t size;
             plist_to_xml(plist, &xml, &size);
             _scope({ free(xml); });
+#endif
 
             std::stringbuf data;
             const std::string &sign(blobs[CSSLOT_CODEDIRECTORY]);
