@@ -1053,6 +1053,10 @@ static const std::vector<Algorithm *> &GetAlgorithms() {
     return algorithms;
 }
 
+struct Baton {
+    std::string entitlements_;
+};
+
 struct CodesignAllocation {
     FatMachHeader mach_header_;
     uint32_t offset_;
@@ -1061,15 +1065,17 @@ struct CodesignAllocation {
     uint32_t alloc_;
     uint32_t align_;
     const char *arch_;
+    Baton baton_;
 
-    CodesignAllocation(FatMachHeader mach_header, size_t offset, size_t size, size_t limit, size_t alloc, size_t align, const char *arch) :
+    CodesignAllocation(FatMachHeader mach_header, size_t offset, size_t size, size_t limit, size_t alloc, size_t align, const char *arch, const Baton &baton) :
         mach_header_(mach_header),
         offset_(offset),
         size_(size),
         limit_(limit),
         alloc_(alloc),
         align_(align),
-        arch_(arch)
+        arch_(arch),
+        baton_(baton)
     {
     }
 };
@@ -1177,35 +1183,44 @@ class Map {
 
 namespace ldid {
 
+#ifndef LDID_NOPLIST
+static plist_t plist(const std::string &data);
+#endif
+
+void Analyze(const MachHeader &mach_header, const Functor<void (const char *data, size_t size)> &entitle) {
+    _foreach (load_command, mach_header.GetLoadCommands())
+        if (mach_header.Swap(load_command->cmd) == LC_CODE_SIGNATURE) {
+            auto signature(reinterpret_cast<struct linkedit_data_command *>(load_command));
+            auto offset(mach_header.Swap(signature->dataoff));
+            auto pointer(reinterpret_cast<uint8_t *>(mach_header.GetBase()) + offset);
+            auto super(reinterpret_cast<struct SuperBlob *>(pointer));
+
+            for (size_t index(0); index != Swap(super->count); ++index)
+                if (Swap(super->index[index].type) == CSSLOT_ENTITLEMENTS) {
+                    auto begin(Swap(super->index[index].offset));
+                    auto blob(reinterpret_cast<struct Blob *>(pointer + begin));
+                    auto writ(Swap(blob->length) - sizeof(*blob));
+                    entitle(reinterpret_cast<char *>(blob + 1), writ);
+                }
+        }
+}
+
 std::string Analyze(const void *data, size_t size) {
     std::string entitlements;
 
     FatHeader fat_header(const_cast<void *>(data), size);
     _foreach (mach_header, fat_header.GetMachHeaders())
-        _foreach (load_command, mach_header.GetLoadCommands())
-            if (mach_header.Swap(load_command->cmd) == LC_CODE_SIGNATURE) {
-                auto signature(reinterpret_cast<struct linkedit_data_command *>(load_command));
-                auto offset(mach_header.Swap(signature->dataoff));
-                auto pointer(reinterpret_cast<uint8_t *>(mach_header.GetBase()) + offset);
-                auto super(reinterpret_cast<struct SuperBlob *>(pointer));
-
-                for (size_t index(0); index != Swap(super->count); ++index)
-                    if (Swap(super->index[index].type) == CSSLOT_ENTITLEMENTS) {
-                        auto begin(Swap(super->index[index].offset));
-                        auto blob(reinterpret_cast<struct Blob *>(pointer + begin));
-                        auto writ(Swap(blob->length) - sizeof(*blob));
-
-                        if (entitlements.empty())
-                            entitlements.assign(reinterpret_cast<char *>(blob + 1), writ);
-                        else
-                            _assert(entitlements.compare(0, entitlements.size(), reinterpret_cast<char *>(blob + 1), writ) == 0);
-                    }
-            }
+        Analyze(mach_header, fun([&](const char *data, size_t size) {
+            if (entitlements.empty())
+                entitlements.assign(data, size);
+            else
+                _assert(entitlements.compare(0, entitlements.size(), data, size) == 0);
+        }));
 
     return entitlements;
 }
 
-static void Allocate(const void *idata, size_t isize, std::streambuf &output, const Functor<size_t (const MachHeader &, size_t)> &allocate, const Functor<size_t (const MachHeader &, std::streambuf &output, size_t, const std::string &, const char *, const Progress &)> &save, const Progress &progress) {
+static void Allocate(const void *idata, size_t isize, std::streambuf &output, const Functor<size_t (const MachHeader &, Baton &, size_t)> &allocate, const Functor<size_t (const MachHeader &, const Baton &, std::streambuf &output, size_t, const std::string &, const char *, const Progress &)> &save, const Progress &progress) {
     FatHeader source(const_cast<void *>(idata), isize);
 
     size_t offset(0);
@@ -1243,7 +1258,8 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
             }
         }
 
-        size_t alloc(allocate(mach_header, size));
+        Baton baton;
+        size_t alloc(allocate(mach_header, baton, size));
 
         auto *fat_arch(mach_header.GetFatArch());
         uint32_t align;
@@ -1294,7 +1310,7 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
         if (alloc != 0)
             limit = Align(limit, 0x10);
 
-        allocations.push_back(CodesignAllocation(mach_header, offset, size, limit, alloc, align, arch));
+        allocations.push_back(CodesignAllocation(mach_header, offset, size, limit, alloc, align, arch, baton));
         offset += size + alloc;
         offset = Align(offset, 0x10);
     }
@@ -1416,7 +1432,7 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
         pad(output, allocation.limit_ - allocation.size_);
         position += allocation.limit_ - allocation.size_;
 
-        size_t saved(save(mach_header, output, allocation.limit_, overlap, top, progress));
+        size_t saved(save(mach_header, allocation.baton_, output, allocation.limit_, overlap, top, progress));
         if (allocation.alloc_ > saved)
             pad(output, allocation.alloc_ - saved);
         else
@@ -1795,7 +1811,7 @@ static void req(std::streambuf &buffer, uint8_t (&&data)[Size_]) {
     put(buffer, zeros, 3 - (Size_ + 3) % 4);
 }
 
-Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &requirements, const std::string &key, const Slots &slots, uint32_t flags, bool platform, const Progress &progress) {
+Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, bool merge, const std::string &requirements, const std::string &key, const Slots &slots, uint32_t flags, bool platform, const Progress &progress) {
     Hash hash;
 
 
@@ -1846,7 +1862,7 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
     // XXX: this is just a "sufficiently large number"
     size_t certificate(0x3000);
 
-    Allocate(idata, isize, output, fun([&](const MachHeader &mach_header, size_t size) -> size_t {
+    Allocate(idata, isize, output, fun([&](const MachHeader &mach_header, Baton &baton, size_t size) -> size_t {
         size_t alloc(sizeof(struct SuperBlob));
 
         uint32_t normal((size + PageSize_ - 1) / PageSize_);
@@ -1865,11 +1881,54 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
         alloc += sizeof(struct BlobIndex);
         alloc += backing.str().size();
 
-        if (!entitlements.empty()) {
+        if (!merge)
+            baton.entitlements_ = entitlements;
+        else {
+#ifndef LDID_NOPLIST
+            Analyze(mach_header, fun([&](const char *data, size_t size) {
+                baton.entitlements_.assign(data, size);
+            }));
+
+            if (!entitlements.empty()) {
+                auto combined(plist(baton.entitlements_));
+                _scope({ plist_free(combined); });
+                _assert(plist_get_node_type(combined) == PLIST_DICT);
+
+                auto merging(plist(entitlements));
+                _scope({ plist_free(merging); });
+                _assert(plist_get_node_type(merging) == PLIST_DICT);
+
+                plist_dict_iter iterator(NULL);
+                plist_dict_new_iter(merging, &iterator);
+                _scope({ free(iterator); });
+
+                for (;;) {
+                    char *key(NULL);
+                    plist_t value(NULL);
+                    plist_dict_next_item(merging, iterator, &key, &value);
+                    if (key == NULL)
+                        break;
+                    _scope({ free(key); });
+                    plist_dict_set_item(combined, key, plist_copy(value));
+                }
+
+                char *xml(NULL);
+                uint32_t size;
+                plist_to_xml(combined, &xml, &size);
+                _scope({ free(xml); });
+
+                baton.entitlements_.assign(xml, size);
+            }
+#else
+            _assert(false);
+#endif
+        }
+
+        if (!baton.entitlements_.empty()) {
             special = std::max(special, CSSLOT_ENTITLEMENTS);
             alloc += sizeof(struct BlobIndex);
             alloc += sizeof(struct Blob);
-            alloc += entitlements.size();
+            alloc += baton.entitlements_.size();
         }
 
         size_t directory(0);
@@ -1894,16 +1953,16 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
 #endif
 
         return alloc;
-    }), fun([&](const MachHeader &mach_header, std::streambuf &output, size_t limit, const std::string &overlap, const char *top, const Progress &progress) -> size_t {
+    }), fun([&](const MachHeader &mach_header, const Baton &baton, std::streambuf &output, size_t limit, const std::string &overlap, const char *top, const Progress &progress) -> size_t {
         Blobs blobs;
 
         if (true) {
             insert(blobs, CSSLOT_REQUIREMENTS, backing);
         }
 
-        if (!entitlements.empty()) {
+        if (!baton.entitlements_.empty()) {
             std::stringbuf data;
-            put(data, entitlements.data(), entitlements.size());
+            put(data, baton.entitlements_.data(), baton.entitlements_.size());
             insert(blobs, CSSLOT_ENTITLEMENTS, CSMAGIC_EMBEDDED_ENTITLEMENTS, data);
         }
 
@@ -2073,9 +2132,9 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
 
 #ifndef LDID_NOTOOLS
 static void Unsign(void *idata, size_t isize, std::streambuf &output, const Progress &progress) {
-    Allocate(idata, isize, output, fun([](const MachHeader &mach_header, size_t size) -> size_t {
+    Allocate(idata, isize, output, fun([](const MachHeader &mach_header, Baton &baton, size_t size) -> size_t {
         return 0;
-    }), fun([](const MachHeader &mach_header, std::streambuf &output, size_t limit, const std::string &overlap, const char *top, const Progress &progress) -> size_t {
+    }), fun([](const MachHeader &mach_header, const Baton &baton, std::streambuf &output, size_t limit, const std::string &overlap, const char *top, const Progress &progress) -> size_t {
         return 0;
     }), progress);
 }
@@ -2410,7 +2469,7 @@ struct RuleCode {
 };
 
 #ifndef LDID_NOPLIST
-static Hash Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, Hash &hash, std::streambuf &save, const std::string &identifier, const std::string &entitlements, const std::string &requirements, const std::string &key, const Slots &slots, size_t length, uint32_t flags, bool platform, const Progress &progress) {
+static Hash Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, Hash &hash, std::streambuf &save, const std::string &identifier, const std::string &entitlements, bool merge, const std::string &requirements, const std::string &key, const Slots &slots, size_t length, uint32_t flags, bool platform, const Progress &progress) {
     // XXX: this is a miserable fail
     std::stringbuf temp;
     put(temp, prefix, size);
@@ -2420,7 +2479,7 @@ static Hash Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, Has
     auto data(temp.str());
 
     HashProxy proxy(hash, save);
-    return Sign(data.data(), data.size(), proxy, identifier, entitlements, requirements, key, slots, flags, platform, progress);
+    return Sign(data.data(), data.size(), proxy, identifier, entitlements, merge, requirements, key, slots, flags, platform, progress);
 }
 
 Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std::map<std::string, Hash> &remote, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, const Progress &progress) {
@@ -2564,7 +2623,7 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
                     case MH_CIGAM: case MH_CIGAM_64:
                         folder.Save(name, true, flag, fun([&](std::streambuf &save) {
                             Slots slots;
-                            Sign(header.bytes, size, data, hash, save, identifier, "", "", key, slots, length, 0, false, Progression(progress, root + name));
+                            Sign(header.bytes, size, data, hash, save, identifier, "", false, "", key, slots, length, 0, false, Progression(progress, root + name));
                         }));
                         return;
                 }
@@ -2693,7 +2752,7 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
             Slots slots;
             slots[1] = local.at(info);
             slots[3] = local.at(signature);
-            bundle.hash = Sign(NULL, 0, buffer, local[executable], save, identifier, entitlements, requirements, key, slots, length, 0, false, Progression(progress, root + executable));
+            bundle.hash = Sign(NULL, 0, buffer, local[executable], save, identifier, entitlements, false, requirements, key, slots, length, 0, false, Progression(progress, root + executable));
         }));
     }));
 
@@ -2744,6 +2803,8 @@ int main(int argc, char *argv[]) {
     bool flag_a(false);
 
     bool flag_u(false);
+
+    bool flag_M(false);
 
     uint32_t flags(0);
     bool platform(false);
@@ -2887,6 +2948,10 @@ int main(int argc, char *argv[]) {
                 }
             break;
 
+            case 'M':
+                flag_M = true;
+            break;
+
             case 'K':
                 if (argv[argi][2] != '\0')
                     key.open(argv[argi] + 2, O_RDONLY, PROT_READ, MAP_PRIVATE);
@@ -2951,7 +3016,7 @@ int main(int argc, char *argv[]) {
                 ldid::Unsign(input.data(), input.size(), output, dummy_);
             else {
                 std::string identifier(flag_I ?: split.base.c_str());
-                ldid::Sign(input.data(), input.size(), output, identifier, entitlements, requirements, key, slots, flags, platform, dummy_);
+                ldid::Sign(input.data(), input.size(), output, identifier, entitlements, flag_M, requirements, key, slots, flags, platform, dummy_);
             }
 
             Commit(path, temp);

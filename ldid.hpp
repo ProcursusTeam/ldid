@@ -157,7 +157,7 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, con
 
 typedef std::map<uint32_t, Hash> Slots;
 
-Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, const std::string &requirements, const std::string &key, const Slots &slots, uint32_t flags, bool platform, const Progress &progress);
+Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, bool merge, const std::string &requirements, const std::string &key, const Slots &slots, uint32_t flags, bool platform, const Progress &progress);
 
 }
 
