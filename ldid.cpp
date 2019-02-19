@@ -1035,16 +1035,21 @@ struct AlgorithmSHA256 :
     }
 };
 
+static bool do_sha1(true);
+static bool do_sha256(true);
+
 static const std::vector<Algorithm *> &GetAlgorithms() {
     static AlgorithmSHA1 sha1;
     static AlgorithmSHA256 sha256;
 
-    static Algorithm *array[] = {
-        &sha1,
-        &sha256,
-    };
+    static std::vector<Algorithm *> algorithms;
+    if (algorithms.empty()) {
+        if (do_sha1)
+            algorithms.push_back(&sha1);
+        if (do_sha256)
+            algorithms.push_back(&sha256);
+    }
 
-    static std::vector<Algorithm *> algorithms(array, array + sizeof(array) / sizeof(array[0]));
     return algorithms;
 }
 
@@ -2724,6 +2729,8 @@ int main(int argc, char *argv[]) {
     bool flag_e(false);
     bool flag_q(false);
 
+    bool flag_H(false);
+
 #ifndef LDID_NOFLAGT
     bool flag_T(false);
 #endif
@@ -2792,6 +2799,27 @@ int main(int argc, char *argv[]) {
             } break;
 
             case 'q': flag_q = true; break;
+
+            case 'H': {
+                const char *hash = argv[argi] + 2;
+
+                if (!flag_H) {
+                    flag_H = true;
+
+                    do_sha1 = false;
+                    do_sha256 = false;
+
+                    fprintf(stderr, "WARNING: -H is only present for compatibility with a fork of ldid\n");
+                    fprintf(stderr, "         you should NOT be manually specifying the hash algorithm\n");
+                }
+
+                if (false);
+                else if (strcmp(hash, "sha1") == 0)
+                    do_sha1 = true;
+                else if (strcmp(hash, "sha256") == 0)
+                    do_sha256 = true;
+                else _assert(false);
+            } break;
 
             case 'Q': {
                 const char *xml = argv[argi] + 2;
