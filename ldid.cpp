@@ -1889,7 +1889,9 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
                 baton.entitlements_.assign(data, size);
             }));
 
-            if (!entitlements.empty()) {
+            if (baton.entitlements_.empty())
+                baton.entitlements_ = entitlements;
+            else if (!entitlements.empty()) {
                 auto combined(plist(baton.entitlements_));
                 _scope({ plist_free(combined); });
                 _assert(plist_get_node_type(combined) == PLIST_DICT);
