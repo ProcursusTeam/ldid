@@ -2773,6 +2773,13 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, con
 #endif
 }
 
+static void usage(const char *argv0) {
+    fprintf(stderr, "usage: %s -S[entitlements.xml] <binary>\n", argv0);
+    fprintf(stderr, "   %s -e MobileSafari\n", argv0);
+    fprintf(stderr, "   %s -S cat\n", argv0);
+    fprintf(stderr, "   %s -Stfp.xml gdb\n", argv0);
+}
+
 #ifndef LDID_NOTOOLS
 int main(int argc, char *argv[]) {
 #ifndef LDID_NOSMIME
@@ -2829,11 +2836,8 @@ int main(int argc, char *argv[]) {
     std::vector<std::string> files;
 
     if (argc == 1) {
-        fprintf(stderr, "usage: %s -S[entitlements.xml] <binary>\n", argv[0]);
-        fprintf(stderr, "   %s -e MobileSafari\n", argv[0]);
-        fprintf(stderr, "   %s -S cat\n", argv[0]);
-        fprintf(stderr, "   %s -Stfp.xml gdb\n", argv[0]);
-        exit(0);
+        usage(argv[0]);
+        return 0;
     }
 
     for (int argi(1); argi != argc; ++argi)
@@ -2981,16 +2985,16 @@ int main(int argc, char *argv[]) {
             } break;
 
             default:
-                goto usage;
+                usage(argv[0]);
+                return 1;
             break;
         }
 
     _assert(flag_S || key.empty());
     _assert(flag_S || flag_I == NULL);
 
-    if (files.empty()) usage: {
-        exit(0);
-    }
+    if (files.empty())
+        return 0;
 
     size_t filei(0), filee(0);
     _foreach (file, files) try {
