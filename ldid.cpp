@@ -1659,11 +1659,6 @@ class NullBuffer :
     }
 };
 
-class Digest {
-  public:
-    uint8_t sha1_[LDID_SHA1_DIGEST_LENGTH];
-};
-
 class HashBuffer :
     public std::streambuf
 {
