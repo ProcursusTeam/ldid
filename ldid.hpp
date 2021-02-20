@@ -94,6 +94,8 @@ class SubFolder :
   public:
     SubFolder(Folder &parent, const std::string &path);
 
+    std::string Path(const std::string &path) const;
+
     virtual void Save(const std::string &path, bool edit, const void *flag, const Functor<void (std::streambuf &)> &code);
     virtual bool Look(const std::string &path) const;
     virtual void Open(const std::string &path, const Functor<void (std::streambuf &, size_t, const void *)> &code) const;

@@ -2144,12 +2144,13 @@ static void Unsign(void *idata, size_t isize, std::streambuf &output, const Prog
 }
 
 std::string DiskFolder::Path(const std::string &path) const {
-    return path_ + "/" + path;
+    return path_ + path;
 }
 
 DiskFolder::DiskFolder(const std::string &path) :
     path_(path)
 {
+    _assert_(path_.size() != 0 && path_[path_.size() - 1] == '/', "missing / on %s", path_.c_str());
 }
 
 DiskFolder::~DiskFolder() {
@@ -2243,7 +2244,7 @@ bool DiskFolder::Look(const std::string &path) const {
 void DiskFolder::Open(const std::string &path, const Functor<void (std::streambuf &, size_t, const void *)> &code) const {
     std::filebuf data;
     auto result(data.open(Path(path).c_str(), std::ios::binary | std::ios::in));
-    _assert_(result == &data, "DiskFolder::Open(%s)", path.c_str());
+    _assert_(result == &data, "DiskFolder::Open(%s)", Path(path).c_str());
 
     auto length(data.pubseekoff(0, std::ios::end, std::ios::in));
     data.pubseekpos(0, std::ios::in);
@@ -2259,22 +2260,27 @@ SubFolder::SubFolder(Folder &parent, const std::string &path) :
     parent_(parent),
     path_(path)
 {
+    _assert_(path_.size() == 0 || path_[path_.size() - 1] == '/', "missing / on %s", path_.c_str());
+}
+
+std::string SubFolder::Path(const std::string &path) const {
+    return path_ + path;
 }
 
 void SubFolder::Save(const std::string &path, bool edit, const void *flag, const Functor<void (std::streambuf &)> &code) {
-    return parent_.Save(path_ + path, edit, flag, code);
+    return parent_.Save(Path(path), edit, flag, code);
 }
 
 bool SubFolder::Look(const std::string &path) const {
-    return parent_.Look(path_ + path);
+    return parent_.Look(Path(path));
 }
 
 void SubFolder::Open(const std::string &path, const Functor<void (std::streambuf &, size_t, const void *)> &code) const {
-    return parent_.Open(path_ + path, code);
+    return parent_.Open(Path(path), code);
 }
 
 void SubFolder::Find(const std::string &path, const Functor<void (const std::string &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) const {
-    return parent_.Find(path_ + path, code, link);
+    return parent_.Find(Path(path), code, link);
 }
 
 std::string UnionFolder::Map(const std::string &path) const {
@@ -2498,17 +2504,26 @@ struct State {
     }
 };
 
-Bundle Sign(const std::string &root, Folder &folder, const std::string &key, State &remote, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, const Progress &progress) {
+Bundle Sign(const std::string &root, Folder &parent, const std::string &key, State &remote, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, const Progress &progress) {
     std::string executable;
     std::string identifier;
 
     bool mac(false);
 
     std::string info("Info.plist");
-    if (!folder.Look(info) && folder.Look("Resources/" + info)) {
+
+    SubFolder folder(parent, [&]() {
+        if (parent.Look(info))
+            return "";
         mac = true;
-        info = "Resources/" + info;
-    }
+        if (false);
+        else if (parent.Look("Contents/" + info))
+            return "Contents/";
+        else if (parent.Look("Resources/" + info)) {
+            info = "Resources/" + info;
+            return "";
+        } else _assert_(false, "cannot find Info.plist");
+    }());
 
     folder.Open(info, fun([&](std::streambuf &buffer, size_t length, const void *flag) {
         plist_d(buffer, length, fun([&](plist_t node) {
@@ -2517,10 +2532,8 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, Sta
         }));
     }));
 
-    if (!mac && folder.Look("MacOS/" + executable)) {
+    if (mac && info == "Info.plist")
         executable = "MacOS/" + executable;
-        mac = true;
-    }
 
     progress(root + "*");
 
@@ -2546,26 +2559,27 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, Sta
     const std::string resources(mac ? "Resources/" : "");
 
     if (true) {
-        rules1.insert(Rule{1, NoMode, "^" + resources});
+        rules1.insert(Rule{1, NoMode, "^" + (resources == "" ? ".*" : resources)});
         rules1.insert(Rule{1000, OptionalMode, "^" + resources + ".*\\.lproj/"});
         rules1.insert(Rule{1100, OmitMode, "^" + resources + ".*\\.lproj/locversion.plist$"});
-        rules1.insert(Rule{1010, NoMode, "^Base\\.lproj/"});
+        rules1.insert(Rule{1010, NoMode, "^" + resources + "Base\\.lproj/"});
         rules1.insert(Rule{1, NoMode, "^version.plist$"});
     }
 
     if (true) {
         rules2.insert(Rule{11, NoMode, ".*\\.dSYM($|/)"});
-        rules2.insert(Rule{20, NoMode, "^" + resources});
+        if (mac) rules2.insert(Rule{20, NoMode, "^" + resources});
         rules2.insert(Rule{2000, OmitMode, "^(.*/)?\\.DS_Store$"});
-        rules2.insert(Rule{10, NestedMode, "^(Frameworks|SharedFrameworks|PlugIns|Plug-ins|XPCServices|Helpers|MacOS|Library/(Automator|Spotlight|LoginItems))/"});
+        if (mac) rules2.insert(Rule{10, NestedMode, "^(Frameworks|SharedFrameworks|PlugIns|Plug-ins|XPCServices|Helpers|MacOS|Library/(Automator|Spotlight|LoginItems))/"});
         rules2.insert(Rule{1, NoMode, "^.*"});
         rules2.insert(Rule{1000, OptionalMode, "^" + resources + ".*\\.lproj/"});
         rules2.insert(Rule{1100, OmitMode, "^" + resources + ".*\\.lproj/locversion.plist$"});
-        rules2.insert(Rule{1010, NoMode, "^Base\\.lproj/"});
+        if (!mac) rules2.insert(Rule{1010, NoMode, "^Base\\.lproj/"});
         rules2.insert(Rule{20, OmitMode, "^Info\\.plist$"});
         rules2.insert(Rule{20, OmitMode, "^PkgInfo$"});
-        rules2.insert(Rule{10, NestedMode, "^[^/]+$"});
+        if (mac) rules2.insert(Rule{10, NestedMode, "^[^/]+$"});
         rules2.insert(Rule{20, NoMode, "^embedded\\.provisionprofile$"});
+        if (mac) rules2.insert(Rule{1010, NoMode, "^" + resources + "Base\\.lproj/"});
         rules2.insert(Rule{20, NoMode, "^version\\.plist$"});
     }
 
@@ -2579,7 +2593,10 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, Sta
         if (!nested(name))
             return;
         auto bundle(root + Split(name).dir);
-        bundle.resize(bundle.size() - resources.size());
+        if (mac) {
+            _assert(!bundle.empty());
+            bundle = Split(bundle.substr(0, bundle.size() - 1)).dir;
+        }
         SubFolder subfolder(folder, bundle);
 
         bundles[nested[1]] = Sign(bundle, subfolder, key, local, "", Starts(name, "PlugIns/") ? alter :
@@ -2759,7 +2776,7 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, Sta
     }));
 
     Bundle bundle;
-    bundle.path = executable;
+    bundle.path = folder.Path(executable);
 
     folder.Open(executable, fun([&](std::streambuf &buffer, size_t length, const void *flag) {
         progress(root + executable);
@@ -3017,7 +3034,7 @@ int main(int argc, char *argv[]) {
         if (S_ISDIR(info.st_mode)) {
 #ifndef LDID_NOPLIST
             _assert(!flag_r);
-            ldid::DiskFolder folder(path);
+            ldid::DiskFolder folder(path + "/");
             path += "/" + Sign("", folder, key, requirements, ldid::fun([&](const std::string &, const std::string &) -> std::string { return entitlements; }), dummy_).path;
 #else
             _assert(false);
