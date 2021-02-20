@@ -2486,7 +2486,19 @@ static Hash Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, Has
     return Sign(data.data(), data.size(), proxy, identifier, entitlements, merge, requirements, key, slots, flags, platform, progress);
 }
 
-Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std::map<std::string, Hash> &remote, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, const Progress &progress) {
+struct State {
+    std::map<std::string, Hash> files;
+    std::map<std::string, std::string> links;
+
+    void Merge(const std::string &root, const State &state) {
+        for (const auto &entry : state.files)
+            files[root + entry.first] = entry.second;
+        for (const auto &entry : state.links)
+            links[root + entry.first] = entry.second;
+    }
+};
+
+Bundle Sign(const std::string &root, Folder &folder, const std::string &key, State &remote, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, const Progress &progress) {
     std::string executable;
     std::string identifier;
 
@@ -2557,7 +2569,7 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
         rules2.insert(Rule{20, NoMode, "^version\\.plist$"});
     }
 
-    std::map<std::string, Hash> local;
+    State local;
 
     std::string failure(mac ? "Contents/|Versions/[^/]*/Resources/" : "");
     Expression nested("^(Frameworks/[^/]*\\.framework|PlugIns/[^/]*\\.appex(()|/[^/]*.app))/(" + failure + ")Info\\.plist$");
@@ -2592,15 +2604,13 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
         return false;
     });
 
-    std::map<std::string, std::string> links;
-
     folder.Find("", fun([&](const std::string &name) {
         if (exclude(name))
             return;
 
-        if (local.find(name) != local.end())
+        if (local.files.find(name) != local.files.end())
             return;
-        auto &hash(local[name]);
+        auto &hash(local.files[name]);
 
         folder.Open(name, fun([&](std::streambuf &data, size_t length, const void *flag) {
             progress(root + name);
@@ -2642,7 +2652,7 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
         if (exclude(name))
             return;
 
-        links[name] = read();
+        local.links[name] = read();
     }));
 
     auto plist(plist_new_dict());
@@ -2657,7 +2667,7 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
 
         bool old(&version.second == &rules1);
 
-        for (const auto &hash : local)
+        for (const auto &hash : local.files)
             for (const auto &rule : version.second)
                 if (rule(hash.first)) {
                     if (!old && mac && excludes.find(hash.first) != excludes.end());
@@ -2739,7 +2749,7 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
     }
 
     folder.Save(signature, true, NULL, fun([&](std::streambuf &save) {
-        HashProxy proxy(local[signature], save);
+        HashProxy proxy(local.files[signature], save);
         char *xml(NULL);
         uint32_t size;
         plist_to_xml(plist, &xml, &size);
@@ -2754,20 +2764,18 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, std
         progress(root + executable);
         folder.Save(executable, true, flag, fun([&](std::streambuf &save) {
             Slots slots;
-            slots[1] = local.at(info);
-            slots[3] = local.at(signature);
-            bundle.hash = Sign(NULL, 0, buffer, local[executable], save, identifier, entitlements, false, requirements, key, slots, length, 0, false, Progression(progress, root + executable));
+            slots[1] = local.files.at(info);
+            slots[3] = local.files.at(signature);
+            bundle.hash = Sign(NULL, 0, buffer, local.files[executable], save, identifier, entitlements, false, requirements, key, slots, length, 0, false, Progression(progress, root + executable));
         }));
     }));
 
-    for (const auto &entry : local)
-        remote[root + entry.first] = entry.second;
-
+    remote.Merge(root, local);
     return bundle;
 }
 
 Bundle Sign(const std::string &root, Folder &folder, const std::string &key, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, const Progress &progress) {
-    std::map<std::string, Hash> local;
+    State local;
     return Sign(root, folder, key, local, requirements, alter, progress);
 }
 #endif
