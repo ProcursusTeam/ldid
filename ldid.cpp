@@ -3031,7 +3031,7 @@ int main(int argc, char *argv[]) {
         struct stat info;
         _syscall(stat(path.c_str(), &info));
 
-        if (S_ISDIR(info.st_mode)) {
+        if (flag_S && S_ISDIR(info.st_mode)) {
 #ifndef LDID_NOPLIST
             _assert(!flag_r);
             ldid::DiskFolder folder(path + "/");
