@@ -905,6 +905,7 @@ enum CodeSignatureFlags {
     kSecCodeSignatureRestrict = 0x0800,
     kSecCodeSignatureEnforcement = 0x1000,
     kSecCodeSignatureLibraryValidation = 0x2000,
+    kSecCodeSignatureRuntime = 0x10000,
 };
 
 enum Kind : uint32_t {
@@ -2796,6 +2797,16 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, con
 #endif
 }
 
+std::string Hex(const uint8_t *data, size_t size) {
+    std::string hex;
+    hex.reserve(size * 2);
+    for (size_t i(0); i != size; ++i) {
+        hex += "0123456789abcdef"[data[i] >> 4];
+        hex += "0123456789abcdef"[data[i] & 0xf];
+    }
+    return hex;
+}
+
 static void usage(const char *argv0) {
     fprintf(stderr, "usage: %s -S[entitlements.xml] <binary>\n", argv0);
     fprintf(stderr, "   %s -e MobileSafari\n", argv0);
@@ -2821,6 +2832,7 @@ int main(int argc, char *argv[]) {
     bool flag_q(false);
 
     bool flag_H(false);
+    bool flag_h(false);
 
 #ifndef LDID_NOFLAGT
     bool flag_T(false);
@@ -2911,6 +2923,8 @@ int main(int argc, char *argv[]) {
                 else _assert(false);
             } break;
 
+            case 'h': flag_h = true; break;
+
             case 'Q': {
                 const char *xml = argv[argi] + 2;
                 requirements.open(xml, O_RDONLY, PROT_READ, MAP_PRIVATE);
@@ -2954,6 +2968,8 @@ int main(int argc, char *argv[]) {
                     flags |= kSecCodeSignatureEnforcement;
                 else if (strcmp(name, "library-validation") == 0)
                     flags |= kSecCodeSignatureLibraryValidation;
+                else if (strcmp(name, "runtime") == 0)
+                    flags |= kSecCodeSignatureRuntime;
                 else _assert(false);
             } break;
 
@@ -3178,6 +3194,84 @@ int main(int argc, char *argv[]) {
                         if (pages != 0)
                             LDID_SHA1(top + PageSize_ * (pages - 1), ((data - 1) % PageSize_) + 1, hashes[pages - 1]);
                     }
+            }
+
+            if (flag_h) {
+                _assert(signature != NULL);
+
+                auto algorithms(GetAlgorithms());
+
+                uint32_t data = mach_header.Swap(signature->dataoff);
+
+                uint8_t *top = reinterpret_cast<uint8_t *>(mach_header.GetBase());
+                uint8_t *blob = top + data;
+                struct SuperBlob *super = reinterpret_cast<struct SuperBlob *>(blob);
+
+                struct Candidate {
+                    CodeDirectory *directory_;
+                    size_t size_;
+                    Algorithm &algorithm_;
+                    std::string hash_;
+                };
+
+                std::map<uint8_t, Candidate> candidates;
+
+                for (size_t index(0); index != Swap(super->count); ++index) {
+                    auto type(Swap(super->index[index].type));
+                    if ((type == CSSLOT_CODEDIRECTORY || type >= CSSLOT_ALTERNATE) && type != CSSLOT_SIGNATURESLOT) {
+                        uint32_t begin = Swap(super->index[index].offset);
+                        uint32_t end = index + 1 == Swap(super->count) ? Swap(super->blob.length) : Swap(super->index[index + 1].offset);
+                        struct CodeDirectory *directory = reinterpret_cast<struct CodeDirectory *>(blob + begin + sizeof(Blob));
+                        auto type(directory->hashType);
+                        _assert(type > 0 && type <= algorithms.size());
+                        auto &algorithm(*algorithms[type - 1]);
+                        uint8_t hash[algorithm.size_];
+                        algorithm(hash, blob + begin, end - begin);
+                        candidates.insert({type, {directory, end - begin, algorithm, Hex(hash, 20)}});
+                    }
+                }
+
+                _assert(!candidates.empty());
+                auto best(candidates.end());
+                --best;
+
+                const auto directory(best->second.directory_);
+                const auto flags(Swap(directory->flags));
+
+                std::string names;
+                if (flags & kSecCodeSignatureHost)
+                    names += ",host";
+                if (flags & kSecCodeSignatureAdhoc)
+                    names += ",adhoc";
+                if (flags & kSecCodeSignatureForceHard)
+                    names += ",hard";
+                if (flags & kSecCodeSignatureForceKill)
+                    names += ",kill";
+                if (flags & kSecCodeSignatureForceExpiration)
+                    names += ",expires";
+                if (flags & kSecCodeSignatureRestrict)
+                    names += ",restrict";
+                if (flags & kSecCodeSignatureEnforcement)
+                    names += ",enforcement";
+                if (flags & kSecCodeSignatureLibraryValidation)
+                    names += ",library-validation";
+                if (flags & kSecCodeSignatureRuntime)
+                    names += ",runtime";
+
+                printf("CodeDirectory v=%x size=%zd flags=0x%x(%s) hashes=%d+%d location=embedded\n",
+                    Swap(directory->version), best->second.size_, flags, names.empty() ? "none" : names.c_str() + 1, Swap(directory->nCodeSlots), Swap(directory->nSpecialSlots));
+                printf("Hash type=%s size=%d\n", best->second.algorithm_.name(), directory->hashSize);
+
+                std::string choices;
+                for (const auto &candidate : candidates) {
+                    auto choice(candidate.second.algorithm_.name());
+                    choices += ',';
+                    choices += choice;
+                    printf("CandidateCDHash %s=%s\n", choice, candidate.second.hash_.c_str());
+                }
+                printf("Hash choices=%s\n", choices.c_str() + 1);
+
+                printf("CDHash=%s\n", best->second.hash_.c_str());
             }
         }
 
