@@ -2686,19 +2686,20 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, Sta
                     break;
                 }
 
-        for (const auto &link : links)
-            for (const auto &rule : version.second)
-                if (rule(link.first)) {
-                    if (rule.mode_ != OmitMode) {
-                        auto entry(plist_new_dict());
-                        plist_dict_set_item(entry, "symlink", plist_new_string(link.second.c_str()));
-                        if (rule.mode_ == OptionalMode)
-                            plist_dict_set_item(entry, "optional", plist_new_bool(true));
-                        plist_dict_set_item(files, link.first.c_str(), entry);
-                    }
+        if (!old)
+            for (const auto &link : local.links)
+                for (const auto &rule : version.second)
+                    if (rule(link.first)) {
+                        if (rule.mode_ != OmitMode) {
+                            auto entry(plist_new_dict());
+                            plist_dict_set_item(entry, "symlink", plist_new_string(link.second.c_str()));
+                            if (rule.mode_ == OptionalMode)
+                                plist_dict_set_item(entry, "optional", plist_new_bool(true));
+                            plist_dict_set_item(files, link.first.c_str(), entry);
+                        }
 
-                    break;
-                }
+                        break;
+                    }
 
         if (!old && mac)
             for (const auto &bundle : bundles) {
