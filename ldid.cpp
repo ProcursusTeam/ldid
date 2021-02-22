@@ -861,6 +861,26 @@ class FatHeader :
 #define CS_HASHTYPE_SHA256_160 3
 #define CS_HASHTYPE_SHA386_386 4
 
+#if 0
+#define CS_EXECSEG_MAIN_BINARY     0x001 /* executable segment denotes main binary */
+#define CS_EXECSEG_ALLOW_UNSIGNED  0x010 /* allow unsigned pages (for debugging) */
+#define CS_EXECSEG_DEBUGGER        0x020 /* main binary is debugger */
+#define CS_EXECSEG_JIT             0x040 /* JIT enabled */
+#define CS_EXECSEG_SKIP_LV         0x080 /* skip library validation */
+#define CS_EXECSEG_CAN_LOAD_CDHASH 0x100 /* can bless cdhash for execution */
+#define CS_EXECSEG_CAN_EXEC_CDHASH 0x200 /* can execute blessed cdhash */
+#else
+enum SecCodeExecSegFlags {
+    kSecCodeExecSegMainBinary = 0x001,
+    kSecCodeExecSegAllowUnsigned = 0x010,
+    kSecCodeExecSegDebugger = 0x020,
+    kSecCodeExecSegJit = 0x040,
+    kSecCodeExecSegSkipLibraryVal = 0x080,
+    kSecCodeExecSegCanLoadCdHash = 0x100,
+    kSecCodeExecSegCanExecCdHash = 0x100,
+};
+#endif
+
 struct BlobIndex {
     uint32_t type;
     uint32_t offset;
@@ -892,8 +912,22 @@ struct CodeDirectory {
     uint32_t spare2;
     uint32_t scatterOffset;
     uint32_t teamIDOffset;
-    //uint32_t spare3;
-    //uint64_t codeLimit64;
+    uint32_t spare3;
+    uint64_t codeLimit64;
+    uint64_t execSegBase;
+    uint64_t execSegLimit;
+    uint64_t execSegFlags;
+#if 0 // version = 0x20500
+    uint32_t runtime;
+    uint32_t preEncryptOffset;
+#endif
+#if 0 // version = 0x20600
+    uint8_t linkageHashType;
+    uint8_t linkageTruncated;
+    uint16_t spare4;
+    uint32_t linkageOffset;
+    uint32_t linkageSize;
+#endif
 } _packed;
 
 enum CodeSignatureFlags {
@@ -1064,7 +1098,7 @@ struct CodesignAllocation {
     FatMachHeader mach_header_;
     uint32_t offset_;
     uint32_t size_;
-    uint32_t limit_;
+    uint64_t limit_;
     uint32_t alloc_;
     uint32_t align_;
     const char *arch_;
@@ -1223,7 +1257,7 @@ std::string Analyze(const void *data, size_t size) {
     return entitlements;
 }
 
-static void Allocate(const void *idata, size_t isize, std::streambuf &output, const Functor<size_t (const MachHeader &, Baton &, size_t)> &allocate, const Functor<size_t (const MachHeader &, const Baton &, std::streambuf &output, size_t, const std::string &, const char *, const Progress &)> &save, const Progress &progress) {
+static void Allocate(const void *idata, size_t isize, std::streambuf &output, const Functor<size_t (const MachHeader &, Baton &, size_t)> &allocate, const Functor<size_t (const MachHeader &, const Baton &, std::streambuf &output, size_t, size_t, size_t, const std::string &, const char *, const Progress &)> &save, const Progress &progress) {
     FatHeader source(const_cast<void *>(idata), isize);
 
     size_t offset(0);
@@ -1348,6 +1382,9 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
         pad(output, allocation.offset_ - position);
         position = allocation.offset_;
 
+        size_t left(-1);
+        size_t right(0);
+
         std::vector<std::string> commands;
 
         _foreach (load_command, mach_header.GetLoadCommands()) {
@@ -1358,22 +1395,44 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
                     continue;
                 break;
 
+                // XXX: this is getting ridiculous: provide a better abstraction
+
                 case LC_SEGMENT: {
                     auto segment_command(reinterpret_cast<struct segment_command *>(&copy[0]));
-                    if (strncmp(segment_command->segname, "__LINKEDIT", 16) != 0)
-                        break;
-                    size_t size(mach_header.Swap(allocation.limit_ + allocation.alloc_ - mach_header.Swap(segment_command->fileoff)));
-                    segment_command->filesize = size;
-                    segment_command->vmsize = Align(size, 1 << allocation.align_);
+
+                    if ((segment_command->initprot & 04) != 0) {
+                        auto begin(mach_header.Swap(segment_command->fileoff));
+                        auto end(begin + mach_header.Swap(segment_command->filesize));
+                        if (left > begin)
+                            left = begin;
+                        if (right < end)
+                            right = end;
+                    }
+
+                    if (strncmp(segment_command->segname, "__LINKEDIT", 16) == 0) {
+                        size_t size(mach_header.Swap(allocation.limit_ + allocation.alloc_ - mach_header.Swap(segment_command->fileoff)));
+                        segment_command->filesize = size;
+                        segment_command->vmsize = Align(size, 1 << allocation.align_);
+                    }
                 } break;
 
                 case LC_SEGMENT_64: {
                     auto segment_command(reinterpret_cast<struct segment_command_64 *>(&copy[0]));
-                    if (strncmp(segment_command->segname, "__LINKEDIT", 16) != 0)
-                        break;
-                    size_t size(mach_header.Swap(allocation.limit_ + allocation.alloc_ - mach_header.Swap(segment_command->fileoff)));
-                    segment_command->filesize = size;
-                    segment_command->vmsize = Align(size, 1 << allocation.align_);
+
+                    if ((segment_command->initprot & 04) != 0) {
+                        auto begin(mach_header.Swap(segment_command->fileoff));
+                        auto end(begin + mach_header.Swap(segment_command->filesize));
+                        if (left > begin)
+                            left = begin;
+                        if (right < end)
+                            right = end;
+                    }
+
+                    if (strncmp(segment_command->segname, "__LINKEDIT", 16) == 0) {
+                        size_t size(mach_header.Swap(allocation.limit_ + allocation.alloc_ - mach_header.Swap(segment_command->fileoff)));
+                        segment_command->filesize = size;
+                        segment_command->vmsize = Align(size, 1 << allocation.align_);
+                    }
                 } break;
             }
 
@@ -1435,7 +1494,7 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
         pad(output, allocation.limit_ - allocation.size_);
         position += allocation.limit_ - allocation.size_;
 
-        size_t saved(save(mach_header, allocation.baton_, output, allocation.limit_, overlap, top, progress));
+        size_t saved(save(mach_header, allocation.baton_, output, allocation.limit_, left, right, overlap, top, progress));
         if (allocation.alloc_ > saved)
             pad(output, allocation.alloc_ - saved);
         else
@@ -1953,17 +2012,51 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
 #endif
 
         return alloc;
-    }), fun([&](const MachHeader &mach_header, const Baton &baton, std::streambuf &output, size_t limit, const std::string &overlap, const char *top, const Progress &progress) -> size_t {
+    }), fun([&](const MachHeader &mach_header, const Baton &baton, std::streambuf &output, size_t limit, size_t left, size_t right, const std::string &overlap, const char *top, const Progress &progress) -> size_t {
         Blobs blobs;
 
         if (true) {
             insert(blobs, CSSLOT_REQUIREMENTS, backing);
         }
 
+        uint64_t execs(0);
+        if (mach_header.Swap(mach_header->filetype) == MH_EXECUTE)
+            execs |= kSecCodeExecSegMainBinary;
+
         if (!baton.entitlements_.empty()) {
             std::stringbuf data;
             put(data, baton.entitlements_.data(), baton.entitlements_.size());
             insert(blobs, CSSLOT_ENTITLEMENTS, CSMAGIC_EMBEDDED_ENTITLEMENTS, data);
+
+#ifndef LDID_NOPLIST
+            auto entitlements(plist(baton.entitlements_));
+            _scope({ plist_free(entitlements); });
+            _assert(plist_get_node_type(entitlements) == PLIST_DICT);
+
+            const auto entitled([&](const char *key) {
+                auto item(plist_dict_get_item(entitlements, key));
+                if (plist_get_node_type(item) != PLIST_BOOLEAN)
+                    return false;
+                uint8_t value(0);
+                plist_get_bool_val(item, &value);
+                return value != 0;
+            });
+
+            if (entitled("get-task-allow"))
+                execs |= kSecCodeExecSegAllowUnsigned;
+            if (entitled("run-unsigned-code"))
+                execs |= kSecCodeExecSegAllowUnsigned;
+            if (entitled("com.apple.private.cs.debugger"))
+                execs |= kSecCodeExecSegDebugger;
+            if (entitled("dynamic-codesigning"))
+                execs |= kSecCodeExecSegJit;
+            if (entitled("com.apple.private.skip-library-validation"))
+                execs |= kSecCodeExecSegSkipLibraryVal;
+            if (entitled("com.apple.private.amfi.can-load-cdhash"))
+                execs |= kSecCodeExecSegCanLoadCdHash;
+            if (entitled("com.apple.private.amfi.can-execute-cdhash"))
+                execs |= kSecCodeExecSegCanExecCdHash;
+#endif
         }
 
         Slots posts(slots);
@@ -1990,10 +2083,10 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
             uint32_t normal((limit + PageSize_ - 1) / PageSize_);
 
             CodeDirectory directory;
-            directory.version = Swap(uint32_t(0x00020200));
+            directory.version = Swap(uint32_t(0x00020400));
             directory.flags = Swap(uint32_t(flags));
             directory.nSpecialSlots = Swap(special);
-            directory.codeLimit = Swap(uint32_t(limit));
+            directory.codeLimit = Swap(uint32_t(limit > UINT32_MAX ? UINT32_MAX : limit));
             directory.nCodeSlots = Swap(normal);
             directory.hashSize = algorithm.size_;
             directory.hashType = algorithm.type_;
@@ -2001,8 +2094,11 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
             directory.pageSize = PageShift_;
             directory.spare2 = Swap(uint32_t(0));
             directory.scatterOffset = Swap(uint32_t(0));
-            //directory.spare3 = Swap(uint32_t(0));
-            //directory.codeLimit64 = Swap(uint64_t(0));
+            directory.spare3 = Swap(uint32_t(0));
+            directory.codeLimit64 = Swap(uint64_t(limit > UINT32_MAX ? limit : 0));
+            directory.execSegBase = Swap(uint64_t(left));
+            directory.execSegLimit = Swap(uint64_t(right - left));
+            directory.execSegFlags = Swap(execs);
 
             uint32_t offset(sizeof(Blob) + sizeof(CodeDirectory));
 
@@ -2134,7 +2230,7 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
 static void Unsign(void *idata, size_t isize, std::streambuf &output, const Progress &progress) {
     Allocate(idata, isize, output, fun([](const MachHeader &mach_header, Baton &baton, size_t size) -> size_t {
         return 0;
-    }), fun([](const MachHeader &mach_header, const Baton &baton, std::streambuf &output, size_t limit, const std::string &overlap, const char *top, const Progress &progress) -> size_t {
+    }), fun([](const MachHeader &mach_header, const Baton &baton, std::streambuf &output, size_t limit, size_t left, size_t right, const std::string &overlap, const char *top, const Progress &progress) -> size_t {
         return 0;
     }), progress);
 }
