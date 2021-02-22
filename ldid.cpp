@@ -3145,9 +3145,9 @@ int main(int argc, char *argv[]) {
         struct stat info;
         _syscall(stat(path.c_str(), &info));
 
-        if (flag_S && S_ISDIR(info.st_mode)) {
+        if (S_ISDIR(info.st_mode)) {
+            _assert(flag_S);
 #ifndef LDID_NOPLIST
-            _assert(!flag_r);
             ldid::DiskFolder folder(path + "/");
             path += "/" + Sign("", folder, key, requirements, ldid::fun([&](const std::string &, const std::string &) -> std::string { return entitlements; }), dummy_).path;
 #else
