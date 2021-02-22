@@ -2938,6 +2938,7 @@ int main(int argc, char *argv[]) {
     bool flag_s(false);
 
     bool flag_D(false);
+    bool flag_d(false);
 
     bool flag_A(false);
     bool flag_a(false);
@@ -3027,6 +3028,7 @@ int main(int argc, char *argv[]) {
             } break;
 
             case 'D': flag_D = true; break;
+            case 'd': flag_d = true; break;
 
             case 'a': flag_a = true; break;
 
@@ -3128,6 +3130,11 @@ int main(int argc, char *argv[]) {
     _assert(flag_S || key.empty());
     _assert(flag_S || flag_I == NULL);
 
+    if (flag_d && !flag_h) {
+        flag_h = true;
+        fprintf(stderr, "WARNING: -d also (temporarily) does the behavior of -h for compatibility with a fork of ldid\n");
+    }
+
     if (files.empty())
         return 0;
 
@@ -3226,6 +3233,10 @@ int main(int argc, char *argv[]) {
                     }
                 }
 #endif
+            }
+
+            if (flag_d && encryption != NULL) {
+                printf("cryptid=%d\n", mach_header.Swap(encryption->cryptid));
             }
 
             if (flag_D) {
