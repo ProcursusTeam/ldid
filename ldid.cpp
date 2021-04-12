@@ -1096,7 +1096,7 @@ struct Baton {
 
 struct CodesignAllocation {
     FatMachHeader mach_header_;
-    uint32_t offset_;
+    uint64_t offset_;
     uint32_t size_;
     uint64_t limit_;
     uint32_t alloc_;
@@ -1361,14 +1361,27 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
         put(output, &fat_header, sizeof(fat_header));
         position += sizeof(fat_header);
 
+        // XXX: support fat_arch_64 (not in my toolchain)
+        // probably use C++14 generic lambda (not in my toolchain)
+
+        _assert_(![&]() {
+            _foreach (allocation, allocations) {
+                const auto offset(allocation.offset_);
+                const auto size(allocation.limit_ + allocation.alloc_);
+                if (uint32_t(offset) != offset || uint32_t(size) != size)
+                    return true;
+            }
+            return false;
+        }(), "FAT slice >=4GiB not currently supported");
+
         _foreach (allocation, allocations) {
             auto &mach_header(allocation.mach_header_);
 
             fat_arch fat_arch;
             fat_arch.cputype = Swap(mach_header->cputype);
             fat_arch.cpusubtype = Swap(mach_header->cpusubtype);
-            fat_arch.offset = Swap(allocation.offset_);
-            fat_arch.size = Swap(allocation.limit_ + allocation.alloc_);
+            fat_arch.offset = Swap(uint32_t(allocation.offset_));
+            fat_arch.size = Swap(uint32_t(allocation.limit_ + allocation.alloc_));
             fat_arch.align = Swap(allocation.align_);
             put(output, &fat_arch, sizeof(fat_arch));
             position += sizeof(fat_arch);
