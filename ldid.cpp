@@ -515,6 +515,10 @@ static std::streamsize read(std::streambuf &stream, void *data, size_t size) {
     return writ;
 }
 
+static inline void put(std::streambuf &stream, uint8_t value) {
+    _assert(stream.sputc(value) != EOF);
+}
+
 static inline void get(std::streambuf &stream, void *data, size_t size) {
     _assert(read(stream, data, size) == size);
 }
@@ -531,6 +535,10 @@ static inline void put(std::streambuf &stream, const void *data, size_t size, co
         total += writ;
         progress(double(total) / size);
     }
+}
+
+static inline void put(std::streambuf &stream, const std::string &data) {
+    return put(stream, data.data(), data.size());
 }
 
 static size_t most(std::streambuf &stream, void *data, size_t size) {
@@ -558,6 +566,154 @@ Type_ Align(Type_ value, size_t align) {
 
 static const uint8_t PageShift_(0x0c);
 static const uint32_t PageSize_(1 << PageShift_);
+
+static inline unsigned bytes(uint64_t value) {
+    return (64 - __builtin_clzll(value) + 7) / 8;
+}
+
+static void put(std::streambuf &stream, uint64_t value, size_t length) {
+    length *= 8;
+    do put(stream, uint8_t(value >> (length -= 8)));
+    while (length != 0);
+}
+
+static void der(std::streambuf &stream, uint64_t value) {
+    if (value < 128)
+        put(stream, value);
+    else {
+        unsigned length(bytes(value));
+        put(stream, 0x80 | length);
+        put(stream, value, length);
+    }
+}
+
+static std::string der(uint8_t tag, const char *value, size_t length) {
+    std::stringbuf data;
+    put(data, tag);
+    der(data, length);
+    put(data, value, length);
+    return data.str();
+}
+
+static std::string der(uint8_t tag, const char *value) {
+    return der(tag, value, strlen(value)); }
+static std::string der(uint8_t tag, const std::string &value) {
+    return der(tag, value.data(), value.size()); }
+
+template <typename Type_>
+static void der_(std::stringbuf &data, const Type_ &values) {
+    size_t size(0);
+    for (const auto &value : values)
+        size += value.size();
+    der(data, size);
+    for (const auto &value : values)
+        put(data, value);
+}
+
+static std::string der(const std::vector<std::string> &values) {
+    std::stringbuf data;
+    put(data, 0x30);
+    der_(data, values);
+    return data.str();
+}
+
+static std::string der(const std::multiset<std::string> &values) {
+    std::stringbuf data;
+    put(data, 0x31);
+    der_(data, values);
+    return data.str();
+}
+
+static std::string der(const std::pair<std::string, std::string> &value) {
+    const auto key(der(0x0c, value.first));
+    std::stringbuf data;
+    put(data, 0x30);
+    der(data, key.size() + value.second.size());
+    put(data, key);
+    put(data, value.second);
+    return data.str();
+}
+
+static std::string der(plist_t data) {
+    switch (const auto type = plist_get_node_type(data)) {
+        case PLIST_BOOLEAN: {
+            uint8_t value(0);
+            plist_get_bool_val(data, &value);
+
+            std::stringbuf data;
+            put(data, 0x01);
+            der(data, 1);
+            put(data, value != 0 ? 1 : 0);
+            return data.str();
+        } break;
+
+        case PLIST_UINT: {
+            uint64_t value;
+            plist_get_uint_val(data, &value);
+            const auto length(bytes(value));
+
+            std::stringbuf data;
+            put(data, 0x02);
+            der(data, length);
+            put(data, value, length);
+            return data.str();
+        } break;
+
+        case PLIST_REAL: {
+            _assert(false);
+        } break;
+
+        case PLIST_DATE: {
+            _assert(false);
+        } break;
+
+        case PLIST_DATA: {
+            char *value;
+            uint64_t length;
+            plist_get_data_val(data, &value, &length);
+            _scope({ free(value); });
+            return der(0x04, value, length);
+        } break;
+
+        case PLIST_STRING: {
+            char *value;
+            plist_get_string_val(data, &value);
+            _scope({ free(value); });
+            return der(0x0c, value);
+        } break;
+
+        case PLIST_ARRAY: {
+            std::vector<std::string> values;
+            for (auto e(plist_array_get_size(data)), i(decltype(e)(0)); i != e; ++i)
+                values.push_back(der(plist_array_get_item(data, i)));
+            return der(values);
+        } break;
+
+        case PLIST_DICT: {
+            std::multiset<std::string> values;
+
+            plist_dict_iter iterator(NULL);
+            plist_dict_new_iter(data, &iterator);
+            _scope({ free(iterator); });
+
+            for (;;) {
+                char *key(NULL);
+                plist_t value(NULL);
+                plist_dict_next_item(data, iterator, &key, &value);
+                if (key == NULL)
+                    break;
+                _scope({ free(key); });
+                values.insert(der(std::make_pair(key, der(value))));
+            }
+
+            return der(values);
+        } break;
+
+        default: {
+            _assert_(false, "unsupported plist type %d", type);
+        } break;
+    }
+}
 
 static inline uint16_t Swap_(uint16_t value) {
     return
@@ -843,6 +999,7 @@ class FatHeader :
 #define CSMAGIC_EMBEDDED_SIGNATURE     uint32_t(0xfade0cc0)
 #define CSMAGIC_EMBEDDED_SIGNATURE_OLD uint32_t(0xfade0b02)
 #define CSMAGIC_EMBEDDED_ENTITLEMENTS  uint32_t(0xfade7171)
+#define CSMAGIC_EMBEDDED_DERFORMAT     uint32_t(0xfade7172) // name?
 #define CSMAGIC_DETACHED_SIGNATURE     uint32_t(0xfade0cc1)
 #define CSMAGIC_BLOBWRAPPER            uint32_t(0xfade0b01)
 
@@ -852,6 +1009,8 @@ class FatHeader :
 #define CSSLOT_RESOURCEDIR   uint32_t(0x00003)
 #define CSSLOT_APPLICATION   uint32_t(0x00004)
 #define CSSLOT_ENTITLEMENTS  uint32_t(0x00005)
+#define CSSLOT_REPSPECIFIC   uint32_t(0x00006) // name?
+#define CSSLOT_DERFORMAT     uint32_t(0x00007) // name?
 #define CSSLOT_ALTERNATE     uint32_t(0x01000)
 
 #define CSSLOT_SIGNATURESLOT uint32_t(0x10000)
@@ -1092,6 +1251,7 @@ static const std::vector<Algorithm *> &GetAlgorithms() {
 
 struct Baton {
     std::string entitlements_;
+    std::string derformat_;
 };
 
 struct CodesignAllocation {
@@ -1951,56 +2111,60 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
         alloc += sizeof(struct BlobIndex);
         alloc += backing.str().size();
 
-        if (!merge)
-            baton.entitlements_ = entitlements;
-        else {
-#ifndef LDID_NOPLIST
+#ifdef LDID_NOPLIST
+        baton.entitlements_ = entitlements;
+#else
+        if (merge)
             Analyze(mach_header, fun([&](const char *data, size_t size) {
                 baton.entitlements_.assign(data, size);
             }));
 
-            if (baton.entitlements_.empty())
-                baton.entitlements_ = entitlements;
-            else if (!entitlements.empty()) {
-                auto combined(plist(baton.entitlements_));
-                _scope({ plist_free(combined); });
-                _assert(plist_get_node_type(combined) == PLIST_DICT);
+        if (!baton.entitlements_.empty() || !entitlements.empty()) {
+            auto combined(plist(baton.entitlements_));
+            _scope({ plist_free(combined); });
+            _assert(plist_get_node_type(combined) == PLIST_DICT);
 
-                auto merging(plist(entitlements));
-                _scope({ plist_free(merging); });
-                _assert(plist_get_node_type(merging) == PLIST_DICT);
+            auto merging(plist(entitlements));
+            _scope({ plist_free(merging); });
+            _assert(plist_get_node_type(merging) == PLIST_DICT);
 
-                plist_dict_iter iterator(NULL);
-                plist_dict_new_iter(merging, &iterator);
-                _scope({ free(iterator); });
+            plist_dict_iter iterator(NULL);
+            plist_dict_new_iter(merging, &iterator);
+            _scope({ free(iterator); });
 
-                for (;;) {
-                    char *key(NULL);
-                    plist_t value(NULL);
-                    plist_dict_next_item(merging, iterator, &key, &value);
-                    if (key == NULL)
-                        break;
-                    _scope({ free(key); });
-                    plist_dict_set_item(combined, key, plist_copy(value));
-                }
-
-                char *xml(NULL);
-                uint32_t size;
-                plist_to_xml(combined, &xml, &size);
-                _scope({ free(xml); });
-
-                baton.entitlements_.assign(xml, size);
+            for (;;) {
+                char *key(NULL);
+                plist_t value(NULL);
+                plist_dict_next_item(merging, iterator, &key, &value);
+                if (key == NULL)
+                    break;
+                _scope({ free(key); });
+                plist_dict_set_item(combined, key, plist_copy(value));
             }
-#else
-            _assert(false);
-#endif
+
+            baton.derformat_ = der(combined);
+
+            char *xml(NULL);
+            uint32_t size;
+            plist_to_xml(combined, &xml, &size);
+            _scope({ free(xml); });
+
+            baton.entitlements_.assign(xml, size);
         }
+#endif
 
         if (!baton.entitlements_.empty()) {
             special = std::max(special, CSSLOT_ENTITLEMENTS);
             alloc += sizeof(struct BlobIndex);
             alloc += sizeof(struct Blob);
             alloc += baton.entitlements_.size();
+        }
+
+        if (!baton.derformat_.empty()) {
+            special = std::max(special, CSSLOT_DERFORMAT);
+            alloc += sizeof(struct BlobIndex);
+            alloc += sizeof(struct Blob);
+            alloc += baton.derformat_.size();
         }
 
         size_t directory(0);
@@ -2070,6 +2234,12 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
             if (entitled("com.apple.private.amfi.can-execute-cdhash"))
                 execs |= kSecCodeExecSegCanExecCdHash;
 #endif
+        }
+
+        if (!baton.derformat_.empty()) {
+            std::stringbuf data;
+            put(data, baton.derformat_.data(), baton.derformat_.size());
+            insert(blobs, CSSLOT_DERFORMAT, CSMAGIC_EMBEDDED_DERFORMAT, data);
         }
 
         Slots posts(slots);
@@ -2471,6 +2641,8 @@ static void copy(std::streambuf &source, std::streambuf &target, size_t length, 
 
 #ifndef LDID_NOPLIST
 static plist_t plist(const std::string &data) {
+    if (data.empty())
+        return plist_new_dict();
     plist_t plist(NULL);
     if (Starts(data, "bplist00"))
         plist_from_bin(data.data(), data.size(), &plist);
