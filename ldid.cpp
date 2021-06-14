@@ -634,6 +634,7 @@ static std::string der(const std::pair<std::string, std::string> &value) {
     return data.str();
 }
 
+#ifndef LDID_NOPLIST
 static std::string der(plist_t data) {
     switch (const auto type = plist_get_node_type(data)) {
         case PLIST_BOOLEAN: {
@@ -714,6 +715,7 @@ static std::string der(plist_t data) {
         } break;
     }
 }
+#endif
 
 static inline uint16_t Swap_(uint16_t value) {
     return
