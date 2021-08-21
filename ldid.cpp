@@ -2019,7 +2019,7 @@ static void get(std::string &value, X509_NAME *name, int nid) {
     _assert(entry != NULL);
     auto asn(X509_NAME_ENTRY_get_data(entry));
     _assert(asn != NULL);
-    value.assign(reinterpret_cast<char *>(ASN1_STRING_data(asn)), ASN1_STRING_length(asn));
+    value.assign(reinterpret_cast<const char *>(ASN1_STRING_get0_data(asn)), ASN1_STRING_length(asn));
 }
 #endif
 
@@ -2716,7 +2716,7 @@ struct Rule {
     Mode mode_;
     std::string code_;
 
-    mutable std::auto_ptr<Expression> regex_;
+    mutable std::unique_ptr<Expression> regex_;
 
     Rule(unsigned weight, Mode mode, const std::string &code) :
         weight_(weight),
