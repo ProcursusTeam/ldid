@@ -2503,8 +2503,7 @@ void DiskFolder::Find(const std::string &root, const std::string &base, const Fu
 
 void DiskFolder::Save(const std::string &path, bool edit, const void *flag, const Functor<void (std::streambuf &)> &code) {
     if (!edit) {
-        // XXX: use nullbuf
-        std::stringbuf save;
+        NullBuffer save;
         code(save);
     } else {
         std::filebuf save;
