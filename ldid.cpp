@@ -43,6 +43,7 @@
 #include <sys/types.h>
 
 #ifndef LDID_NOSMIME
+#include <openssl/provider.h>
 #include <openssl/err.h>
 #include <openssl/pem.h>
 #include <openssl/pkcs7.h>
@@ -3100,6 +3101,8 @@ static void usage(const char *argv0) {
 int main(int argc, char *argv[]) {
 #ifndef LDID_NOSMIME
     OpenSSL_add_all_algorithms();
+    OSSL_PROVIDER *legacy = OSSL_PROVIDER_load(NULL, "legacy");
+    OSSL_PROVIDER *deflt = OSSL_PROVIDER_load(NULL, "default");
 #endif
 
     union {
@@ -3573,6 +3576,11 @@ int main(int argc, char *argv[]) {
         ++filee;
         ++filei;
     }
+
+#ifndef LDID_NOSMINE
+    OSSL_PROVIDER_unload(legacy);
+    OSSL_PROVIDER_unload(deflt);
+#endif
 
     return filee;
 }
