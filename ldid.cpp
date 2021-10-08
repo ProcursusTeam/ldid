@@ -48,6 +48,7 @@
 #include <openssl/pem.h>
 #include <openssl/pkcs7.h>
 #include <openssl/pkcs12.h>
+#include <openssl/ui.h>
 #endif
 
 #ifdef __APPLE__
@@ -141,6 +142,10 @@
 
 #define _packed \
     __attribute__((packed))
+
+#ifndef LDID_NOSMIME
+std::string password;
+#endif
 
 template <typename Type_>
 struct Iterator_ {
@@ -1787,8 +1792,14 @@ class Stuff {
         ca_(NULL)
     {
         _assert(value_ != NULL);
-        _assert(PKCS12_parse(value_, "", &key_, &cert_, &ca_) != 0);
 
+        if (!PKCS12_verify_mac(value_, "", 0) && password.empty()) {
+            char passbuf[2048];
+            UI_UTIL_read_pw_string(passbuf, 2048, "Enter password: ", 0);
+            password = passbuf;
+        }
+
+        _assert(PKCS12_parse(value_, password.c_str(), &key_, &cert_, &ca_) != 0);
         _assert(key_ != NULL);
         _assert(cert_ != NULL);
 
@@ -3282,6 +3293,10 @@ int main(int argc, char *argv[]) {
 
             case 'M':
                 flag_M = true;
+            break;
+
+            case 'U':
+                password = argv[argi] + 2;
             break;
 
             case 'K':
