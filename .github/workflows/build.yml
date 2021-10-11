@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        triple: [ aarch64-linux-musl, armv6-linux-musleabi, armv6-linux-musleabihf, armv6-linux-musleabihf, armv7l-linux-musleabihf, armv7m-linux-musleabi, armv7l,-linux-musleabihf, i486-linux-musl, i686-linux-musl, x86_64-linux-musl, x86_64-linux-muslx32, riscv64-linux-musl ]
+        triple: [ aarch64-linux-musl, armv6-linux-musleabi, armv6-linux-musleabihf, armv6-linux-musleabihf, armv7l-linux-musleabihf, armv7m-linux-musleabi, armv7l-linux-musleabihf, i486-linux-musl, i686-linux-musl, x86_64-linux-musl, x86_64-linux-muslx32, riscv64-linux-musl ]
     env:
       TOOLCHAIN: ${{ matrix.triple }}-cross
       TRIPLE: ${{ matrix.triple }}
