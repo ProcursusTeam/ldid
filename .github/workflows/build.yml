@@ -1,5 +1,8 @@
 name: build
 on:
+  push:
+  pull_request:
+  workflow_dispatch:
   release:
     types:
       - created
@@ -11,9 +14,12 @@ env:
 jobs:
   build-linux:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        triple: [ aarch64-linux-musl, armv6-linux-musleabi, armv6-linux-musleabihf, armv7l-linux-musleabihf, armv7m-linux-musleabi, i486-linux-musl, i686-linux-musl, x86_64-linux-musl, x86_64-linux-muslx32, riscv64-linux-musl ]
     env:
-      TOOLCHAIN: x86_64-linux-musl-cross
-      TRIPLE: x86_64-linux-musl
+      TOOLCHAIN: ${{ matrix.triple }}-cross
+      TRIPLE: ${{ matrix.triple }}
     steps:
       - uses: actions/checkout@v1
         with:
@@ -25,7 +31,7 @@ jobs:
           path: |
             ~/.ccache
             ~/dep_src
-          key: build-linux-${ { env.GITHUB_SHA } }
+          key: build-linux-${{ env.GITHUB_SHA }}
           restore-keys: |
             build-linux-
 
@@ -42,23 +48,30 @@ jobs:
 
       - name: setup toolchain
         run: |
-          sudo apt-get install -y ccache
+          sudo apt-get install -y ccache build-essential
           wget -q -nc -P ${DOWNLOAD_PATH} https://musl.cc/${TOOLCHAIN}.tgz
           tar xf ${DOWNLOAD_PATH}/${TOOLCHAIN}.tgz -C ${HOME}
           echo "${HOME}/${TOOLCHAIN}/bin" >> $GITHUB_PATH
           echo "CC=ccache ${TRIPLE}-gcc" >> $GITHUB_ENV
           echo "CXX=ccache ${TRIPLE}-g++" >> $GITHUB_ENV
+          echo "BUILD_CC=ccache gcc" >> $GITHUB_ENV
+          echo "BUILD_CXX=ccache g++" >> $GITHUB_ENV
           echo "CFLAGS=-static -I${ROOT}/usr/include" >> $GITHUB_ENV
           echo "LDFLAGS=-L${ROOT}/usr/lib" >> $GITHUB_ENV
           echo "PKG_CONFIG_PATH=${ROOT}/usr/lib/pkgconfig" >> $GITHUB_ENV
           echo "LD_LIBRARY_PATH=${ROOT}/usr/lib" >> $GITHUB_ENV
+          if grep 64 <<< ${TRIPLE}; then
+            echo "OSSL_CROSS=linux-generic64" >> $GITHUB_ENV
+          else
+            echo "OSSL_CROSS=linux-generic32" >> $GITHUB_ENV
+          fi
 
       - name: build libplist
         run: |
           wget -q -nc -P ${DOWNLOAD_PATH} https://github.com/libimobiledevice/libplist/releases/download/${LIBPLIST_VERSION}/libplist-${LIBPLIST_VERSION}.tar.bz2
           tar xf ${DOWNLOAD_PATH}/libplist-${LIBPLIST_VERSION}.tar.bz2 -C ${DEP_PATH}
           cd ${DEP_PATH}/libplist-${LIBPLIST_VERSION}
-          ./configure --host=${TRIPLE} --prefix=/usr --without-cython --enable-static --disable-shared
+          ./configure --host=${TRIPLE} --prefix=/usr --build=x86_64-linux-gnu --without-cython --enable-static --disable-shared
           make -j$(nproc)
           make install DESTDIR="${ROOT}"
 
@@ -67,7 +80,7 @@ jobs:
           wget -q -nc -P ${DOWNLOAD_PATH} https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz
           tar xf ${DOWNLOAD_PATH}/openssl-${OPENSSL_VERSION}.tar.gz -C ${DEP_PATH}
           cd ${DEP_PATH}/openssl-${OPENSSL_VERSION}
-          ./config --prefix=/usr --libdir=/usr/lib --openssldir=/etc/ssl --static -static
+          ./config --prefix=/usr --libdir=/usr/lib ${OSSL_CROSS} --openssldir=/etc/ssl --static -static
           make -j$(nproc)
           make install_sw DESTDIR="${ROOT}"
 
@@ -75,13 +88,26 @@ jobs:
         run: |
           ${CC} ${CFLAGS} -Os -c -o lookup2.o lookup2.c
           ${CXX} ${CFLAGS} -Os -c -o ldid.o ldid.cpp -std=c++11 -DLDID_VERSION=\"${LDID_VERSION}\"
-          ${CXX} -Os -std=c++11 ldid.o lookup2.o ${ROOT}/usr/lib/libplist-2.0.a ${ROOT}/usr/lib/libcrypto.a -o ldid
+          ${CXX} ${CFLAGS} -Os -std=c++11 ldid.o lookup2.o ${ROOT}/usr/lib/libplist-2.0.a ${ROOT}/usr/lib/libcrypto.a -o ldid
           ${TRIPLE}-strip ldid
+          sed 's/-linux-musl//g' <<< FILENAME=${TRIPLE} >> $GITHUB_ENV
 
       - uses: actions/upload-artifact@v1
         with:
-          name: ldid_linux
+          name: ldid_linux_${{ env.FILENAME }}
           path: ldid
+
+      - name: Upload Release Asset Linux
+        uses: actions/upload-release-asset@v1
+        if: ${{ github.event_name == 'release' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ldid
+          asset_name: ldid_linux_${{ env.FILENAME }}
+          asset_content_type: application/octet-stream
+
 
   build-macos-x86_64:
     runs-on: macos-11
@@ -145,6 +171,7 @@ jobs:
           ${CXX} ${CPPFLAGS} ${CFLAGS} -flto=thin -Os -c -o ldid.o ldid.cpp -std=c++11 -DLDID_VERSION=\"${LDID_VERSION}\"
           ${CXX} ${ROOT}/usr/lib/libplist-2.0.a ${ROOT}/usr/lib/libcrypto.a -flto=thin -Os -std=c++11 ldid.o lookup2.o -o ldid
           strip ldid
+
       - uses: actions/upload-artifact@v1
         with:
           name: ldid_macos_x86_64 
@@ -217,17 +244,12 @@ jobs:
           name: ldid_macos_arm64
           path: ldid
 
-  releases:
+  upload-macos-releases:
     runs-on: ubuntu-latest
-    needs: [build-linux, build-macos-x86_64, build-macos-arm64]
+    needs: [build-macos-x86_64, build-macos-arm64]
+    if: ${{ github.event_name == 'release' }}
     steps:
       - uses: actions/checkout@v1
-
-      - name: Download linux artifact
-        uses: actions/download-artifact@v1
-        with:
-          name: ldid_linux
-          path: ldid_linux
       - name: Download macos-x86_64 artifact
         uses: actions/download-artifact@v1
         with:
@@ -238,16 +260,6 @@ jobs:
         with:
           name: ldid_macos_arm64
           path: ldid_macos_arm64
-
-      - name: Upload Release Asset linux
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./ldid_linux/ldid
-          asset_name: ldid_linux
-          asset_content_type: application/octet-stream
       - name: Upload Release Asset macos x86_64
         uses: actions/upload-release-asset@v1
         env:
