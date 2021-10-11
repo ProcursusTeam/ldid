@@ -45,7 +45,7 @@
 #ifndef LDID_NOSMIME
 #include <openssl/opensslv.h>
 # if OPENSSL_VERSION_NUM >= 0x30000000
-#include <openssl/provider.h>
+#  include <openssl/provider.h>
 # endif
 #include <openssl/err.h>
 #include <openssl/pem.h>
