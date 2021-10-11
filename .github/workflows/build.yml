@@ -52,8 +52,8 @@ jobs:
           echo "${HOME}/${TOOLCHAIN}/bin" >> $GITHUB_PATH
           echo "CC=ccache ${TRIPLE}-gcc" >> $GITHUB_ENV
           echo "CXX=ccache ${TRIPLE}-g++" >> $GITHUB_ENV
-          echo "BUILD_CC=ccache gcc" >> $$GITHUB_ENV
-          echo "BUILD_CXX=ccache g++" >> $$GITHUB_ENV
+          echo "BUILD_CC=ccache gcc" >> $GITHUB_ENV
+          echo "BUILD_CXX=ccache g++" >> $GITHUB_ENV
           echo "CFLAGS=-static -I${ROOT}/usr/include" >> $GITHUB_ENV
           echo "LDFLAGS=-L${ROOT}/usr/lib" >> $GITHUB_ENV
           echo "PKG_CONFIG_PATH=${ROOT}/usr/lib/pkgconfig" >> $GITHUB_ENV
@@ -88,7 +88,7 @@ jobs:
           ${CXX} ${CFLAGS} -Os -c -o ldid.o ldid.cpp -std=c++11 -DLDID_VERSION=\"${LDID_VERSION}\"
           ${CXX} -Os -std=c++11 ldid.o lookup2.o ${ROOT}/usr/lib/libplist-2.0.a ${ROOT}/usr/lib/libcrypto.a -o ldid
           ${TRIPLE}-strip ldid
-          sed 's/-linux-musl//g' <<< FILENAME=${TRIPLE} >> $$GITHUB_ENV
+          sed 's/-linux-musl//g' <<< FILENAME=${TRIPLE} >> $GITHUB_ENV
 
       - uses: actions/upload-artifact@v1
         with:
