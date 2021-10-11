@@ -63,7 +63,7 @@ jobs:
           wget -q -nc -P ${DOWNLOAD_PATH} https://github.com/libimobiledevice/libplist/releases/download/${LIBPLIST_VERSION}/libplist-${LIBPLIST_VERSION}.tar.bz2
           tar xf ${DOWNLOAD_PATH}/libplist-${LIBPLIST_VERSION}.tar.bz2 -C ${DEP_PATH}
           cd ${DEP_PATH}/libplist-${LIBPLIST_VERSION}
-          ./configure --host=${TRIPLE} --prefix=/usr --cross-compile --without-cython --enable-static --disable-shared
+          ./configure --host=${TRIPLE} --prefix=/usr --build=x86_64-linux-gnu --without-cython --enable-static --disable-shared
           make -j$(nproc)
           make install DESTDIR="${ROOT}"
 
@@ -72,7 +72,7 @@ jobs:
           wget -q -nc -P ${DOWNLOAD_PATH} https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz
           tar xf ${DOWNLOAD_PATH}/openssl-${OPENSSL_VERSION}.tar.gz -C ${DEP_PATH}
           cd ${DEP_PATH}/openssl-${OPENSSL_VERSION}
-          ./config --prefix=/usr --libdir=/usr/lib --cross-compile --openssldir=/etc/ssl --static -static
+          ./config --prefix=/usr --libdir=/usr/lib --build=x86_64-linux-gnu --openssldir=/etc/ssl --static -static
           make -j$(nproc)
           make install_sw DESTDIR="${ROOT}"
 
