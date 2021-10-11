@@ -169,9 +169,9 @@ jobs:
           strip ldid
 
       - uses: actions/upload-artifact@v1
-         with:
-           name: ldid_macos_x86_64 
-           path: ldid
+        with:
+          name: ldid_macos_x86_64 
+          path: ldid
 
   build-macos-arm64:
     runs-on: macos-11
