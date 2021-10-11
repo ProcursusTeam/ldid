@@ -51,12 +51,17 @@ jobs:
           echo "${HOME}/${TOOLCHAIN}/bin" >> $GITHUB_PATH
           echo "CC=ccache ${TRIPLE}-gcc" >> $GITHUB_ENV
           echo "CXX=ccache ${TRIPLE}-g++" >> $GITHUB_ENV
-          echo "BUILD_CC=ccache gcc" > $$GITHUB_ENV
-          echo "BUILD_CXX=ccache g++" > $$GITHUB_ENV
+          echo "BUILD_CC=ccache gcc" >> $$GITHUB_ENV
+          echo "BUILD_CXX=ccache g++" >> $$GITHUB_ENV
           echo "CFLAGS=-static -I${ROOT}/usr/include" >> $GITHUB_ENV
           echo "LDFLAGS=-L${ROOT}/usr/lib" >> $GITHUB_ENV
           echo "PKG_CONFIG_PATH=${ROOT}/usr/lib/pkgconfig" >> $GITHUB_ENV
           echo "LD_LIBRARY_PATH=${ROOT}/usr/lib" >> $GITHUB_ENV
+          if grep 64 <<< ${TRIPLE}; then
+            echo "OSSL_CROSS=linux-generic64" >> $GITHUB_ENV
+          else
+            echo "OSSL_CROSS=linux-generic32" >> $GITHUB_ENV
+          fi
 
       - name: build libplist
         run: |
@@ -72,7 +77,7 @@ jobs:
           wget -q -nc -P ${DOWNLOAD_PATH} https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz
           tar xf ${DOWNLOAD_PATH}/openssl-${OPENSSL_VERSION}.tar.gz -C ${DEP_PATH}
           cd ${DEP_PATH}/openssl-${OPENSSL_VERSION}
-          ./config --prefix=/usr --libdir=/usr/lib --build=x86_64-linux-gnu --openssldir=/etc/ssl --static -static
+          ./config --prefix=/usr --libdir=/usr/lib ${OSSL_CROSS} --openssldir=/etc/ssl --static -static
           make -j$(nproc)
           make install_sw DESTDIR="${ROOT}"
 
