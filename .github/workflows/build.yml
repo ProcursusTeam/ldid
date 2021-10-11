@@ -1,5 +1,7 @@
 name: build
 on:
+  push:
+  workflow_dispatch:
   release:
     types:
       - created
@@ -96,6 +98,7 @@ jobs:
 
       - name: Upload Release Asset Linux
         uses: actions/upload-release-asset@v1
+        if: ${{ github.event_name == 'release' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -243,6 +246,7 @@ jobs:
   upload-macos-releases:
     runs-on: ubuntu-latest
     needs: [build-macos-x86_64, build-macos-arm64]
+    if: ${{ github.event_name == 'release' }}
     steps:
       - uses: actions/checkout@v1
       - name: Download macos-x86_64 artifact
