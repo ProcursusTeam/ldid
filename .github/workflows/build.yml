@@ -88,7 +88,7 @@ jobs:
         run: |
           ${CC} ${CFLAGS} -Os -c -o lookup2.o lookup2.c
           ${CXX} ${CFLAGS} -Os -c -o ldid.o ldid.cpp -std=c++11 -DLDID_VERSION=\"${LDID_VERSION}\"
-          ${CXX} -Os -std=c++11 ldid.o lookup2.o ${ROOT}/usr/lib/libplist-2.0.a ${ROOT}/usr/lib/libcrypto.a -o ldid
+          ${CXX} ${CFLAGS} -Os -std=c++11 ldid.o lookup2.o ${ROOT}/usr/lib/libplist-2.0.a ${ROOT}/usr/lib/libcrypto.a -o ldid
           ${TRIPLE}-strip ldid
           sed 's/-linux-musl//g' <<< FILENAME=${TRIPLE} >> $GITHUB_ENV
 
