@@ -178,13 +178,14 @@ jobs:
         echo "${HOME}/sccache-v${SCCACHE_VERSION}-x86_64-apple-darwin" >> $GITHUB_PATH
         echo "CC=sccache clang -arch ${ARCH} -mmacosx-version-min=10.13" >> $GITHUB_ENV
         echo "CXX=sccache clang++ -arch ${ARCH} -mmacosx-version-min=10.13" >> $GITHUB_ENV
+        echo "CFLAGS=-Os" >> $GITHUB_ENV
 
     - name: build libplist
       run: |
         wget -q -nc -P ${DOWNLOAD_PATH} https://github.com/libimobiledevice/libplist/releases/download/${LIBPLIST_VERSION}/libplist-${LIBPLIST_VERSION}.tar.bz2
         tar xf ${DOWNLOAD_PATH}/libplist-${LIBPLIST_VERSION}.tar.bz2 -C ${DEP_PATH}
         cd ${DEP_PATH}/libplist-${LIBPLIST_VERSION}
-        ./configure --without-cython --enable-static --disable-shared --host=${HOST_ARCH}-apple-darwin
+        ./configure --host=${HOST_ARCH}-apple-darwin --without-cython --enable-static --disable-shared
         make -j$(sysctl -n hw.ncpu)
 
         echo "CFLAGS=${CFLAGS} -I${DEP_PATH}/libplist-${LIBPLIST_VERSION}/include" >> $GITHUB_ENV
@@ -196,13 +197,14 @@ jobs:
         tar xf ${DOWNLOAD_PATH}/openssl-${OPENSSL_VERSION}.tar.gz -C ${DEP_PATH}
         cd ${DEP_PATH}/openssl-${OPENSSL_VERSION}
         ./config --prefix=/usr no-shared darwin64-${ARCH}
-        make -j$(nproc) build_generated libcrypto.a
+        make -j$(sysctl -n hw.ncpu) build_generated libcrypto.a
 
         echo "CFLAGS=${CFLAGS} -I${DEP_PATH}/openssl-${OPENSSL_VERSION}/include" >> $GITHUB_ENV
         echo "LIBCRYPTO_LIB=${DEP_PATH}/openssl-${OPENSSL_VERSION}/libcrypto.a" >> $GITHUB_ENV
 
     - name: build
       run: |
+        export LDID_VERSION=$(echo "$(git describe --tags --abbrev=0)")
         ${CC} ${CFLAGS} -flto=thin -Os -c -o lookup2.o lookup2.c
         ${CXX} ${CFLAGS} -flto=thin -Os -c -o ldid.o ldid.cpp -std=c++11 -DLDID_VERSION=\"${LDID_VERSION}\"
         ${CXX} ${LIBPLIST_LIB} ${LIBCRYPTO_LIB} -flto=thin -Os -std=c++11 ldid.o lookup2.o -o ldid
