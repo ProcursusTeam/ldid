@@ -124,7 +124,7 @@ jobs:
       with:
         upload_url: ${{ github.event.release.upload_url }}
         asset_path: ldid
-        asset_name: ldid_linux_${{ env.FILENAME }}
+        asset_name: ldid_linux_${{ env.ARCH }}
         asset_content_type: application/octet-stream
 
   build-macos:
@@ -136,7 +136,6 @@ jobs:
         - arm64
     env:
       ARCH: ${{ matrix.arch }}
-
     steps:
     - uses: actions/checkout@v1
       with:
