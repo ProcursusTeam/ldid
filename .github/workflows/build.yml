@@ -89,6 +89,9 @@ jobs:
           i486)
             export PLATFORM="linux-x86"
             ;;
+          riscv64)
+            export PLATFORM="linux64-riscv64"
+            ;;
         esac
 
         wget -q -nc -P ${DOWNLOAD_PATH} https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz
@@ -160,7 +163,7 @@ jobs:
           echo "HOST_ARCH=aarch64" >> $GITHUB_ENV
         else
           echo "HOST_ARCH=${ARCH}" >> $GITHUB_ENV
-        endif
+        fi
 
     - name: setup toolchain
       run: |
