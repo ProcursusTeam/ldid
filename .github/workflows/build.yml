@@ -10,271 +10,218 @@ on:
 env:
   LIBPLIST_VERSION: 2.2.0
   OPENSSL_VERSION: 3.0.0
+  SCCACHE_VERSION: 0.2.15
 
 jobs:
   build-linux:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        triple: [ aarch64-linux-musl, armv6-linux-musleabi, armv6-linux-musleabihf, armv7l-linux-musleabihf, armv7m-linux-musleabi, armv7r-linux-musleabihf, i486-linux-musl, i686-linux-musl, x86_64-linux-musl, x86_64-linux-muslx32, riscv64-linux-musl ]
+        triple:
+        - arm-linux-musleabi
+        - aarch64-linux-musl
+        - i486-linux-musl
+        - riscv64-linux-musl
+        - x86_64-linux-musl
     env:
       TOOLCHAIN: ${{ matrix.triple }}-cross
       TRIPLE: ${{ matrix.triple }}
+
     steps:
-      - uses: actions/checkout@v1
-        with:
-          submodules: recursive
+    - uses: actions/checkout@v1
+      with:
+        submodules: recursive
 
-      - name: cache files
-        uses: actions/cache@v2
-        with:
-          path: |
-            ~/.ccache
-            ~/dep_src
-          key: build-linux-${{ env.GITHUB_SHA }}
-          restore-keys: |
-            build-linux-
+    - uses: actions/cache@v2
+      with:
+        path: |
+          ~/.cache/sccache
+          ~/dep_src
+        key: build-linux-${{ matrix.triple }}-${{ env.GITHUB_SHA }}
+        restore-keys: |
+          build-linux-${{ matrix.triple }}
 
-      - name: setup environment
-        run: |
-          export DOWNLOAD_PATH=${HOME}/dep_src
-          export DEP_PATH=${HOME}/build
-          export ROOT=${HOME}/root
-          mkdir -p ${DOWNLOAD_PATH} ${DEP_PATH} ${ROOT}
-          echo "DOWNLOAD_PATH=${DOWNLOAD_PATH}" >> $GITHUB_ENV
-          echo "DEP_PATH=${DEP_PATH}" >> $GITHUB_ENV
-          echo "ROOT=${ROOT}" >> $GITHUB_ENV
-          echo "LDID_VERSION=$(echo "$(git describe --tags --abbrev=0)")" >> $GITHUB_ENV
+    - name: setup environment
+      run: |
+        export DOWNLOAD_PATH=${HOME}/dep_src
+        export DEP_PATH=${HOME}/build
+        mkdir -p ${DOWNLOAD_PATH} ${DEP_PATH}
+        echo "DOWNLOAD_PATH=${DOWNLOAD_PATH}" >> $GITHUB_ENV
+        echo "DEP_PATH=${DEP_PATH}" >> $GITHUB_ENV
+        echo "ARCH=$(echo ${{ matrix.triple }} | cut -d- -f 1)" >> $GITHUB_ENV
 
-      - name: setup toolchain
-        run: |
-          sudo apt-get install -y ccache build-essential
-          wget -q -nc -P ${DOWNLOAD_PATH} https://musl.cc/${TOOLCHAIN}.tgz
-          tar xf ${DOWNLOAD_PATH}/${TOOLCHAIN}.tgz -C ${HOME}
-          echo "${HOME}/${TOOLCHAIN}/bin" >> $GITHUB_PATH
-          echo "CC=ccache ${TRIPLE}-gcc" >> $GITHUB_ENV
-          echo "CXX=ccache ${TRIPLE}-g++" >> $GITHUB_ENV
-          echo "BUILD_CC=ccache gcc" >> $GITHUB_ENV
-          echo "BUILD_CXX=ccache g++" >> $GITHUB_ENV
-          echo "CFLAGS=-static -I${ROOT}/usr/include" >> $GITHUB_ENV
-          echo "LDFLAGS=-L${ROOT}/usr/lib" >> $GITHUB_ENV
-          echo "PKG_CONFIG_PATH=${ROOT}/usr/lib/pkgconfig" >> $GITHUB_ENV
-          echo "LD_LIBRARY_PATH=${ROOT}/usr/lib" >> $GITHUB_ENV
-          if grep 64 <<< ${TRIPLE}; then
-            echo "OSSL_CROSS=linux-generic64" >> $GITHUB_ENV
-          else
-            echo "OSSL_CROSS=linux-generic32" >> $GITHUB_ENV
-          fi
+    - name: setup toolchain
+      run: |
+        # Download Toolchain
+        wget -q -nc -P ${DOWNLOAD_PATH} https://musl.cc/${TOOLCHAIN}.tgz
+        tar xf ${DOWNLOAD_PATH}/${TOOLCHAIN}.tgz -C ${HOME}
 
-      - name: build libplist
-        run: |
-          wget -q -nc -P ${DOWNLOAD_PATH} https://github.com/libimobiledevice/libplist/releases/download/${LIBPLIST_VERSION}/libplist-${LIBPLIST_VERSION}.tar.bz2
-          tar xf ${DOWNLOAD_PATH}/libplist-${LIBPLIST_VERSION}.tar.bz2 -C ${DEP_PATH}
-          cd ${DEP_PATH}/libplist-${LIBPLIST_VERSION}
-          ./configure --host=${TRIPLE} --prefix=/usr --build=x86_64-linux-gnu --without-cython --enable-static --disable-shared
-          make -j$(nproc)
-          make install DESTDIR="${ROOT}"
+        # Download sccache
+        wget -q -nc -P ${DOWNLOAD_PATH} \
+          https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz
+        tar xf ${DOWNLOAD_PATH}/sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz -C ${HOME}
+        mv ${HOME}/sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl/sccache ${HOME}/${TOOLCHAIN}/bin
+        chmod +x ${HOME}/${TOOLCHAIN}/bin/sccache
 
-      - name: build openssl
-        run: |
-          wget -q -nc -P ${DOWNLOAD_PATH} https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz
-          tar xf ${DOWNLOAD_PATH}/openssl-${OPENSSL_VERSION}.tar.gz -C ${DEP_PATH}
-          cd ${DEP_PATH}/openssl-${OPENSSL_VERSION}
-          ./config --prefix=/usr --libdir=/usr/lib ${OSSL_CROSS} --openssldir=/etc/ssl --static -static
-          make -j$(nproc)
-          make install_sw DESTDIR="${ROOT}"
+        echo "${HOME}/${TOOLCHAIN}/bin" >> $GITHUB_PATH
+        echo "CC=sccache ${TRIPLE}-gcc" >> $GITHUB_ENV
+        echo "CXX=sccache ${TRIPLE}-g++" >> $GITHUB_ENV
+        echo "CFLAGS=-Os -static" >> $GITHUB_ENV
 
-      - name: build
-        run: |
-          ${CC} ${CFLAGS} -Os -c -o lookup2.o lookup2.c
-          ${CXX} ${CFLAGS} -Os -c -o ldid.o ldid.cpp -std=c++11 -DLDID_VERSION=\"${LDID_VERSION}\"
-          ${CXX} ${CFLAGS} -Os -std=c++11 ldid.o lookup2.o ${ROOT}/usr/lib/libplist-2.0.a ${ROOT}/usr/lib/libcrypto.a -o ldid
-          ${TRIPLE}-strip ldid
-          sed 's/-linux-musl//g' <<< FILENAME=${TRIPLE} >> $GITHUB_ENV
+    - name: build libplist
+      run: |
+        wget -q -nc -P ${DOWNLOAD_PATH} https://github.com/libimobiledevice/libplist/releases/download/${LIBPLIST_VERSION}/libplist-${LIBPLIST_VERSION}.tar.bz2
+        tar xf ${DOWNLOAD_PATH}/libplist-${LIBPLIST_VERSION}.tar.bz2 -C ${DEP_PATH}
+        cd ${DEP_PATH}/libplist-${LIBPLIST_VERSION}
+        ./configure --host=${TRIPLE} --prefix=/usr --without-cython --enable-static --disable-shared
+        make -j$(nproc)
 
-      - uses: actions/upload-artifact@v1
-        with:
-          name: ldid_linux_${{ env.FILENAME }}
-          path: ldid
+        echo "CFLAGS=${CFLAGS} -I${DEP_PATH}/libplist-${LIBPLIST_VERSION}/include" >> $GITHUB_ENV
+        echo "LIBPLIST_LIB=${DEP_PATH}/libplist-${LIBPLIST_VERSION}/src/.libs/libplist-2.0.a" >> $GITHUB_ENV
 
-      - name: Upload Release Asset Linux
-        uses: actions/upload-release-asset@v1
-        if: ${{ github.event_name == 'release' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ldid
-          asset_name: ldid_linux_${{ env.FILENAME }}
-          asset_content_type: application/octet-stream
+    - name: build openssl
+      run: |
+        export PLATFORM="linux-${ARCH}"
+        case ${ARCH} in
+          arm)
+            export PLATFORM="linux-generic32"
+            ;;
+          i486)
+            export PLATFORM="linux-x86"
+            ;;
+          riscv64)
+            export PLATFORM="linux64-riscv64"
+            ;;
+        esac
 
+        wget -q -nc -P ${DOWNLOAD_PATH} https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz
+        tar xf ${DOWNLOAD_PATH}/openssl-${OPENSSL_VERSION}.tar.gz -C ${DEP_PATH}
+        cd ${DEP_PATH}/openssl-${OPENSSL_VERSION}
+        ./config --prefix=/usr --static -static ${PLATFORM}
+        make -j$(nproc) build_generated libcrypto.a
 
-  build-macos-x86_64:
+        echo "CFLAGS=${CFLAGS} -I${DEP_PATH}/openssl-${OPENSSL_VERSION}/include" >> $GITHUB_ENV
+        echo "LIBCRYPTO_LIB=${DEP_PATH}/openssl-${OPENSSL_VERSION}/libcrypto.a" >> $GITHUB_ENV
+
+    - name: build
+      run: |
+        export LDID_VERSION=$(echo "$(git describe --tags --abbrev=0)")
+        ${CC} ${CFLAGS} -c -o lookup2.o lookup2.c
+        ${CXX} ${CFLAGS} -c -o ldid.o ldid.cpp -std=c++11 -DLDID_VERSION=\"${LDID_VERSION}\"
+        ${CXX} ${CFLAGS} -std=c++11 ldid.o lookup2.o ${LIBPLIST_LIB} ${LIBCRYPTO_LIB} -o ldid
+        ${TRIPLE}-strip ldid
+
+    - uses: actions/upload-artifact@v1
+      with:
+        name: ldid_linux_${{ env.ARCH }}
+        path: ldid
+
+    - name: Upload Release Asset Linux
+      uses: actions/upload-release-asset@v1
+      if: ${{ github.event_name == 'release' }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ldid
+        asset_name: ldid_linux_${{ env.FILENAME }}
+        asset_content_type: application/octet-stream
+
+  build-macos:
     runs-on: macos-11
+    strategy:
+      matrix:
+        arch:
+        - x86_64
+        - arm64
+    env:
+      ARCH: ${{ matrix.arch }}
+
     steps:
-      - uses: actions/checkout@v1
-        with:
-          submodules: recursive
+    - uses: actions/checkout@v1
+      with:
+        submodules: recursive
 
-      - name: ccache cache files
-        uses: actions/cache@v2
-        with:
-          path: |
-            ~/.ccache
-            ~/dep_src
-          key: build-macos-x86_64-${ { env.GITHUB_SHA } }
-          restore-keys: |
-            build-macos-x86_64-
+    - uses: actions/cache@v2
+      with:
+        path: |
+          ~/Library/Caches/Mozilla.sccache
+          ~/dep_src
+        key: build-macos-${{ matrix.arch }}-${ { env.GITHUB_SHA } }
+        restore-keys: |
+          build-macos-${{ matrix.arch }}-
 
-      - name: setup environment
-        run: |
-          export DOWNLOAD_PATH=${HOME}/dep_src
-          export DEP_PATH=${HOME}/build
-          export ROOT=${HOME}/root
-          mkdir -p ${DOWNLOAD_PATH} ${DEP_PATH} ${ROOT}
-          echo "DOWNLOAD_PATH=${DOWNLOAD_PATH}" >> $GITHUB_ENV
-          echo "DEP_PATH=${DEP_PATH}" >> $GITHUB_ENV
-          echo "ROOT=${ROOT}" >> $GITHUB_ENV
-          echo "LDID_VERSION=$(echo "$(git describe --tags --abbrev=0)")" >> $GITHUB_ENV
+    - name: setup environment
+      run: |
+        export DOWNLOAD_PATH=${HOME}/dep_src
+        export DEP_PATH=${HOME}/build
+        mkdir -p ${DOWNLOAD_PATH} ${DEP_PATH}
+        echo "DOWNLOAD_PATH=${DOWNLOAD_PATH}" >> $GITHUB_ENV
+        echo "DEP_PATH=${DEP_PATH}" >> $GITHUB_ENV
 
-      - name: setup toolchain
-        run: |
-          brew install ccache libtool autoconf automake
-          echo "CC=ccache clang -arch x86_64 -mmacosx-version-min=10.13" >> $GITHUB_ENV
-          echo "CXX=ccache clang++ -arch x86_64 -mmacosx-version-min=10.13" >> $GITHUB_ENV
-          echo "CPPFLAGS=-I${ROOT}/usr/include" >> $GITHUB_ENV
-          echo "LDFLAGS=-L${ROOT}/usr/lib" >> $GITHUB_ENV
-          echo "PKG_CONFIG_PATH=${ROOT}/usr/lib/pkgconfig" >> $GITHUB_ENV
-          echo "LD_LIBRARY_PATH=${ROOT}/usr/lib" >> $GITHUB_ENV
+        if [ "${ARCH}" = "arm64" ]; then
+          echo "HOST_ARCH=aarch64" >> $GITHUB_ENV
+        else
+          echo "HOST_ARCH=${ARCH}" >> $GITHUB_ENV
+        fi
 
-      - name: build libplist
-        run: |
-          wget -q -nc -P ${DOWNLOAD_PATH} https://github.com/libimobiledevice/libplist/releases/download/${LIBPLIST_VERSION}/libplist-${LIBPLIST_VERSION}.tar.bz2
-          tar xf ${DOWNLOAD_PATH}/libplist-${LIBPLIST_VERSION}.tar.bz2 -C ${DEP_PATH}
-          cd ${DEP_PATH}/libplist-${LIBPLIST_VERSION}
-          ./configure --prefix=/usr --without-cython --enable-static --disable-shared --host=x86_64-apple-darwin
-          make -j$(sysctl -n hw.ncpu)
-          make install DESTDIR="${ROOT}"
+    - name: setup toolchain
+      run: |
+        brew install libtool autoconf automake
 
-      - name: build openssl
-        run: |
-          wget -q -nc -P ${DOWNLOAD_PATH} https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz
-          tar xf ${DOWNLOAD_PATH}/openssl-${OPENSSL_VERSION}.tar.gz -C ${DEP_PATH}
-          cd ${DEP_PATH}/openssl-${OPENSSL_VERSION}
-          ./config --prefix=/usr --libdir=/usr/lib --openssldir=/etc/ssl no-shared darwin64-x86_64
-          make -j$(sysctl -n hw.ncpu)
-          make install_sw DESTDIR="${ROOT}"
+        # Download sccache
+        wget -nc -P ${DOWNLOAD_PATH} \
+          https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/sccache-v${SCCACHE_VERSION}-x86_64-apple-darwin.tar.gz
+        tar xf ${DOWNLOAD_PATH}/sccache-v${SCCACHE_VERSION}-x86_64-apple-darwin.tar.gz -C ${HOME}
+        chmod +x ${HOME}/sccache-v${SCCACHE_VERSION}-x86_64-apple-darwin/sccache
 
-      - name: build
-        run: |
-          ${CC} ${CPPFLAGS} ${CFLAGS} -flto=thin -Os -c -o lookup2.o lookup2.c
-          ${CXX} ${CPPFLAGS} ${CFLAGS} -flto=thin -Os -c -o ldid.o ldid.cpp -std=c++11 -DLDID_VERSION=\"${LDID_VERSION}\"
-          ${CXX} ${ROOT}/usr/lib/libplist-2.0.a ${ROOT}/usr/lib/libcrypto.a -flto=thin -Os -std=c++11 ldid.o lookup2.o -o ldid
-          strip ldid
+        echo "${HOME}/sccache-v${SCCACHE_VERSION}-x86_64-apple-darwin" >> $GITHUB_PATH
+        echo "CC=sccache clang -arch ${ARCH} -mmacosx-version-min=10.13" >> $GITHUB_ENV
+        echo "CXX=sccache clang++ -arch ${ARCH} -mmacosx-version-min=10.13" >> $GITHUB_ENV
+        echo "CFLAGS=-Os" >> $GITHUB_ENV
 
-      - uses: actions/upload-artifact@v1
-        with:
-          name: ldid_macos_x86_64 
-          path: ldid
+    - name: build libplist
+      run: |
+        wget -q -nc -P ${DOWNLOAD_PATH} https://github.com/libimobiledevice/libplist/releases/download/${LIBPLIST_VERSION}/libplist-${LIBPLIST_VERSION}.tar.bz2
+        tar xf ${DOWNLOAD_PATH}/libplist-${LIBPLIST_VERSION}.tar.bz2 -C ${DEP_PATH}
+        cd ${DEP_PATH}/libplist-${LIBPLIST_VERSION}
+        ./configure --host=${HOST_ARCH}-apple-darwin --without-cython --enable-static --disable-shared
+        make -j$(sysctl -n hw.ncpu)
 
-  build-macos-arm64:
-    runs-on: macos-11
-    steps:
-      - uses: actions/checkout@v1
-        with:
-          submodules: recursive
+        echo "CFLAGS=${CFLAGS} -I${DEP_PATH}/libplist-${LIBPLIST_VERSION}/include" >> $GITHUB_ENV
+        echo "LIBPLIST_LIB=${DEP_PATH}/libplist-${LIBPLIST_VERSION}/src/.libs/libplist-2.0.a" >> $GITHUB_ENV
 
-      - name: ccache cache files
-        uses: actions/cache@v2
-        with:
-          path: |
-            ~/.ccache
-            ~/dep_src
-          key: build-macos-arm64-${ { env.GITHUB_SHA } }
-          restore-keys: |
-            build-macos-arm64-
+    - name: build openssl
+      run: |
+        wget -q -nc -P ${DOWNLOAD_PATH} https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz
+        tar xf ${DOWNLOAD_PATH}/openssl-${OPENSSL_VERSION}.tar.gz -C ${DEP_PATH}
+        cd ${DEP_PATH}/openssl-${OPENSSL_VERSION}
+        ./config --prefix=/usr no-shared darwin64-${ARCH}
+        make -j$(sysctl -n hw.ncpu) build_generated libcrypto.a
 
-      - name: setup environment
-        run: |
-          export DOWNLOAD_PATH=${HOME}/dep_src
-          export DEP_PATH=${HOME}/build
-          export ROOT=${HOME}/root
-          mkdir -p ${DOWNLOAD_PATH} ${DEP_PATH} ${ROOT}
-          echo "DOWNLOAD_PATH=${DOWNLOAD_PATH}" >> $GITHUB_ENV
-          echo "DEP_PATH=${DEP_PATH}" >> $GITHUB_ENV
-          echo "ROOT=${ROOT}" >> $GITHUB_ENV
-          echo "LDID_VERSION=$(echo "$(git describe --tags --abbrev=0)")" >> $GITHUB_ENV
+        echo "CFLAGS=${CFLAGS} -I${DEP_PATH}/openssl-${OPENSSL_VERSION}/include" >> $GITHUB_ENV
+        echo "LIBCRYPTO_LIB=${DEP_PATH}/openssl-${OPENSSL_VERSION}/libcrypto.a" >> $GITHUB_ENV
 
-      - name: setup toolchain
-        run: |
-          brew install ccache libtool autoconf automake
-          echo "CC=ccache clang -arch arm64 -mmacosx-version-min=11.0" >> $GITHUB_ENV
-          echo "CXX=ccache clang++ -arch arm64 -mmacosx-version-min=11.0" >> $GITHUB_ENV
-          echo "CPPFLAGS=-I${ROOT}/usr/include" >> $GITHUB_ENV
-          echo "LDFLAGS=-L${ROOT}/usr/lib" >> $GITHUB_ENV
-          echo "PKG_CONFIG_PATH=${ROOT}/usr/lib/pkgconfig" >> $GITHUB_ENV
-          echo "LD_LIBRARY_PATH=${ROOT}/usr/lib" >> $GITHUB_ENV
+    - name: build
+      run: |
+        export LDID_VERSION=$(echo "$(git describe --tags --abbrev=0)")
+        ${CC} ${CFLAGS} -flto=thin -Os -c -o lookup2.o lookup2.c
+        ${CXX} ${CFLAGS} -flto=thin -Os -c -o ldid.o ldid.cpp -std=c++11 -DLDID_VERSION=\"${LDID_VERSION}\"
+        ${CXX} ${LIBPLIST_LIB} ${LIBCRYPTO_LIB} -flto=thin -Os -std=c++11 ldid.o lookup2.o -o ldid
+        strip ldid
 
-      - name: build libplist
-        run: |
-          wget -q -nc -P ${DOWNLOAD_PATH} https://github.com/libimobiledevice/libplist/releases/download/${LIBPLIST_VERSION}/libplist-${LIBPLIST_VERSION}.tar.bz2
-          tar xf ${DOWNLOAD_PATH}/libplist-${LIBPLIST_VERSION}.tar.bz2 -C ${DEP_PATH}
-          cd ${DEP_PATH}/libplist-${LIBPLIST_VERSION}
-          ./configure --prefix=/usr --without-cython --enable-static --disable-shared --host=aarch64-apple-darwin
-          make -j$(sysctl -n hw.ncpu)
-          make install DESTDIR="${ROOT}"
+    - uses: actions/upload-artifact@v1
+      with:
+        name: ldid_macos_${{ matrix.arch }}
+        path: ldid
 
-      - name: build openssl
-        run: |
-          wget -q -nc -P ${DOWNLOAD_PATH} https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz
-          tar xf ${DOWNLOAD_PATH}/openssl-${OPENSSL_VERSION}.tar.gz -C ${DEP_PATH}
-          cd ${DEP_PATH}/openssl-${OPENSSL_VERSION}
-          ./config --prefix=/usr --libdir=/usr/lib --openssldir=/etc/ssl no-shared darwin64-arm64
-          make -j$(sysctl -n hw.ncpu)
-          make install_sw DESTDIR="${ROOT}"
-
-      - name: build
-        run: |
-          ${CC} ${CPPFLAGS} ${CFLAGS} -flto=thin -Os -c -o lookup2.o lookup2.c
-          ${CXX} ${CPPFLAGS} ${CFLAGS} -flto=thin -Os -c -o ldid.o ldid.cpp -std=c++11 -DLDID_VERSION=\"${LDID_VERSION}\"
-          ${CXX} ${ROOT}/usr/lib/libplist-2.0.a ${ROOT}/usr/lib/libcrypto.a -flto=thin -Os -std=c++11 ldid.o lookup2.o -o ldid
-          strip ldid
-      - uses: actions/upload-artifact@v1
-        with:
-          name: ldid_macos_arm64
-          path: ldid
-
-  upload-macos-releases:
-    runs-on: ubuntu-latest
-    needs: [build-macos-x86_64, build-macos-arm64]
-    if: ${{ github.event_name == 'release' }}
-    steps:
-      - uses: actions/checkout@v1
-      - name: Download macos-x86_64 artifact
-        uses: actions/download-artifact@v1
-        with:
-          name: ldid_macos_x86_64
-          path: ldid_macos_x86_64
-      - name: Download macos-arm64 artifact
-        uses: actions/download-artifact@v1
-        with:
-          name: ldid_macos_arm64
-          path: ldid_macos_arm64
-      - name: Upload Release Asset macos x86_64
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./ldid_macos_x86_64/ldid
-          asset_name: ldid_macos_x86_64
-          asset_content_type: application/octet-stream
-      - name: Upload Release Asset macos arm64
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./ldid_macos_arm64/ldid
-          asset_name: ldid_macos_arm64
-          asset_content_type: application/octet-stream
+    - name: Upload Release Asset Linux
+      uses: actions/upload-release-asset@v1
+      if: ${{ github.event_name == 'release' }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ldid
+        asset_name: ldid_macos_${{ matrix.arch }}
+        asset_content_type: application/octet-stream
