@@ -1,0 +1,169 @@
+.\"-
+.\" Copyright (c) 2021 Cameron Katri
+.\" 版權所有 (c) 2021 Nick Chan
+.\" SPDX-License-Identifier: AGPL-3.0-or-later
+.\"
+.Dd October 8, 2021
+.Dt LDID 1
+.Os
+.Sh 名稱
+.Nm ldid
+.Nd 鏈接身份編輯器
+.Sh 語法
+.Nm
+.Op Fl A Ns Ar cputype : Ns Ar subtype
+.Op Fl a
+.Op Fl C Ns Op Ar adhoc | Ar enforcement | Ar expires | Ar hard | Ar host | Ar kill | Ar library-validation | Ar restrict | Ar runtime
+.Op Fl D
+.Op Fl d
+.Op Fl e
+.Op Fl h
+.Op Fl K Ns Ar key.p12 Op Fl U Ns Ar password
+.Op Fl M
+.Op Fl P
+.Op Fl q
+.Op Fl r | Fl S Ns Ar 檔案.xml | Fl s
+.Op Fl T Ns Ar timestamp
+.Op Fl u
+.Ar
+.Sh 描述
+.Nm
+把SHA1和SHA256雜湊值加入到Mach-O檔案中，讓它們能在有驗證但沒有簽署驗證的系統上運行。
+.Bl -tag -width -indent
+.It Fl a
+以十六進制印出處理器類型和亞類型。
+.It Fl A Ns Ar cputype : Ns Ar subtype
+當和
+.Fl a , Fl D , Fl e , Fl h , Fl q ,
+或
+.Fl u ,
+一起被使用時，只作用在被
+.Ar cputype
+和
+.Ar subtype .
+.Ar cputype
+和
+.Ar subtype
+指定的部分。它們都應該是整數。
+.It Fl C Ns Op Ar adhoc | Ar enforcement | Ar expires | Ar hard | Ar host | Ar kill | Ar library-validation | Ar restrict | Ar runtime
+設定要在檔案中包含的程式碼簽署選項。
+請看
+.Xr codesign 1
+來獲得關於這些選項的更多資訊。
+.It Fl D
+重設加密碼 (cryptid)。
+.It Fl d
+輸出在二進位檔案中的加密碼。
+由於兼容性原因，這像
+.Fl h ,
+但在將來這會被移除。
+.It Fl e
+把每一部分的權限印出， 或印出
+.Fl A ,
+所指定的部分的權限
+.Ar 到標準輸出。
+.It Fl h
+印出關於簽署的資訊，包括雜湊值的類型，選項，CDHash, 和 CodeDirectory 版本到
+.Ar 標準輸出。 .
+.It Fl K Ns Ar key.p12
+用在
+.Ar key.p12 .
+的身份簽署。這會給二進位檔案有一個有效的簽署，令它能夠在有簽署驗證的系統上運行。
+如果
+.Ar key.p12
+有密碼的話，你會被詢問。你也可以用
+.Fl U .
+.Ar 選項來提供密碼。 .
+.It Fl M
+當和
+.Fl S ,
+一起使用時，和現有的權限合併而不是取代它。 這在加入權限時有用。
+.It Fl P
+將這個Mach-O二進位檔案標示為系統二進位檔案。
+.It Fl Q Ns Ar 檔案
+把需求嵌入到
+.Ar 檔案 .
+中。
+.It Fl q
+印出被嵌入在二進位檔案中的需求。
+.It Fl r
+從Mach-O檔案中刪除簽署。
+.It Fl S Ns Op Ar 檔案.xml
+偽簽署Mach-O檔案。
+如果提供了
+.Ar 檔案.xml
+那麼在
+.Ar 檔案.xml
+中的權限會被嵌入到Mach-O中。
+.It Fl s
+重新簽署Mach-O檔案但保留現有權限。
+.It Fl T Ns Ar 時間印章
+當簽署一個動態鏈結函式庫時，把時間印章設定為
+.Ar 時間印章 .
+.Ar 時間印章
+應該是一個以秒作為單位的UNIX時間印章，如果
+.Ar 
+是一個連字號的話
+.Pq Sq Fl ,
+時間印章會被設定為Mach-O頭中的時間印章。
+.It Fl U Ns Ar 密碼
+使用
+.Ar 密碼
+作為p12證書的密碼，而不是詢問。
+.It Fl u
+如果Mach-O檔案有和UIKit鏈結，印出被鏈結的UIKit版本。
+.El
+.Sh 例子
+指令：
+.Pp
+.Dl "ldid -S 檔案"
+.Pp
+會偽簽署
+.Ar 檔案
+而且不嵌入任何權限。
+.Pp
+指令：
+.Pp
+.Dl "ldid -Cadhoc -K/path/to/key.p12 -Sent.xml 檔案"
+.Pp
+會使用
+.Ar /path/to/key.p12
+中的私錀來簽署
+.Ar 檔案
+也會使用在
+.Ar ent.xml ,
+中的權限並把簽署標示為特別用途 (adhoc) 簽署。.
+.Pp
+指令:
+.Pp
+.Dl "ldid -Sent.xml -M 檔案"
+.Pp
+會把
+.Ar ent.xml
+中的權限加入到已經在
+.Ar 檔案 .
+中的權限。
+.Pp
+指令:
+.Pp
+.Dl "ldid -e 檔案 > ent.xml"
+.Pp
+會把在
+.Ar 檔案
+中每一部分的權限儲存到
+.Ar ent.xml .
+.Sh 另見
+.Xr codesign 1
+.Sh 歷史
+這個
+.Nm
+工具程式是由
+.An Jay \*qSaurik\*q Freeman . 所編寫的。
+對iPhoneOS 1.2.0 和 2.0 的支援在2008年4月6號被加入。
+.Fl S
+在2008年6月13日被加入。.
+SHA256 支援在2016年8月25日被加入，修正iOS 11支援。
+iOS 14支援在2020年7月31日由
+.An Kabir Oberai .
+加入。
+iOS 15支援在2021年6月11日加入。
