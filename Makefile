@@ -2,7 +2,6 @@ VERSION  ?= 2.1.5
 
 CC       ?= cc
 CXX      ?= c++
-RANLIB   ?= ranlib
 INSTALL  ?= install
 LN       ?= ln
 
@@ -16,7 +15,7 @@ BINDIR   ?= $(PREFIX)/bin
 MANDIR   ?= $(PREFIX)/share/man
 
 SRC      := $(wildcard *.c) $(wildcard *.cpp)
-LIBS     := -lcrypto -lplist-2.0
+LIBS     ?= -lcrypto -lplist-2.0
 
 all: ldid
 
