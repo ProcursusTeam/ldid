@@ -27,7 +27,7 @@ all: ldid
 	$(CXX) -c -std=c++11 $(CXXFLAGS) -I. -DLDID_VERSION=\"$(VERSION)\" $< -o $@
 
 ldid: $(SRC:%=%.o)
-	$(CXX) $^ $(OBJS) $(LDFLAGS) $(LIBS) -o ldid
+	$(CXX) $^ $(LDFLAGS) $(LIBS) -o ldid
 
 install: all
 	$(INSTALL) -D -m755 ldid $(DESTDIR)$(BINDIR)/ldid
