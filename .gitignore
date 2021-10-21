@@ -1,9 +1,2 @@
-ios
-out
 ldid
-ldid.deb
-debs
 *.o
-_
-sysroot32
-sysroot64
