@@ -109,9 +109,9 @@ jobs:
     - name: build
       run: |
         export LDID_VERSION=$(echo "$(git describe --tags --abbrev=0)")
-        ${CC} ${CFLAGS} -c -o lookup2.o lookup2.c
-        ${CXX} ${CFLAGS} -c -o ldid.o ldid.cpp -std=c++11 -DLDID_VERSION=\"${LDID_VERSION}\"
-        ${CXX} ${CFLAGS} -std=c++11 ldid.o lookup2.o ${LIBPLIST_LIB} ${LIBCRYPTO_LIB} -o ldid
+        make -j$(nproc) \
+          VERSION="${LDID_VERSION}" \
+          LIBS="${LIBPLIST_LIB} ${LIBCRYPTO_LIB}"
         ${TRIPLE}-strip ldid
 
     - uses: actions/upload-artifact@v1
@@ -207,9 +207,10 @@ jobs:
     - name: build
       run: |
         export LDID_VERSION=$(echo "$(git describe --tags --abbrev=0)")
-        ${CC} ${CFLAGS} -flto=thin -Os -c -o lookup2.o lookup2.c
-        ${CXX} ${CFLAGS} -flto=thin -Os -c -o ldid.o ldid.cpp -std=c++11 -DLDID_VERSION=\"${LDID_VERSION}\"
-        ${CXX} ${LIBPLIST_LIB} ${LIBCRYPTO_LIB} -flto=thin -Os -std=c++11 ldid.o lookup2.o -o ldid
+        make -j$(sysctl -n hw.ncpu) \
+          CFLAGS="${CFLAGS} -flto=thin" \
+          VERSION="${LDID_VERSION}" \
+          LIBS="${LIBPLIST_LIB} ${LIBCRYPTO_LIB}"
         strip ldid
 
     - uses: actions/upload-artifact@v1
