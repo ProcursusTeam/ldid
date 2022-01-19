@@ -6,7 +6,7 @@ INSTALL  ?= install
 LN       ?= ln
 
 CFLAGS   ?= -O2 -pipe
-CXXFLAGS ?= $(CFLAGS)
+CXXFLAGS ?= $(CFLAGS) -std=c++11
 LDFLAGS  ?=
 
 PREFIX   ?= /usr/local
@@ -20,13 +20,13 @@ LIBS     ?= -lcrypto -lplist-2.0
 all: ldid
 
 %.c.o: %.c
-	$(CC) -c $(CFLAGS) -I. $< -o $@
+	$(CC) -c $(CFLAGS) $(CPPFLAGS) -I. $< -o $@
 
 %.cpp.o: %.cpp
-	$(CXX) -c -std=c++11 $(CXXFLAGS) -I. -DLDID_VERSION=\"$(VERSION)\" $< -o $@
+	$(CXX) -c $(CXXFLAGS) $(CPPFLAGS) -I. -DLDID_VERSION=\"$(VERSION)\" $< -o $@
 
 ldid: $(SRC:%=%.o)
-	$(CXX) $^ $(LDFLAGS) $(LIBS) -o ldid
+	$(CXX) $(CXXFLAGS) -o ldid $^ $(LDFLAGS) $(LIBS)
 
 install: all
 	$(INSTALL) -D -m755 ldid $(DESTDIR)$(BINDIR)/ldid
