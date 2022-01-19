@@ -80,6 +80,7 @@ jobs:
         echo "NM=${TRIPLE}-gcc-nm" >> $GITHUB_ENV
         echo "RANLIB=${TRIPLE}-gcc-ranlib" >> $GITHUB_ENV
         echo "CFLAGS=-Os -fPIC -fno-pie -no-pie -static -flto -ffunction-sections -fdata-sections" >> $GITHUB_ENV
+        echo "CXXFLAGS=${CFLAGS}" >> $GITHUB_ENV
         echo "LDFLAGS=-Wl,--gc-sections -Wl,-strip-all -flto" >> $GITHUB_ENV
 
     - name: build libplist
@@ -221,6 +222,7 @@ jobs:
         export LDID_VERSION=$(echo "$(git describe --tags --abbrev=0)")
         make -j$(sysctl -n hw.ncpu) \
           CFLAGS="${CFLAGS} -flto=thin" \
+          CXXFLAGS="${CFLAGS} -flto=thin" \
           VERSION="${LDID_VERSION}" \
           LIBS="${LIBPLIST_LIB} ${LIBCRYPTO_LIB}"
         strip ldid
