@@ -196,8 +196,9 @@ Scope<Function_> _scope(const Function_ &function) {
 #define _scope(function) \
     _scope_(__COUNTER__, function)
 
-#define CPU_ARCH_MASK  uint32_t(0xff000000)
-#define CPU_ARCH_ABI64 uint32_t(0x01000000)
+#define CPU_ARCH_MASK     uint32_t(0xff000000)
+#define CPU_ARCH_ABI64    uint32_t(0x01000000)
+#define CPU_ARCH_ABI64_32 uint32_t(0x02000000)
 
 #define CPU_TYPE_ANY     uint32_t(-1)
 #define CPU_TYPE_VAX     uint32_t( 1)
@@ -216,6 +217,7 @@ Scope<Function_> _scope(const Function_ &function) {
 #define CPU_TYPE_ARM64     (CPU_ARCH_ABI64 | CPU_TYPE_ARM)
 #define CPU_TYPE_POWERPC64 (CPU_ARCH_ABI64 | CPU_TYPE_POWERPC)
 #define CPU_TYPE_X86_64    (CPU_ARCH_ABI64 | CPU_TYPE_X86)
+#define CPU_TYPE_ARM64_32  (CPU_TYPE_ARM | CPU_ARCH_ABI64_32)
 
 struct fat_header {
     uint32_t magic;
@@ -1483,6 +1485,7 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
                 break;
             case CPU_TYPE_ARM:
             case CPU_TYPE_ARM64:
+            case CPU_TYPE_ARM64_32:
                 align = 0xe;
                 break;
             default:
@@ -1509,6 +1512,9 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
                 break;
             case CPU_TYPE_ARM64:
                 arch = "arm64";
+                break;
+            case CPU_TYPE_ARM64_32:
+                arch = "arm64_32";
                 break;
         }
 
