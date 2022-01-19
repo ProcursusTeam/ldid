@@ -1,9 +1,9 @@
 name: build
 on:
   push:
-  paths:
-    - '*.c'
-    - '*.cpp'
+    paths:
+      - '*.c'
+      - '*.cpp'
   pull_request:
   workflow_dispatch:
   release:
