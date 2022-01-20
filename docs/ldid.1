@@ -25,14 +25,13 @@
 .Op Fl r | Fl S Ns Ar file.xml | Fl s
 .Op Fl T Ns Ar timestamp
 .Op Fl u
+.Op Fl arch Ar arch_type
 .Ar
 .Sh DESCRIPTION
 .Nm
 adds SHA1 and SHA256 hashes to a Mach-O file so that they can be run
 on a system that has validation but not signature verification.
 .Bl -tag -width -indent
-.It Fl a
-Print the CPU types and subtypes in hexadecimal.
 .It Fl A Ns Ar cputype : Ns Ar subtype
 When used with
 .Fl a , Fl D , Fl e , Fl h , Fl q ,
@@ -46,6 +45,16 @@ and
 and
 .Ar subtype
 should both be integers.
+.It Fl a
+Print the CPU types and subtypes in hexadecimal.
+.It Fl arch Ar arch_type
+The same as
+.Fl A ,
+except the name of the architecture is used.
+The list of currently know
+.Ar arch_type Ns s
+can be found in
+.Xr arch 3 .
 .It Fl C Ns Op Ar adhoc | Ar enforcement | Ar expires | Ar hard | Ar host | Ar kill | Ar library-validation | Ar restrict | Ar runtime
 Specify the option flags to embed in the code signature.
 See
