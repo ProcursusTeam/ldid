@@ -17,6 +17,8 @@ MANDIR   ?= $(PREFIX)/share/man
 SRC      := $(wildcard *.c) $(wildcard *.cpp)
 LIBS     ?= -lcrypto -lplist-2.0
 
+MANPAGE_LANGS := zh_TW zh_CN
+
 all: ldid
 
 %.c.o: %.c
@@ -32,7 +34,9 @@ install: all
 	$(INSTALL) -D -m755 ldid $(DESTDIR)$(BINDIR)/ldid
 	$(LN) -sf ldid $(DESTDIR)$(BINDIR)/ldid2
 	$(INSTALL) -D -m644 docs/ldid.1 $(DESTDIR)$(MANDIR)/man1/ldid.1
-	$(INSTALL) -D -m644 docs/ldid.1.zh_TW $(DESTDIR)$(MANDIR)/zh_TW/man1/ldid.1
+	for lang in $(MANPAGE_LANGS); do \
+		$(INSTALL) -D -m644 docs/ldid.$$lang.1 $(DESTDIR)$(MANDIR)/$$lang/man1/ldid.1; \
+	done
 
 clean:
 	rm -rf ldid *.o

@@ -1,5 +1,5 @@
 .\"-
-.\" Copyright (c) 2021 ProcursusTeam
+.\" Copyright (c) 2021-2022 ProcursusTeam
 .\" SPDX-License-Identifier: AGPL-3.0-or-later
 .\"
 .Dd October 8, 2021
@@ -15,6 +15,7 @@
 .Op Fl C Ns Op Ar adhoc | Ar enforcement | Ar expires | Ar hard | Ar host | Ar kill | Ar library-validation | Ar restrict | Ar runtime
 .Op Fl D
 .Op Fl d
+.Op Fl E Ns Ar 數字 : Ns Ar 檔案
 .Op Fl e
 .Op Fl h
 .Op Fl K Ns Ar key.p12 Op Fl U Ns Ar password
@@ -53,17 +54,24 @@
 重設加密碼 (cryptid)。
 .It Fl d
 輸出在二進位檔案中的加密碼。
-由於兼容性原因，這像
+由於兼容性原因，這也能作為
 .Fl h ,
-但在將來這會被移除。
+工作，但在將來這會被移除。
+.It Fl E Ns Ar 數字 : Ns Ar 檔案
+將
+.Ar 檔案
+的雜湊值嵌入到位於
+.Ar 數字
+的特殊代碼簽署位置中。
 .It Fl e
 把每一部分的權限印出， 或印出
 .Fl A ,
 所指定的部分的權限
 .Ar 到標準輸出。
 .It Fl h
-印出關於簽署的資訊，包括雜湊值的類型，選項，CDHash, 和 CodeDirectory 版本到
-.Ar 標準輸出。 .
+印出關於簽署的資訊，包括雜湊值的
+類型，選項，CDHash, 和 CodeDirectory 版本到
+.Ar 標準輸出。
 .It Fl K Ns Ar key.p12
 用在
 .Ar key.p12 .
@@ -101,7 +109,7 @@
 .Ar 時間印章 .
 .Ar 時間印章
 應該是一個以秒作為單位的UNIX時間印章，如果
-.Ar 
+.Ar
 是一個連字號的話
 .Pq Sq Fl ,
 時間印章會被設定為Mach-O頭中的時間印章。
@@ -165,4 +173,4 @@ SHA256 支援在2016年8月25日被加入，修正iOS 11支援。
 iOS 14支援在2020年7月31日由
 .An Kabir Oberai .
 加入。
-iOS 15支援在2021年6月11日加入。
+iOS 15支援在2021年6月11日被加入。
