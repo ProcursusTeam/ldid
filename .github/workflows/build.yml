@@ -205,6 +205,10 @@ jobs:
         echo "CFLAGS=${CFLAGS} -I${DEP_PATH}/libplist-${LIBPLIST_VERSION}/include" >> $GITHUB_ENV
         echo "LIBPLIST_LIB=${DEP_PATH}/libplist-${LIBPLIST_VERSION}/src/.libs/libplist-2.0.a" >> $GITHUB_ENV
 
+    - name: Does brew install openssl?
+      run: |
+        find / -name 'opensslv.h'
+
     - name: build openssl
       run: |
         wget -q -nc -P ${DOWNLOAD_PATH} https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz
@@ -214,7 +218,7 @@ jobs:
         make -j$(sysctl -n hw.ncpu) install_dev DESTDIR="${DEP_PATH}/openssl-destdir"
 
         echo "CFLAGS=${CFLAGS} -I${DEP_PATH}/openssl-destdir/usr/include" >> $GITHUB_ENV
-        echo "LIBCRYPTO_LIB=${DEP_PATH}/openssl-destdir/lib/libcrypto.a" >> $GITHUB_ENV
+        echo "LIBCRYPTO_LIB=${DEP_PATH}/openssl-destdir/usr/lib/libcrypto.a" >> $GITHUB_ENV
 
     - name: build
       run: |
