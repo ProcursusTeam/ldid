@@ -182,6 +182,7 @@ jobs:
     - name: setup toolchain
       run: |
         brew install libtool autoconf automake
+        brew uninstall --force openssl
 
         # Download sccache
         wget -nc -P ${DOWNLOAD_PATH} \
@@ -204,10 +205,6 @@ jobs:
 
         echo "CFLAGS=${CFLAGS} -I${DEP_PATH}/libplist-${LIBPLIST_VERSION}/include" >> $GITHUB_ENV
         echo "LIBPLIST_LIB=${DEP_PATH}/libplist-${LIBPLIST_VERSION}/src/.libs/libplist-2.0.a" >> $GITHUB_ENV
-
-    - name: Does brew install openssl?
-      run: |
-        find / -name 'opensslv.h'
 
     - name: build openssl
       run: |
