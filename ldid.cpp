@@ -44,7 +44,7 @@
 
 #ifndef LDID_NOSMIME
 #include <openssl/opensslv.h>
-# if OPENSSL_VERSION_NUMBER >= 0x30000000
+# if OPENSSL_VERSION_MAJOR >= 3
 #  include <openssl/provider.h>
 # endif
 #include <openssl/err.h>
@@ -3129,7 +3129,7 @@ static void usage(const char *argv0) {
 int main(int argc, char *argv[]) {
 #ifndef LDID_NOSMIME
     OpenSSL_add_all_algorithms();
-# if OPENSSL_VERSION_NUMBER >= 0x30000000
+# if OPENSSL_VERSION_MAJOR >= 3
     OSSL_PROVIDER *legacy = OSSL_PROVIDER_load(NULL, "legacy");
     OSSL_PROVIDER *deflt = OSSL_PROVIDER_load(NULL, "default");
 # endif
@@ -3612,7 +3612,7 @@ int main(int argc, char *argv[]) {
     }
 
 #ifndef LDID_NOSMINE
-# if OPENSSL_VERSION_NUM >= 0x30000000
+# if OPENSSL_VERSION_MAJOR >= 3
     OSSL_PROVIDER_unload(legacy);
     OSSL_PROVIDER_unload(deflt);
 # endif
