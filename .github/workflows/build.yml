@@ -210,11 +210,11 @@ jobs:
         wget -q -nc -P ${DOWNLOAD_PATH} https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz
         tar xf ${DOWNLOAD_PATH}/openssl-${OPENSSL_VERSION}.tar.gz -C ${DEP_PATH}
         cd ${DEP_PATH}/openssl-${OPENSSL_VERSION}
-        ./config --prefix=/usr no-shared darwin64-${ARCH}
-        make -j$(sysctl -n hw.ncpu) build_generated libcrypto.a
+        ./Configure --prefix=/usr no-shared no-tests darwin64-${ARCH}
+        make -j$(sysctl -n hw.ncpu) install_dev DESTDIR="${DEP_PATH}/openssl-destdir"
 
-        echo "CFLAGS=${CFLAGS} -I${DEP_PATH}/openssl-${OPENSSL_VERSION}/include" >> $GITHUB_ENV
-        echo "LIBCRYPTO_LIB=${DEP_PATH}/openssl-${OPENSSL_VERSION}/libcrypto.a" >> $GITHUB_ENV
+        echo "CFLAGS=${CFLAGS} -I${DEP_PATH}/openssl-destdir/usr/include" >> $GITHUB_ENV
+        echo "LIBCRYPTO_LIB=${DEP_PATH}/openssl-destdir/lib/libcrypto.a" >> $GITHUB_ENV
 
     - name: build
       run: |
