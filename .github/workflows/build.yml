@@ -221,8 +221,8 @@ jobs:
         fi
 
         echo "${HOME}/sccache-v${SCCACHE_VERSION}-x86_64-apple-darwin" >> $GITHUB_PATH
-        echo "CC=sccache clang -arch ${ARCH} -mmacosx-version-min=10.13" >> $GITHUB_ENV
-        echo "CXX=sccache clang++ -arch ${ARCH} -mmacosx-version-min=10.13" >> $GITHUB_ENV
+        echo "CC=sccache clang -arch ${ARCH} -mmacosx-version-min=11.0" >> $GITHUB_ENV
+        echo "CXX=sccache clang++ -arch ${ARCH} -mmacosx-version-min=11.0" >> $GITHUB_ENV
         echo "CFLAGS=-Os -I/opt/procursus/include -flto=thin" >> $GITHUB_ENV
 
     - name: build
