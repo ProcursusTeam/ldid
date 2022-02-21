@@ -168,15 +168,15 @@ jobs:
           build-macos-${{ matrix.arch }}-
 
     - name: Setup Procursus Bootstrap (install)
-        if: steps.cache.outpus.cache-hit != 'true'
-        run: |
-          wget https://apt.procurs.us/bootstrap_darwin-amd64.tar.zst https://apt.procurs.us/Toolchain12_5.tzst
-          sudo gtar --preserve-permissions -xkf ./bootstrap_darwin-amd64.tar.zst -C /
-          echo '/opt/procursus/sbin:/opt/procursus/bin' >> $GITHUB_PATH
-          PATH=/opt/procursus/sbin:/opt/procursus/bin:$PATH sudo /opt/procursus/bin/apt update
-          sudo /opt/procursus/bin/apt -V dist-upgrade -y || :
-          sudo /opt/procursus/bin/apt -V dist-upgrade -y
-          sudo /opt/procursus/bin/apt install -y libssl-dev libplist-dev
+      if: steps.cache.outpus.cache-hit != 'true'
+      run: |
+        wget https://apt.procurs.us/bootstrap_darwin-amd64.tar.zst https://apt.procurs.us/Toolchain12_5.tzst
+        sudo gtar --preserve-permissions -xkf ./bootstrap_darwin-amd64.tar.zst -C /
+        echo '/opt/procursus/sbin:/opt/procursus/bin' >> $GITHUB_PATH
+        PATH=/opt/procursus/sbin:/opt/procursus/bin:$PATH sudo /opt/procursus/bin/apt update
+        sudo /opt/procursus/bin/apt -V dist-upgrade -y || :
+        sudo /opt/procursus/bin/apt -V dist-upgrade -y
+        sudo /opt/procursus/bin/apt install -y libssl-dev libplist-dev
 
     - name: Add Procursus to PATH
       run: |
