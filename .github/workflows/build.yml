@@ -232,7 +232,7 @@ jobs:
           CFLAGS="${CFLAGS}" \
           CXXFLAGS="${CFLAGS} -std=c++11" \
           VERSION="${LDID_VERSION}" \
-          LIBS="/opt/procursus/lib/libplist-2.0.a /opt/procursus/lib/libcrypto.a"
+          LIBS="${LIBS}"
         strip ldid
 
     - uses: actions/upload-artifact@v1
