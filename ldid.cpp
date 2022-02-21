@@ -3611,7 +3611,7 @@ int main(int argc, char *argv[]) {
         ++filei;
     }
 
-#ifndef LDID_NOSMINE
+#ifndef LDID_NOSMIME
 # if OPENSSL_VERSION_MAJOR >= 3
     OSSL_PROVIDER_unload(legacy);
     OSSL_PROVIDER_unload(deflt);
