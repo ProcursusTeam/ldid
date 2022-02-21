@@ -157,13 +157,39 @@ jobs:
         submodules: recursive
 
     - uses: actions/cache@v2
+      id: cache
       with:
         path: |
           ~/Library/Caches/Mozilla.sccache
           ~/dep_src
+          ~/__cache
         key: build-macos-${{ matrix.arch }}-${ { env.GITHUB_SHA } }
         restore-keys: |
           build-macos-${{ matrix.arch }}-
+
+    - name: Setup Procursus Bootstrap (install)
+        if: steps.cache.outpus.cache-hit != 'true'
+        run: |
+          wget https://apt.procurs.us/bootstrap_darwin-amd64.tar.zst https://apt.procurs.us/Toolchain12_5.tzst
+          sudo gtar --preserve-permissions -xkf ./bootstrap_darwin-amd64.tar.zst -C /
+          echo '/opt/procursus/sbin:/opt/procursus/bin' >> $GITHUB_PATH
+          PATH=/opt/procursus/sbin:/opt/procursus/bin:$PATH sudo /opt/procursus/bin/apt update
+          sudo /opt/procursus/bin/apt -V dist-upgrade -y || :
+          sudo /opt/procursus/bin/apt -V dist-upgrade -y
+          sudo /opt/procursus/bin/apt install -y libssl-dev libplist-dev
+
+    - name: Add Procursus to PATH
+      run: |
+        echo '/opt/procursus/sbin:/opt/procursus/bin' >> $GITHUB_PATH
+
+    - name: Setup Procursus Bootstrap (cache)
+      if: steps.cache.outputs.cache-hit == 'true'
+      run: |
+        sudo mkdir -p ~/__cache/procursus/var/cache/apt/archives/partial ~/__cache/procursus/var/lib/apt/lists/partial
+        sudo rsync -aP ~/__cache/procursus /opt
+        sudo /opt/procursus/bin/apt update
+        sudo /opt/procursus/bin/apt -V dist-upgrade -y
+        sudo /opt/procursus/bin/apt -V dist-upgrade -y
 
     - name: setup environment
       run: |
@@ -181,8 +207,6 @@ jobs:
 
     - name: setup toolchain
       run: |
-        brew install libtool autoconf automake
-        brew uninstall --force openssl
 
         # Download sccache
         wget -nc -P ${DOWNLOAD_PATH} \
@@ -193,37 +217,16 @@ jobs:
         echo "${HOME}/sccache-v${SCCACHE_VERSION}-x86_64-apple-darwin" >> $GITHUB_PATH
         echo "CC=sccache clang -arch ${ARCH} -mmacosx-version-min=10.13" >> $GITHUB_ENV
         echo "CXX=sccache clang++ -arch ${ARCH} -mmacosx-version-min=10.13" >> $GITHUB_ENV
-        echo "CFLAGS=-Os" >> $GITHUB_ENV
-
-    - name: build libplist
-      run: |
-        wget -q -nc -P ${DOWNLOAD_PATH} https://github.com/libimobiledevice/libplist/releases/download/${LIBPLIST_VERSION}/libplist-${LIBPLIST_VERSION}.tar.bz2
-        tar xf ${DOWNLOAD_PATH}/libplist-${LIBPLIST_VERSION}.tar.bz2 -C ${DEP_PATH}
-        cd ${DEP_PATH}/libplist-${LIBPLIST_VERSION}
-        ./configure --host=${HOST_ARCH}-apple-darwin --without-cython --enable-static --disable-shared
-        make -j$(sysctl -n hw.ncpu)
-
-        echo "CFLAGS=${CFLAGS} -I${DEP_PATH}/libplist-${LIBPLIST_VERSION}/include" >> $GITHUB_ENV
-        echo "LIBPLIST_LIB=${DEP_PATH}/libplist-${LIBPLIST_VERSION}/src/.libs/libplist-2.0.a" >> $GITHUB_ENV
-
-    - name: build openssl
-      run: |
-        wget -q -nc -P ${DOWNLOAD_PATH} https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz
-        tar xf ${DOWNLOAD_PATH}/openssl-${OPENSSL_VERSION}.tar.gz -C ${DEP_PATH}
-        cd ${DEP_PATH}/openssl-${OPENSSL_VERSION}
-        ./Configure --prefix=/usr no-shared no-tests darwin64-${ARCH}
-        make -j$(sysctl -n hw.ncpu) install_dev DESTDIR="${DEP_PATH}/openssl-destdir"
-
-        echo "CFLAGS=${CFLAGS} -I${DEP_PATH}/openssl-destdir/usr/include" >> $GITHUB_ENV
-        echo "LIBCRYPTO_LIB=${DEP_PATH}/openssl-destdir/usr/lib/libcrypto.a" >> $GITHUB_ENV
+        echo "CFLAGS=-Os -I/opt/procursus/include -flto=thin" >> $GITHUB_ENV
 
     - name: build
       run: |
         export LDID_VERSION=$(echo "$(git describe --tags --abbrev=0)")
         make -j$(sysctl -n hw.ncpu) \
-          CFLAGS="${CFLAGS} -flto=thin" \
+          CFLAGS="${CFLAGS}" \
+          CXXFLAGS="${CFLAGS}" \
           VERSION="${LDID_VERSION}" \
-          LIBS="${LIBPLIST_LIB} ${LIBCRYPTO_LIB}"
+          LIBS="/opt/procursus/lib/libplist-2.0.a /opt/procursus/lib/libcrypto.a"
         strip ldid
 
     - uses: actions/upload-artifact@v1
