@@ -199,12 +199,6 @@ jobs:
         echo "DOWNLOAD_PATH=${DOWNLOAD_PATH}" >> $GITHUB_ENV
         echo "DEP_PATH=${DEP_PATH}" >> $GITHUB_ENV
 
-        if [ "${ARCH}" = "arm64" ]; then
-          echo "HOST_ARCH=aarch64" >> $GITHUB_ENV
-        else
-          echo "HOST_ARCH=${ARCH}" >> $GITHUB_ENV
-        fi
-
     - name: setup toolchain
       run: |
 
@@ -213,6 +207,18 @@ jobs:
           https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/sccache-v${SCCACHE_VERSION}-x86_64-apple-darwin.tar.gz
         tar xf ${DOWNLOAD_PATH}/sccache-v${SCCACHE_VERSION}-x86_64-apple-darwin.tar.gz -C ${HOME}
         chmod +x ${HOME}/sccache-v${SCCACHE_VERSION}-x86_64-apple-darwin/sccache
+
+        if [ "${ARCH}" = "arm64" ]; then
+          wget -nc -P ${DOWNLOAD_PATH} \
+            https://apt.procurs.us/pool/main/big_sur/libssl-dev_${OPENSSL_VERSION}_darwin-arm64.deb
+          dpkg -x ${DOWNLOAD_PATH}/libssl-dev_${OPENSSL_VERSION}_darwin-arm64.deb ${DEP_PATH}
+          wget -nc -P ${DOWNLOAD_PATH} \
+            https://apt.procurs.us/pool/main/big_sur/libplist-dev_${LIBPLIST_VERSION}_darwin-arm64.deb
+          dpkg -x ${DOWNLOAD_PATH}/libplist-dev_${LIBPLIST_VERSION}_darwin-arm64.deb ${DEP_PATH}
+          echo "LIBS=${DEP_PATH}/opt/procursus/lib/libplist-2.0.a ${DEP_PATH}/opt/procursus/lib/libcrypto.a" >> $GITHUB_ENV
+        else
+          echo "LIBS=/opt/procursus/lib/libplist-2.0.a /opt/procursus/lib/libcrypto.a" >> $GITHUB_ENV
+        fi
 
         echo "${HOME}/sccache-v${SCCACHE_VERSION}-x86_64-apple-darwin" >> $GITHUB_PATH
         echo "CC=sccache clang -arch ${ARCH} -mmacosx-version-min=10.13" >> $GITHUB_ENV
