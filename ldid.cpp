@@ -3225,9 +3225,6 @@ int main(int argc, char *argv[]) {
 
                     do_sha1 = false;
                     do_sha256 = false;
-
-                    fprintf(stderr, "WARNING: -H is only present for compatibility with a fork of ldid\n");
-                    fprintf(stderr, "         you should NOT be manually specifying the hash algorithm\n");
                 }
 
                 if (false);
