@@ -18,6 +18,7 @@
 .Op Fl E Ns Ar num : Ns Ar file
 .Op Fl e
 .Op Fl h
+.Op Fl I Ns Ar name
 .Op Fl K Ns Ar key.p12 Op Fl U Ns Ar password
 .Op Fl M
 .Op Fl P
@@ -72,6 +73,10 @@ to
 Print information about the signature, such as
 hash types, flags, CDHash, and CodeDirectory version to
 .Ar stdout .
+.It Fl I Ns Ar name
+Set the identifier used in the binaries signature to
+.Ar name .
+If not specified, the basename of the binary is used.
 .It Fl K Ns Ar key.p12
 Sign using the identity in
 .Ar key.p12 .
