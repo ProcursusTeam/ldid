@@ -1862,12 +1862,8 @@ class Signature {
         for (unsigned i(0), e(sk_X509_num(certs)); i != e; i++)
             _assert(PKCS7_add_certificate(value_, sk_X509_value(certs, e - i - 1)));
 
-        // XXX: this is the same as PKCS7_sign_add_signer(value_, stuff, stuff, NULL, PKCS7_NOSMIMECAP)
-        _assert(X509_check_private_key(stuff, stuff));
-        auto info(PKCS7_add_signature(value_, stuff, stuff, EVP_sha1()));
+        auto info(PKCS7_sign_add_signer(value_, stuff, stuff, NULL, PKCS7_NOSMIMECAP));
         _assert(info != NULL);
-        _assert(PKCS7_add_certificate(value_, stuff));
-        _assert(PKCS7_add_signed_attribute(info, NID_pkcs9_contentType, V_ASN1_OBJECT, OBJ_nid2obj(NID_pkcs7_data)));
 
         PKCS7_set_detached(value_, 1);
 
@@ -1883,13 +1879,7 @@ class Signature {
             throw;
         }
 
-        // XXX: this is the same as PKCS7_final(value_, data, PKCS7_BINARY)
-        BIO *bio(PKCS7_dataInit(value_, NULL));
-        _assert(bio != NULL);
-        _scope({ BIO_free_all(bio); });
-        SMIME_crlf_copy(data, bio, PKCS7_BINARY);
-        BIO_flush(bio);
-        _assert(PKCS7_dataFinal(value_, bio));
+        _assert(PKCS7_final(value_, data, PKCS7_BINARY));
     }
 
     ~Signature() {
