@@ -28,13 +28,13 @@
 .Op Fl r | Fl S Ns Ar 檔案.xml | Fl s
 .Op Fl T Ns Ar 時間印章
 .Op Fl u
+.Op Fl arch Ar 架構類型
 .Ar
 .Sh 描述
 .Nm
-把SHA1和SHA256雜湊值加入到Mach-O檔案中，讓它們能在有驗證但沒有簽署驗證的系統上運行。
+把SHA1和SHA256雜湊值加入到Mach-O檔案中，
+讓它們能在有驗證但沒有簽署驗證的系統上運行。
 .Bl -tag -width -indent
-.It Fl a
-以十六進制印出處理器類型和亞類型。
 .It Fl A Ns Ar 處理器類型 : Ns Ar 亞類型
 當和
 .Fl a , Fl D , Fl e , Fl h , Fl q ,
@@ -49,6 +49,18 @@
 和
 .Ar 亞類型
 都應該是整數。
+.It Fl a
+以十六進制印出處理器類型和亞類型。
+.It Fl arch Ar 架構類型
+和
+.Fl A
+一樣，不過使用架構的名稱。
+已知的
+.Ar 架構類型 Ns s
+可以在
+.Xr arch 3
+中找到。
+這是一個Procursus擴展。
 .It Fl C Ns Op Ar adhoc | Ar enforcement | Ar expires | Ar hard | Ar host | Ar kill | Ar library-validation | Ar restrict | Ar runtime
 設定要在檔案中包含的程式碼簽署選項。
 請看
@@ -131,6 +143,7 @@
 使用
 .Ar 密碼
 作為p12證書的密碼，而不是詢問。
+這是一個Procursus擴展。
 .It Fl u
 如果Mach-O檔案有和UIKit鏈結，印出被鏈結的UIKit版本。
 .El

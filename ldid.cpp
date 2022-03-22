@@ -96,6 +96,8 @@
 
 #include "ldid.hpp"
 
+#include "machine.h"
+
 #define _assert___(line) \
     #line
 #define _assert__(line) \
@@ -195,29 +197,6 @@ Scope<Function_> _scope(const Function_ &function) {
     _scope__(counter, function)
 #define _scope(function) \
     _scope_(__COUNTER__, function)
-
-#define CPU_ARCH_MASK     uint32_t(0xff000000)
-#define CPU_ARCH_ABI64    uint32_t(0x01000000)
-#define CPU_ARCH_ABI64_32 uint32_t(0x02000000)
-
-#define CPU_TYPE_ANY     uint32_t(-1)
-#define CPU_TYPE_VAX     uint32_t( 1)
-#define CPU_TYPE_MC680x0 uint32_t( 6)
-#define CPU_TYPE_X86     uint32_t( 7)
-#define CPU_TYPE_MC98000 uint32_t(10)
-#define CPU_TYPE_HPPA    uint32_t(11)
-#define CPU_TYPE_ARM     uint32_t(12)
-#define CPU_TYPE_MC88000 uint32_t(13)
-#define CPU_TYPE_SPARC   uint32_t(14)
-#define CPU_TYPE_I860    uint32_t(15)
-#define CPU_TYPE_POWERPC uint32_t(18)
-
-#define CPU_TYPE_I386 CPU_TYPE_X86
-
-#define CPU_TYPE_ARM64     (CPU_ARCH_ABI64 | CPU_TYPE_ARM)
-#define CPU_TYPE_POWERPC64 (CPU_ARCH_ABI64 | CPU_TYPE_POWERPC)
-#define CPU_TYPE_X86_64    (CPU_ARCH_ABI64 | CPU_TYPE_X86)
-#define CPU_TYPE_ARM64_32  (CPU_TYPE_ARM | CPU_ARCH_ABI64_32)
 
 struct fat_header {
     uint32_t magic;
@@ -3101,10 +3080,11 @@ std::string Hex(const uint8_t *data, size_t size) {
 
 static void usage(const char *argv0) {
     fprintf(stderr, "Link Identity Editor %s\n\n", LDID_VERSION);
-    fprintf(stderr, "usage: %s [-Acputype:subtype] [-a] [-C[adhoc | enforcement | expires | hard |\n", argv0);
-    fprintf(stderr, "          host | kill | library-validation | restrict | runtime]] [-D] [-d]\n");
-    fprintf(stderr, "          [-Enum:file] [-e] [-h] [-Kkey.p12 [-Upassword]] [-M] [-P] [-q]\n");
-    fprintf(stderr, "          [-r | -Sfile | -s] [-Ttimestamp] [-u] file ...\n\n");
+    fprintf(stderr, "Usage: %s [-Acputype:subtype] [-a] [-C[adhoc | enforcement | expires | hard |\n", argv0);
+    fprintf(stderr, "            host | kill | library-validation | restrict | runtime]] [-D] [-d]\n");
+    fprintf(stderr, "            [-Enum:file] [-e] [-H[sha1 | sha256]] [-h] [-Iname]\n");
+    fprintf(stderr, "            [-Kkey.p12 [-Upassword]] [-M] [-P] [-Qrequirements.xml] [-q]\n");
+    fprintf(stderr, "            [-r | -Sfile.xml | -s] [-Ttimestamp] [-u] [-arch arch_type] file ...\n");
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "   -S[file.xml]  Pseudo-sign using the entitlements in file.xml\n");
     fprintf(stderr, "   -Kkey.p12     Sign using private key in key.p12\n");
@@ -3183,7 +3163,25 @@ int main(int argc, char *argv[]) {
     for (int argi(1); argi != argc; ++argi)
         if (argv[argi][0] != '-')
             files.push_back(argv[argi]);
-        else switch (argv[argi][1]) {
+        else if (strcmp(argv[argi], "-arch") == 0) {
+            bool foundarch = false;
+            flag_A = true;
+            argi++;
+            for (int i = 0; archs[i].name != NULL; i++) {
+                if (strcmp(archs[i].name, argv[argi]) == 0) {
+                    flag_CPUType = archs[i].cputype;
+                    flag_CPUSubtype = archs[i].cpusubtype;
+                    foundarch = true;
+                }
+                if (foundarch)
+                    break;
+            }
+
+            if (!foundarch) {
+                fprintf(stderr, "error: unknown architecture specification flag: -arch %s\n", argv[argi]);
+                exit(1);
+            }
+        } else switch (argv[argi][1]) {
             case 'r':
                 _assert(!flag_s);
                 _assert(!flag_S);

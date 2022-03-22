@@ -28,13 +28,13 @@
 .Op Fl r | Fl S Ns Ar 档案.xml | Fl s
 .Op Fl T Ns Ar 时间印章
 .Op Fl u
+.Op Fl arch Ar 架构类型
 .Ar
 .Sh 描述
 .Nm
-把SHA1和SHA256杂凑值加入到Mach-O档案中，让它们能在有验证但没有签署验证的系统上运行。
+把SHA1和SHA256杂凑值加入到Mach-O档案中，
+让它们能在有验证但没有签署验证的系统上运行。
 .Bl -tag -width -indent
-.It Fl a
-以十六进制印出处理器类型和亚类型。
 .It Fl A Ns Ar 处理器类型 : Ns Ar 亚类型
 当和
 .Fl a , Fl D , Fl e , Fl h , Fl q ,
@@ -49,6 +49,18 @@
 和
 .Ar 亚类型
 都应该是整数。
+.It Fl a
+以十六进制印出处理器类型和亚类型。
+.It Fl arch Ar 架构类型
+和
+.Fl A
+一样，不过使用架构的名称。
+已知的
+.Ar 架构类型 Ns s
+可以在
+.Xr arch 3
+中找到。
+这是一个Procursus扩展。
 .It Fl C Ns Op Ar adhoc | Ar enforcement | Ar expires | Ar hard | Ar host | Ar kill | Ar library-validation | Ar restrict | Ar runtime
 设定要在档案中包含的程式码签署选项。
 请看
@@ -88,16 +100,16 @@
 .It Fl K Ns Ar 密錀.p12
 用在
 .Ar 密錀.p12 .
-的身份签署。会给二进位档案有一个有效的签署，令它能够在有签署验证的系统上运行。
+的身份签署。 会给二进位档案有一个有效的签署，令它能够在有签署验证的系统上运行。
 如果
 .Ar 密錀.p12
-有密码的话，你会被询问。也可以用
+有密码的话，你会被询问。 也可以用
 .Fl U
 选项来提供密码。
 .It Fl M
 当和
 .Fl S ,
-一起使用时，和现有的权限合并而不是取代它。在加入权限时有用。
+一起使用时，和现有的权限合并而不是取代它。 在加入权限时有用。
 .It Fl P
 将这个Mach-O二进位档案标示为系统二进位档案。
 .It Fl Q Ns Ar 需求.xml
@@ -131,6 +143,7 @@
 使用
 .Ar 密码
 作为p12证书的密码，而不是询问。
+这是一个Procursus扩展。
 .It Fl u
 如果Mach-O档案有和UIKit链结，印出被链结的UIKit版本。
 .El
@@ -153,7 +166,7 @@
 .Ar 档案
 也会使用在
 .Ar ent.xml ,
-中的权限并把签署标示为特别用途 (adhoc) 签署。.
+中的权限并把签署标示为特别用途 (adhoc) 签署。
 .Pp
 指令:
 .Pp
@@ -182,7 +195,7 @@
 .An Jay \*qSaurik\*q Freeman . 所编写的。
 对iPhoneOS 1.2.0 和 2.0 的支援在2008年4月6号被加入。
 .Fl S
-在2008年6月13日被加入。.
+在2008年6月13日被加入。
 SHA256 支援在2016年8月25日被加入，修正iOS 11支援。
 iOS 14支援在2020年7月31日由
 .An Kabir Oberai .
