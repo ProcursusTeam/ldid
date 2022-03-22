@@ -44,7 +44,7 @@
 
 #ifndef LDID_NOSMIME
 #include <openssl/opensslv.h>
-# if OPENSSL_VERSION_NUMBER >= 0x30000000
+# if OPENSSL_VERSION_MAJOR >= 3
 #  include <openssl/provider.h>
 # endif
 #include <openssl/err.h>
@@ -1232,10 +1232,10 @@ static const std::vector<Algorithm *> &GetAlgorithms() {
 
     static std::vector<Algorithm *> algorithms;
     if (algorithms.empty()) {
-        if (do_sha256)
-            algorithms.push_back(&sha256);
         if (do_sha1)
             algorithms.push_back(&sha1);
+        if (do_sha256)
+            algorithms.push_back(&sha256);
     }
 
     return algorithms;
@@ -1841,12 +1841,8 @@ class Signature {
         for (unsigned i(0), e(sk_X509_num(certs)); i != e; i++)
             _assert(PKCS7_add_certificate(value_, sk_X509_value(certs, e - i - 1)));
 
-        // XXX: this is the same as PKCS7_sign_add_signer(value_, stuff, stuff, NULL, PKCS7_NOSMIMECAP)
-        _assert(X509_check_private_key(stuff, stuff));
-        auto info(PKCS7_add_signature(value_, stuff, stuff, EVP_sha1()));
+        auto info(PKCS7_sign_add_signer(value_, stuff, stuff, NULL, PKCS7_NOSMIMECAP));
         _assert(info != NULL);
-        _assert(PKCS7_add_certificate(value_, stuff));
-        _assert(PKCS7_add_signed_attribute(info, NID_pkcs9_contentType, V_ASN1_OBJECT, OBJ_nid2obj(NID_pkcs7_data)));
 
         PKCS7_set_detached(value_, 1);
 
@@ -1862,13 +1858,7 @@ class Signature {
             throw;
         }
 
-        // XXX: this is the same as PKCS7_final(value_, data, PKCS7_BINARY)
-        BIO *bio(PKCS7_dataInit(value_, NULL));
-        _assert(bio != NULL);
-        _scope({ BIO_free_all(bio); });
-        SMIME_crlf_copy(data, bio, PKCS7_BINARY);
-        BIO_flush(bio);
-        _assert(PKCS7_dataFinal(value_, bio));
+        _assert(PKCS7_final(value_, data, PKCS7_BINARY));
     }
 
     ~Signature() {
@@ -2782,7 +2772,7 @@ struct State {
     }
 };
 
-Bundle Sign(const std::string &root, Folder &parent, const std::string &key, State &remote, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, const Progress &progress) {
+Bundle Sign(const std::string &root, Folder &parent, const std::string &key, State &local, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, const Progress &progress) {
     std::string executable;
     std::string identifier;
 
@@ -2861,8 +2851,6 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
         rules2.insert(Rule{20, NoMode, "^version\\.plist$"});
     }
 
-    State local;
-
     std::string failure(mac ? "Contents/|Versions/[^/]*/Resources/" : "");
     Expression nested("^(Frameworks/[^/]*\\.framework|PlugIns/[^/]*\\.appex(()|/[^/]*.app))/(" + failure + ")Info\\.plist$");
     std::map<std::string, Bundle> bundles;
@@ -2870,16 +2858,18 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
     folder.Find("", fun([&](const std::string &name) {
         if (!nested(name))
             return;
-        auto bundle(root + Split(name).dir);
+        auto bundle(Split(name).dir);
         if (mac) {
             _assert(!bundle.empty());
             bundle = Split(bundle.substr(0, bundle.size() - 1)).dir;
         }
         SubFolder subfolder(folder, bundle);
 
-        bundles[nested[1]] = Sign(bundle, subfolder, key, local, "", Starts(name, "PlugIns/") ? alter :
+        State remote;
+        bundles[nested[1]] = Sign(root + bundle, subfolder, key, remote, "", Starts(name, "PlugIns/") ? alter :
             static_cast<const Functor<std::string (const std::string &, const std::string &)> &>(fun([&](const std::string &, const std::string &) -> std::string { return entitlements; }))
         , progress);
+        local.Merge(bundle, remote);
     }), fun([&](const std::string &name, const Functor<std::string ()> &read) {
     }));
 
@@ -3066,7 +3056,6 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
         }));
     }));
 
-    remote.Merge(root, local);
     return bundle;
 }
 
@@ -3091,11 +3080,10 @@ std::string Hex(const uint8_t *data, size_t size) {
 
 static void usage(const char *argv0) {
     fprintf(stderr, "Link Identity Editor %s\n\n", LDID_VERSION);
-    fprintf(stderr, "usage: %s [-Acputype:subtype] [-a]\n", argv0);
-    fprintf(stderr, "          [-C[adhoc | enforcement | expires | hard |\n");
+    fprintf(stderr, "usage: %s [-Acputype:subtype] [-a] [-C[adhoc | enforcement | expires | hard |\n", argv0);
     fprintf(stderr, "          host | kill | library-validation | restrict | runtime]] [-D] [-d]\n");
-    fprintf(stderr, "          [-e] [-h] [-Kkey.p12 [-Upassword]] [-M] [-P] [-q] [-r | -Sfile | -s]\n");
-    fprintf(stderr, "          [-Ttimestamp] [-u] file ...\n\n");
+    fprintf(stderr, "          [-Enum:file] [-e] [-h] [-Kkey.p12 [-Upassword]] [-M] [-P] [-q]\n");
+    fprintf(stderr, "          [-r | -Sfile | -s] [-Ttimestamp] [-u] file ...\n\n");
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "   -S[file.xml]  Pseudo-sign using the entitlements in file.xml\n");
     fprintf(stderr, "   -Kkey.p12     Sign using private key in key.p12\n");
@@ -3109,7 +3097,7 @@ static void usage(const char *argv0) {
 int main(int argc, char *argv[]) {
 #ifndef LDID_NOSMIME
     OpenSSL_add_all_algorithms();
-# if OPENSSL_VERSION_NUMBER >= 0x30000000
+# if OPENSSL_VERSION_MAJOR >= 3
     OSSL_PROVIDER *legacy = OSSL_PROVIDER_load(NULL, "legacy");
     OSSL_PROVIDER *deflt = OSSL_PROVIDER_load(NULL, "default");
 # endif
@@ -3224,9 +3212,6 @@ int main(int argc, char *argv[]) {
 
                     do_sha1 = false;
                     do_sha256 = false;
-
-                    fprintf(stderr, "WARNING: -H is only present for compatibility with a fork of ldid\n");
-                    fprintf(stderr, "         you should NOT be manually specifying the hash algorithm\n");
                 }
 
                 if (false);
@@ -3609,8 +3594,8 @@ int main(int argc, char *argv[]) {
         ++filei;
     }
 
-#ifndef LDID_NOSMINE
-# if OPENSSL_VERSION_NUM >= 0x30000000
+#ifndef LDID_NOSMIME
+# if OPENSSL_VERSION_MAJOR >= 3
     OSSL_PROVIDER_unload(legacy);
     OSSL_PROVIDER_unload(deflt);
 # endif

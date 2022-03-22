@@ -1,8 +1,8 @@
 .\"-
-.\" Copyright (c) 2021 ProcursusTeam
+.\" Copyright (c) 2021-2022 Procursus Team <team@procurs.us>
 .\" SPDX-License-Identifier: AGPL-3.0-or-later
 .\"
-.Dd October 8, 2021
+.Dd January 20, 2022
 .Dt LDID 1
 .Os
 .Sh NAME
@@ -17,10 +17,13 @@
 .Op Fl d
 .Op Fl E Ns Ar num : Ns Ar file
 .Op Fl e
+.Op Fl H Ns Op Ar sha1 | Ar sha256
 .Op Fl h
+.Op Fl I Ns Ar name
 .Op Fl K Ns Ar key.p12 Op Fl U Ns Ar password
 .Op Fl M
 .Op Fl P
+.Op Fl Q Ns Ar requirements.xml
 .Op Fl q
 .Op Fl r | Fl S Ns Ar file.xml | Fl s
 .Op Fl T Ns Ar timestamp
@@ -77,10 +80,19 @@ Print the entitlements in each slice, or the slice specified by
 .Fl A ,
 to
 .Ar stdout .
+.It Fl H Ns Op Ar sha1 | Ar sha256
+Disable the hash not specified.
+This is useful to replicate the default behavior of
+.Xr codesign 1 ,
+which only provides an sha256 signature.
 .It Fl h
 Print information about the signature, such as
 hash types, flags, CDHash, and CodeDirectory version to
 .Ar stdout .
+.It Fl I Ns Ar name
+Set the identifier used in the binaries signature to
+.Ar name .
+If not specified, the basename of the binary is used.
 .It Fl K Ns Ar key.p12
 Sign using the identity in
 .Ar key.p12 .
@@ -99,9 +111,9 @@ entitlements, this is useful for adding a few specific entitlements to a
 handful of binaries.
 .It Fl P
 Mark the Mach-O as a platform binary.
-.It Fl Q Ns Ar file
+.It Fl Q Ns Ar requirements.xml
 Embed the requirements found in
-.Ar file .
+.Ar requirements.xml .
 .It Fl q
 Print embedded requirements of the binaries.
 .It Fl r
