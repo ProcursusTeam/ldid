@@ -3080,10 +3080,11 @@ std::string Hex(const uint8_t *data, size_t size) {
 
 static void usage(const char *argv0) {
     fprintf(stderr, "Link Identity Editor %s\n\n", LDID_VERSION);
-    fprintf(stderr, "usage: %s [-Acputype:subtype] [-a] [-C[adhoc | enforcement | expires | hard |\n", argv0);
-    fprintf(stderr, "          host | kill | library-validation | restrict | runtime]] [-D] [-d]\n");
-    fprintf(stderr, "          [-Enum:file] [-e] [-h] [-Kkey.p12 [-Upassword]] [-M] [-P] [-q]\n");
-    fprintf(stderr, "          [-r | -Sfile | -s] [-Ttimestamp] [-u] file ...\n\n");
+    fprintf(stderr, "Usage: %s [-Acputype:subtype] [-a] [-C[adhoc | enforcement | expires | hard |\n", argv0);
+    fprintf(stderr, "            host | kill | library-validation | restrict | runtime]] [-D] [-d]\n");
+    fprintf(stderr, "            [-Enum:file] [-e] [-H[sha1 | sha256]] [-h] [-Iname]\n");
+    fprintf(stderr, "            [-Kkey.p12 [-Upassword]] [-M] [-P] [-Qrequirements.xml] [-q]\n");
+    fprintf(stderr, "            [-r | -Sfile.xml | -s] [-Ttimestamp] [-u] [-arch arch_type] file ...\n");
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "   -S[file.xml]  Pseudo-sign using the entitlements in file.xml\n");
     fprintf(stderr, "   -Kkey.p12     Sign using private key in key.p12\n");
