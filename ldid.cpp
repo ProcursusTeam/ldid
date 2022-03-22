@@ -1253,10 +1253,10 @@ static const std::vector<Algorithm *> &GetAlgorithms() {
 
     static std::vector<Algorithm *> algorithms;
     if (algorithms.empty()) {
-        if (do_sha256)
-            algorithms.push_back(&sha256);
         if (do_sha1)
             algorithms.push_back(&sha1);
+        if (do_sha256)
+            algorithms.push_back(&sha256);
     }
 
     return algorithms;
