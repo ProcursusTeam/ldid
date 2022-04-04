@@ -1805,7 +1805,7 @@ class Stuff {
 
         if (ca_ == NULL)
             ca_ = sk_X509_new_null();
-        if(ca == NULL){
+        if(ca_ == NULL){
             printf("An Error occured while parsing: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
