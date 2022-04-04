@@ -1787,7 +1787,9 @@ class Stuff {
             password = passbuf;
         }
 
-        _assert(PKCS12_parse(value_, password.c_str(), &key_, &cert_, &ca_) != 0);
+	if(PKCS12_parse(value_, password.c_str(), &key_, &cert_, &ca_) <= 0){
+		printf("An Error occured while parsing: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
+	}
         _assert(key_ != NULL);
         _assert(cert_ != NULL);
 
