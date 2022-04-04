@@ -1286,8 +1286,13 @@ class File {
     }
 
     void open(const char *path, int flags) {
-        _assert(file_ == -1);
-        file_ = _syscall(::open(path, flags));
+        std::ifstream fin(path);
+        if(!fin){
+            printf("File %s does not exist\n", path);
+            exit(1);
+        }else{
+            file_ = _syscall(::open(path, flags));  
+        }
     }
 
     int file() const {
@@ -1789,13 +1794,21 @@ class Stuff {
 
 	if(PKCS12_parse(value_, password.c_str(), &key_, &cert_, &ca_) <= 0){
 		printf("An Error occured while parsing: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
+        exit(1);
 	}
+    if(key_ == NULL || cert_ == NULL){
+        printf("An Error occured while parsing: \n %s\n You're p12 cert might not be valid", ERR_error_string(ERR_get_error(), NULL));
+        exit(1);
+    }
         _assert(key_ != NULL);
         _assert(cert_ != NULL);
 
         if (ca_ == NULL)
             ca_ = sk_X509_new_null();
-        _assert(ca_ != NULL);
+        if(ca == NULL){
+            printf("An Error occured while parsing: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
+            exit(1);
+        }
     }
 
     Stuff(const std::string &data) :
