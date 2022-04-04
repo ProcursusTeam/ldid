@@ -1797,7 +1797,7 @@ class Stuff {
         exit(1);
 	}
     if(key_ == NULL || cert_ == NULL){
-        printf("An Error occured while parsing: \n %s\n You're p12 cert might not be valid", ERR_error_string(ERR_get_error(), NULL));
+        printf("An Error occured while parsing: \n %s\n Your p12 cert might not be valid", ERR_error_string(ERR_get_error(), NULL));
         exit(1);
     }
         _assert(key_ != NULL);
