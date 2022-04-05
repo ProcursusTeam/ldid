@@ -1857,7 +1857,9 @@ class Signature {
             _assert(PKCS7_add_certificate(value_, sk_X509_value(certs, e - i - 1)));
 
         auto info(PKCS7_sign_add_signer(value_, stuff, stuff, NULL, PKCS7_NOSMIMECAP));
-        _assert(info != NULL);
+        if(info == NULL){
+            printf("An Error occured while signing: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
+        }
 
         PKCS7_set_detached(value_, 1);
 
