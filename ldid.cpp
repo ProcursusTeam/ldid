@@ -651,11 +651,13 @@ static std::string der(plist_t data) {
         } break;
 
         case PLIST_REAL: {
-            _assert(false);
+            fprintf(stderr, "Invalid plist entry type\n");
+            exit(1);
         } break;
 
         case PLIST_DATE: {
-            _assert(false);
+            fprintf(stderr, "Invalid plist entry type\n");
+            exit(1);
         } break;
 
         case PLIST_DATA: {
@@ -701,7 +703,8 @@ static std::string der(plist_t data) {
         } break;
 
         default: {
-            _assert_(false, "unsupported plist type %d", type);
+            fprintf(stderr, "unsupported plist type %d", type);
+            exit(1);
         } break;
     }
 }
@@ -839,7 +842,8 @@ class MachHeader :
             break;
 
             default:
-                _assert(false);
+                fprintf(stderr, "Unknown header magic\n");
+                exit(1);
         }
 
         void *post = mach_header_ + 1;
@@ -847,12 +851,13 @@ class MachHeader :
             post = (uint32_t *) post + 1;
         load_command_ = (struct load_command *) post;
 
-        _assert(
-            Swap(mach_header_->filetype) == MH_EXECUTE ||
-            Swap(mach_header_->filetype) == MH_DYLIB ||
-            Swap(mach_header_->filetype) == MH_DYLINKER ||
-            Swap(mach_header_->filetype) == MH_BUNDLE
-        );
+        if (Swap(mach_header_->filetype) != MH_EXECUTE ||
+            Swap(mach_header_->filetype) != MH_DYLIB ||
+            Swap(mach_header_->filetype) != MH_DYLINKER ||
+            Swap(mach_header_->filetype) != MH_BUNDLE) {
+            fprintf(stderr, "Unsupported Mach-O type\n");
+            exit(1);
+        }
     }
 
     bool Bits64() const {
@@ -1792,21 +1797,21 @@ class Stuff {
             password = passbuf;
         }
 
-	if(PKCS12_parse(value_, password.c_str(), &key_, &cert_, &ca_) <= 0){
-		printf("An Error occured while parsing: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
-        exit(1);
-	}
-    if(key_ == NULL || cert_ == NULL){
-        printf("An Error occured while parsing: \n %s\n Your p12 cert might not be valid", ERR_error_string(ERR_get_error(), NULL));
-        exit(1);
-    }
+        if(PKCS12_parse(value_, password.c_str(), &key_, &cert_, &ca_) <= 0){
+            printf("An error occured while parsing: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
+            exit(1);
+        }
+        if(key_ == NULL || cert_ == NULL){
+            printf("An error occured while parsing: \n %s\n Your p12 cert might not be valid", ERR_error_string(ERR_get_error(), NULL));
+            exit(1);
+        }
         _assert(key_ != NULL);
         _assert(cert_ != NULL);
 
         if (ca_ == NULL)
             ca_ = sk_X509_new_null();
         if(ca_ == NULL){
-            printf("An Error occured while parsing: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
+            printf("An error occured while parsing: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
     }
@@ -1858,7 +1863,7 @@ class Signature {
 
         auto info(PKCS7_sign_add_signer(value_, stuff, stuff, NULL, PKCS7_NOSMIMECAP));
         if(info == NULL){
-            printf("An Error occured while signing: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
+            printf("An error occured while signing: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
         }
 
         PKCS7_set_detached(value_, 1);
@@ -2217,7 +2222,10 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
 #ifndef LDID_NOPLIST
             auto entitlements(plist(baton.entitlements_));
             _scope({ plist_free(entitlements); });
-            _assert(plist_get_node_type(entitlements) == PLIST_DICT);
+            if (plist_get_node_type(entitlements) != PLIST_DICT) {
+                fprintf(stderr, "The entitlements should be a plist dicionary\n");
+                exit(1);
+            }
 
             const auto entitled([&](const char *key) {
                 auto item(plist_dict_get_item(entitlements, key));
@@ -2807,7 +2815,10 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
         else if (parent.Look("Resources/" + info)) {
             info = "Resources/" + info;
             return "";
-        } else _assert_(false, "cannot find Info.plist");
+        } else {
+            fprintf(stderr, "Could not find Info.plist\n");
+            exit(1);
+        }
     }());
 
     folder.Open(info, fun([&](std::streambuf &buffer, size_t length, const void *flag) {
@@ -3370,7 +3381,10 @@ int main(int argc, char *argv[]) {
         _syscall(stat(path.c_str(), &info));
 
         if (S_ISDIR(info.st_mode)) {
-            _assert(flag_S);
+            if (!flag_S) {
+                fprintf(stderr, "Only -S can be used on a directory\n");
+                exit(1);
+            }
 #ifndef LDID_NOPLIST
             ldid::DiskFolder folder(path + "/");
             path += "/" + Sign("", folder, key, requirements, ldid::fun([&](const std::string &, const std::string &) -> std::string { return entitlements; }), dummy_).path;
@@ -3468,9 +3482,12 @@ int main(int argc, char *argv[]) {
                 encryption->cryptid = mach_header.Swap(0);
             }
 
-            if (flag_e) {
-                _assert(signature != NULL);
+            if ((flag_e || flag_q || flag_s || flag_h) && signature == NULL) {
+                fprintf(stderr, "ldid -e, -q, -s, and -h requre a signed binary\n");
+                exit(1);
+            }
 
+            if (flag_e) {
                 uint32_t data = mach_header.Swap(signature->dataoff);
 
                 uint8_t *top = reinterpret_cast<uint8_t *>(mach_header.GetBase());
@@ -3486,8 +3503,6 @@ int main(int argc, char *argv[]) {
             }
 
             if (flag_q) {
-                _assert(signature != NULL);
-
                 uint32_t data = mach_header.Swap(signature->dataoff);
 
                 uint8_t *top = reinterpret_cast<uint8_t *>(mach_header.GetBase());
@@ -3503,8 +3518,6 @@ int main(int argc, char *argv[]) {
             }
 
             if (flag_s) {
-                _assert(signature != NULL);
-
                 uint32_t data = mach_header.Swap(signature->dataoff);
 
                 uint8_t *top = reinterpret_cast<uint8_t *>(mach_header.GetBase());
@@ -3528,8 +3541,6 @@ int main(int argc, char *argv[]) {
             }
 
             if (flag_h) {
-                _assert(signature != NULL);
-
                 auto algorithms(GetAlgorithms());
 
                 uint32_t data = mach_header.Swap(signature->dataoff);
