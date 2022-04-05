@@ -1800,32 +1800,21 @@ class Stuff {
             password = passbuf;
         }
 
-<<<<<<< HEAD
-	if(PKCS12_parse(value_, password.c_str(), &key_, &cert_, &ca_) <= 0){
-		printf("An error occured while parsing: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
-        exit(1);
-	}
-    if(key_ == NULL || cert_ == NULL){
-        printf("An error occured while parsing: \n %s\n Your p12 cert might not be valid", ERR_error_string(ERR_get_error(), NULL));
-        exit(1);
-    }
-=======
         if(PKCS12_parse(value_, password.c_str(), &key_, &cert_, &ca_) <= 0){
-            printf("An error occured while parsing: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
+            printf("An error occured while parsing: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
         if(key_ == NULL || cert_ == NULL){
-            printf("An error occured while parsing: \n %s\n Your p12 cert might not be valid", ERR_error_string(ERR_get_error(), NULL));
+            printf("An error occured while parsing: %s\n Your p12 cert might not be valid", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
->>>>>>> 37695002fa01ce8f626f57388a0adc2886c3d908
         _assert(key_ != NULL);
         _assert(cert_ != NULL);
 
         if (ca_ == NULL)
             ca_ = sk_X509_new_null();
         if(ca_ == NULL){
-            printf("An error occured while parsing: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
+            printf("An error occured while parsing: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
     }
