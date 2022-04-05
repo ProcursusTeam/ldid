@@ -1784,7 +1784,10 @@ class Stuff {
         value_(d2i_PKCS12_bio(bio, NULL)),
         ca_(NULL)
     {
-        _assert(value_ != NULL);
+        if(value == NULL){
+            printf("An error occured while getting the PKCS12 file: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
+            exit(1);
+        }
 
         if (!PKCS12_verify_mac(value_, "", 0) && password.empty()) {
             char passbuf[2048];
@@ -1793,11 +1796,11 @@ class Stuff {
         }
 
 	if(PKCS12_parse(value_, password.c_str(), &key_, &cert_, &ca_) <= 0){
-		printf("An Error occured while parsing: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
+		printf("An error occured while parsing: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
         exit(1);
 	}
     if(key_ == NULL || cert_ == NULL){
-        printf("An Error occured while parsing: \n %s\n Your p12 cert might not be valid", ERR_error_string(ERR_get_error(), NULL));
+        printf("An error occured while parsing: \n %s\n Your p12 cert might not be valid", ERR_error_string(ERR_get_error(), NULL));
         exit(1);
     }
         _assert(key_ != NULL);
