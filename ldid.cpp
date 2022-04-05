@@ -1759,7 +1759,10 @@ class Buffer {
     Buffer(PKCS7 *pkcs) :
         Buffer()
     {
-        _assert(i2d_PKCS7_bio(bio_, pkcs) != 0);
+        if(i2d_PKCS7_bio(bio_, pkcs) == 0){
+            printf("An error occured while getting the PKCS12 file: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
+            exit(1);
+        }
     }
 
     ~Buffer() {
@@ -1801,20 +1804,18 @@ class Stuff {
         }
 
         if(PKCS12_parse(value_, password.c_str(), &key_, &cert_, &ca_) <= 0){
-            printf("An error occured while parsing: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            printf("An error occured while parsing: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
         if(key_ == NULL || cert_ == NULL){
-            printf("An error occured while parsing: %s\n Your p12 cert might not be valid", ERR_error_string(ERR_get_error(), NULL));
+            printf("An error occured while parsing: \n %s\n Your p12 cert might not be valid", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
-        _assert(key_ != NULL);
-        _assert(cert_ != NULL);
 
         if (ca_ == NULL)
             ca_ = sk_X509_new_null();
         if(ca_ == NULL){
-            printf("An error occured while parsing: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            printf("An error occured while parsing: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
     }
@@ -1855,7 +1856,10 @@ class Signature {
   public:
     Signature(const Stuff &stuff, const Buffer &data, const std::string &xml) {
         value_ = PKCS7_new();
-        _assert(value_ != NULL);
+        if(value_ == NULL){
+            printf("An error occured while getting creating PKCS7 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            exit(1);
+        }
 
         _assert(PKCS7_set_type(value_, NID_pkcs7_signed));
         _assert(PKCS7_content_new(value_, NID_pkcs7_data));
@@ -2069,7 +2073,10 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
     if (!key.empty()) {
         Stuff stuff(key);
         auto name(X509_get_subject_name(stuff));
-        _assert(name != NULL);
+        if(name == NULL){
+            printf("Your certificate might not be valid: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
+            exit(1);
+        }
         get(team, name, NID_organizationalUnitName);
         get(common, name, NID_commonName);
     }
