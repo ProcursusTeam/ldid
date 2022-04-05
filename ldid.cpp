@@ -136,7 +136,8 @@
     for (auto success : (long[]) {EINTR, __VA_ARGS__}) \
         if (error == success) \
             return (decltype(expr)) -success; \
-    _assert_(false, "errno=%u", error); \
+    fprintf(stderr, "ldid: %s\n", strerror(error)); \
+    exit(1); \
 } }()
 
 #define _trace() \
@@ -651,12 +652,12 @@ static std::string der(plist_t data) {
         } break;
 
         case PLIST_REAL: {
-            fprintf(stderr, "Invalid plist entry type\n");
+            fprintf(stderr, "ldid: Invalid plist entry type\n");
             exit(1);
         } break;
 
         case PLIST_DATE: {
-            fprintf(stderr, "Invalid plist entry type\n");
+            fprintf(stderr, "ldid: Invalid plist entry type\n");
             exit(1);
         } break;
 
@@ -703,7 +704,7 @@ static std::string der(plist_t data) {
         } break;
 
         default: {
-            fprintf(stderr, "unsupported plist type %d", type);
+            fprintf(stderr, "ldid: Unsupported plist type %d", type);
             exit(1);
         } break;
     }
@@ -842,7 +843,7 @@ class MachHeader :
             break;
 
             default:
-                fprintf(stderr, "Unknown header magic\n");
+                fprintf(stderr, "ldid: Unknown header magic\nAre you sure that is a Mach-O?\n");
                 exit(1);
         }
 
@@ -855,7 +856,7 @@ class MachHeader :
             Swap(mach_header_->filetype) != MH_DYLIB ||
             Swap(mach_header_->filetype) != MH_DYLINKER ||
             Swap(mach_header_->filetype) != MH_BUNDLE) {
-            fprintf(stderr, "Unsupported Mach-O type\n");
+            fprintf(stderr, "ldid: Unsupported Mach-O type\n");
             exit(1);
         }
     }
@@ -1293,7 +1294,7 @@ class File {
     void open(const char *path, int flags) {
         std::ifstream fin(path);
         if(!fin){
-            printf("File %s does not exist\n", path);
+            fprintf(stderr, "ldid: %s: %s\n", path, strerror(errno));
             exit(1);
         }else{
             file_ = _syscall(::open(path, flags));  
@@ -1760,7 +1761,7 @@ class Buffer {
         Buffer()
     {
         if(i2d_PKCS7_bio(bio_, pkcs) == 0){
-            printf("An error occured while getting the PKCS12 file: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
+            fprintf(stderr, "ldid: An error occured while getting the PKCS12 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
     }
@@ -1793,7 +1794,7 @@ class Stuff {
         ca_(NULL)
     {
         if(value_ == NULL){
-            printf("An error occured while getting the PKCS12 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            fprintf(stderr, "ldid: An error occured while getting the PKCS12 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
 
@@ -1804,18 +1805,18 @@ class Stuff {
         }
 
         if(PKCS12_parse(value_, password.c_str(), &key_, &cert_, &ca_) <= 0){
-            printf("An error occured while parsing: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
+            fprintf(stderr, "ldid: An error occured while parsing: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
         if(key_ == NULL || cert_ == NULL){
-            printf("An error occured while parsing: \n %s\n Your p12 cert might not be valid", ERR_error_string(ERR_get_error(), NULL));
+            fprintf(stderr, "ldid: An error occured while parsing: %s\n Your p12 cert might not be valid", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
 
         if (ca_ == NULL)
             ca_ = sk_X509_new_null();
         if(ca_ == NULL){
-            printf("An error occured while parsing: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
+            fprintf(stderr, "ldid: An error occured while parsing: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
     }
@@ -1857,7 +1858,7 @@ class Signature {
     Signature(const Stuff &stuff, const Buffer &data, const std::string &xml) {
         value_ = PKCS7_new();
         if(value_ == NULL){
-            printf("An error occured while getting creating PKCS7 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            fprintf(stderr, "ldid: An error occured while getting creating PKCS7 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
 
@@ -1870,7 +1871,7 @@ class Signature {
 
         auto info(PKCS7_sign_add_signer(value_, stuff, stuff, NULL, PKCS7_NOSMIMECAP));
         if(info == NULL){
-            printf("An error occured while signing: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            fprintf(stderr, "ldid: An error occured while signing: %s\n", ERR_error_string(ERR_get_error(), NULL));
         }
 
         PKCS7_set_detached(value_, 1);
@@ -2074,7 +2075,7 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
         Stuff stuff(key);
         auto name(X509_get_subject_name(stuff));
         if(name == NULL){
-            printf("Your certificate might not be valid: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
+            fprintf(stderr, "ldid: Your certificate might not be valid: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
         get(team, name, NID_organizationalUnitName);
@@ -2233,7 +2234,7 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
             auto entitlements(plist(baton.entitlements_));
             _scope({ plist_free(entitlements); });
             if (plist_get_node_type(entitlements) != PLIST_DICT) {
-                fprintf(stderr, "The entitlements should be a plist dicionary\n");
+                fprintf(stderr, "ldid: Entitlements should be a plist dicionary\n");
                 exit(1);
             }
 
@@ -2826,7 +2827,7 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
             info = "Resources/" + info;
             return "";
         } else {
-            fprintf(stderr, "Could not find Info.plist\n");
+            fprintf(stderr, "ldid: Could not find Info.plist\n");
             exit(1);
         }
     }());
@@ -3392,7 +3393,7 @@ int main(int argc, char *argv[]) {
 
         if (S_ISDIR(info.st_mode)) {
             if (!flag_S) {
-                fprintf(stderr, "Only -S can be used on directores\n");
+                fprintf(stderr, "ldid: Only -S can be used on directores\n");
                 exit(1);
             }
 #ifndef LDID_NOPLIST
@@ -3493,7 +3494,7 @@ int main(int argc, char *argv[]) {
             }
 
             if ((flag_e || flag_q || flag_s || flag_h) && signature == NULL) {
-                fprintf(stderr, "ldid -e, -q, -s, and -h requre a signed binary\n");
+                fprintf(stderr, "ldid: -e, -q, -s, and -h requre a signed binary\n");
                 exit(1);
             }
 
