@@ -1789,8 +1789,8 @@ class Stuff {
         value_(d2i_PKCS12_bio(bio, NULL)),
         ca_(NULL)
     {
-        if(value == NULL){
-            printf("An error occured while getting the PKCS12 file: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
+        if(value_ == NULL){
+            printf("An error occured while getting the PKCS12 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
 
@@ -1866,7 +1866,7 @@ class Signature {
 
         auto info(PKCS7_sign_add_signer(value_, stuff, stuff, NULL, PKCS7_NOSMIMECAP));
         if(info == NULL){
-            printf("An error occured while signing: \n %s\n", ERR_error_string(ERR_get_error(), NULL));
+            printf("An error occured while signing: %s\n", ERR_error_string(ERR_get_error(), NULL));
         }
 
         PKCS7_set_detached(value_, 1);
