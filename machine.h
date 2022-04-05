@@ -375,6 +375,8 @@ typedef uint32_t	cpu_threadtype_t;
 #define CPU_SUBTYPE_VEO_4	((cpu_subtype_t) 4)
 #define CPU_SUBTYPE_VEO_ALL	CPU_SUBTYPE_VEO_2
 
+#endif	/* _MACH_MACHINE_H_ */
+
 struct archs {
 	const char *name;
 	cpu_type_t cputype;
@@ -408,7 +410,6 @@ static const struct archs archs[] = {
     { "sparc",	CPU_TYPE_SPARC,   CPU_SUBTYPE_SPARC_ALL },
     { "m88k",   CPU_TYPE_MC88000, CPU_SUBTYPE_MC88000_ALL },
     { "i860",   CPU_TYPE_I860,    CPU_SUBTYPE_I860_ALL },
-    { "veo",    CPU_TYPE_VEO,     CPU_SUBTYPE_VEO_ALL },
     { "arm",    CPU_TYPE_ARM,     CPU_SUBTYPE_ARM_ALL },
     /* specific architecture implementations */
     { "ppc601", CPU_TYPE_POWERPC, CPU_SUBTYPE_POWERPC_601 },
@@ -433,10 +434,6 @@ static const struct archs archs[] = {
     { "m68030", CPU_TYPE_MC680x0, CPU_SUBTYPE_MC68030_ONLY },
     { "m68040", CPU_TYPE_MC680x0, CPU_SUBTYPE_MC68040 },
     { "hppa7100LC", CPU_TYPE_HPPA,  CPU_SUBTYPE_HPPA_7100LC },
-    { "veo1",   CPU_TYPE_VEO,     CPU_SUBTYPE_VEO_1 },
-    { "veo2",   CPU_TYPE_VEO,     CPU_SUBTYPE_VEO_2 },
-    { "veo3",   CPU_TYPE_VEO,     CPU_SUBTYPE_VEO_3 },
-    { "veo4",   CPU_TYPE_VEO,     CPU_SUBTYPE_VEO_4 },
     { "armv4t", CPU_TYPE_ARM,     CPU_SUBTYPE_ARM_V4T},
     { "armv5",  CPU_TYPE_ARM,     CPU_SUBTYPE_ARM_V5TEJ},
     { "xscale", CPU_TYPE_ARM,     CPU_SUBTYPE_ARM_XSCALE},
@@ -451,5 +448,3 @@ static const struct archs archs[] = {
     { "arm64v8",CPU_TYPE_ARM64,   CPU_SUBTYPE_ARM64_V8 },
     { NULL,	0,		  0 }
 };
-
-#endif	/* _MACH_MACHINE_H_ */
