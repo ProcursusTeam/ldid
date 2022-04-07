@@ -852,11 +852,13 @@ class MachHeader :
             post = (uint32_t *) post + 1;
         load_command_ = (struct load_command *) post;
 
-        _assert(Swap(mach_header_->filetype) == MH_EXECUTE ||
-            Swap(mach_header_->filetype) == MH_DYLIB ||
-            Swap(mach_header_->filetype) == MH_DYLINKER ||
-            Swap(mach_header_->filetype) == MH_BUNDLE
-        );
+        if (Swap(mach_header_->filetype) != MH_EXECUTE &&
+            Swap(mach_header_->filetype) != MH_DYLIB &&
+            Swap(mach_header_->filetype) != MH_DYLINKER &&
+            Swap(mach_header_->filetype) != MH_BUNDLE) {
+            fprintf(stderr, "ldid: Unsupported Mach-O type\n");
+            exit(1);
+        }
     }
 
     bool Bits64() const {
