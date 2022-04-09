@@ -216,7 +216,7 @@ jobs:
         name: ldid_macos_${{ matrix.arch }}
         path: ldid
 
-    - name: Upload Release Asset Linux
+    - name: Upload Release Asset macOS
       uses: actions/upload-release-asset@v1
       if: ${{ github.event_name == 'release' }}
       env:
@@ -226,3 +226,88 @@ jobs:
         asset_path: ldid
         asset_name: ldid_macos_${{ matrix.arch }}
         asset_content_type: application/octet-stream
+
+  build-freebsd:
+    runs-on: ubuntu-latest
+    env:
+      TRIPLE: x86_64-pc-freebsd
+    steps:
+      - uses: actions/checkout@v1
+        with:
+          submodules: recursive
+
+      - name: cache files
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.ccache
+            ~/dep_src
+          key: build-freebsd-${{ env.GITHUB_SHA }}
+          restore-keys: |
+            build-freebsd-
+      - name: setup environment
+        run: |
+          export DOWNLOAD_PATH=${HOME}/dep_src
+          export DEP_PATH=${HOME}/build
+          export ROOT=${HOME}/root
+          mkdir -p ${DOWNLOAD_PATH} ${DEP_PATH} ${ROOT}
+          echo "DOWNLOAD_PATH=${DOWNLOAD_PATH}" >> $GITHUB_ENV
+          echo "DEP_PATH=${DEP_PATH}" >> $GITHUB_ENV
+          echo "ROOT=${ROOT}" >> $GITHUB_ENV
+          echo "LDID_VERSION=$(echo "$(git describe --tags --abbrev=0)")" >> $GITHUB_ENV
+      - name: setup toolchain
+        run: |
+          sudo apt-get install -y ccache clang-10 build-essential lld llvm-10
+          wget -q -nc -P ${DOWNLOAD_PATH} https://ftp.freebsd.org/pub/FreeBSD/releases/amd64/13.0-RELEASE/base.txz
+          tar xJf ${DOWNLOAD_PATH}/base.txz -C ${ROOT}
+          chmod -R 755 ${ROOT}
+          echo "CC=ccache clang -fuse-ld=lld -target ${TRIPLE}" >> $GITHUB_ENV
+          echo "CXX=ccache clang++ -fuse-ld=lld -target ${TRIPLE}" >> $GITHUB_ENV
+          echo "LD=lld" >> $GITHUB_ENV
+          echo "STRIP=llvm-strip" >> $$GITHUB_ENV
+          echo "BUILD_CC=ccache clang" >> $GITHUB_ENV
+          echo "BUILD_CXX=ccache clang++" >> $GITHUB_ENV
+          echo "BUILD_LD=ld" >> $$GITHUB_ENV
+          echo "CFLAGS=-static --sysroot ${ROOT} -Wno-unused-command-line-argument" >> $GITHUB_ENV
+          echo "CXXFLAGS=-static --sysroot ${ROOT} -I${ROOT}/usr/include/c++/v1 -stdlib=libc++ -Wno-unused-command-line-argument" >> $GITHUB_ENV
+          echo "LDFLAGS=-L${ROOT}/usr/lib" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=${ROOT}/usr/libdata/pkgconfig" >> $GITHUB_ENV
+          echo "LIBRARY_PATH=${ROOT}/usr/lib" >> $GITHUB_ENV
+      - name: build libplist
+        run: |
+          wget -q -nc -P ${DOWNLOAD_PATH} https://github.com/libimobiledevice/libplist/releases/download/${LIBPLIST_VERSION}/libplist-${LIBPLIST_VERSION}.tar.bz2
+          tar xf ${DOWNLOAD_PATH}/libplist-${LIBPLIST_VERSION}.tar.bz2 -C ${DEP_PATH}
+          cd ${DEP_PATH}/libplist-${LIBPLIST_VERSION}
+          ./configure --host=${TRIPLE} --prefix=/usr --without-cython --enable-static --disable-shared || cat config.log
+          make -j$(nproc)
+          make install DESTDIR="${ROOT}"
+      - name: build openssl
+        run: |
+          export PLATFORM="BSD-generic64"
+          wget -q -nc -P ${DOWNLOAD_PATH} https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz
+          tar xf ${DOWNLOAD_PATH}/openssl-${OPENSSL_VERSION}.tar.gz -C ${DEP_PATH}
+          cd ${DEP_PATH}/openssl-${OPENSSL_VERSION}
+          ./Configure --prefix=/usr --static -static ${PLATFORM}
+          make -j$(nproc) build_generated libcrypto.a
+          echo "CPPFLAGS=${CPPFLAGS} -I${DEP_PATH}/openssl-${OPENSSL_VERSION}/include" >> $GITHUB_ENV
+          echo "LIBCRYPTO_LIB=${DEP_PATH}/openssl-${OPENSSL_VERSION}/libcrypto.a" >> $GITHUB_ENV
+      - name: build
+        run: |
+          ${CC} ${CFLAGS} -Os -c -o lookup2.o lookup2.c
+          ${CXX} ${CXXFLAGS} -Os -c -o ldid.o ldid.cpp -std=c++11 -DLDID_VERSION=\"${LDID_VERSION}\"
+          ${CXX} ${CXXFLAGS} -Os -std=c++11 ldid.o lookup2.o ${ROOT}/usr/lib/libplist-2.0.a ${ROOT}/usr/lib/libcrypto.a -o ldid
+          llvm-strip-10 ldid
+      - uses: actions/upload-artifact@v1
+        with:
+          name: ldid_freebsd_x86_64
+          path: ldid
+      - name: Upload Release Asset FreeBSD
+        uses: actions/upload-release-asset@v1
+        if: ${{ github.event_name == 'release' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ldid
+          asset_name: ldid_freebsd_${{ matrix.arch }}
+          asset_content_type: application/octet-stream
