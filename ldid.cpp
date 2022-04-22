@@ -1809,7 +1809,7 @@ class Stuff {
             exit(1);
         }
         if(key_ == NULL || cert_ == NULL){
-            fprintf(stderr, "ldid: An error occured while parsing: %s\n Your p12 cert might not be valid", ERR_error_string(ERR_get_error(), NULL));
+            fprintf(stderr, "ldid: An error occured while parsing: %s\nYour p12 cert might not be valid\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
 
