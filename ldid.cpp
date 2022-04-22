@@ -136,7 +136,7 @@
     for (auto success : (long[]) {EINTR, __VA_ARGS__}) \
         if (error == success) \
             return (decltype(expr)) -success; \
-    fprintf(stderr, "ldid: %s\n", strerror(error)); \
+    fprintf(stderr, "ldid: %s: %s\n", __func__, strerror(error)); \
     exit(1); \
 } }()
 
@@ -3206,6 +3206,10 @@ int main(int argc, char *argv[]) {
             bool foundarch = false;
             flag_A = true;
             argi++;
+            if (argi == argc) {
+                fprintf(stderr, "ldid: -arch must be followed by an architecture string\n");
+                exit(1);
+            }
             for (int i = 0; archs[i].name != NULL; i++) {
                 if (strcmp(archs[i].name, argv[argi]) == 0) {
                     flag_CPUType = archs[i].cputype;
