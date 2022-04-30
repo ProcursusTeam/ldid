@@ -3397,7 +3397,7 @@ int main(int argc, char *argv[]) {
 
         if (S_ISDIR(info.st_mode)) {
             if (!flag_S) {
-                fprintf(stderr, "ldid: Only -S can be used on directores\n");
+                fprintf(stderr, "ldid: Only -S can be used on directories\n");
                 exit(1);
             }
 #ifndef LDID_NOPLIST
