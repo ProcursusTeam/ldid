@@ -5,3 +5,4 @@ Changes from https://git.saurik.com/ldid.git:
 - Support OpenSSL 3 (@sunflsks)
 - Allow p12 keys to have a password (@sunflsks)
 - Add a `-arch arch_type` flag so that typing the raw CPU type is not needed
+- Proper error messages
