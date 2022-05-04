@@ -1292,12 +1292,10 @@ class File {
     }
 
     void open(const char *path, int flags) {
-        std::ifstream fin(path);
-        if(!fin){
+        file_ = ::open(path, flags);
+        if (file_ == -1) {
             fprintf(stderr, "ldid: %s: %s\n", path, strerror(errno));
             exit(1);
-        }else{
-            file_ = _syscall(::open(path, flags));  
         }
     }
 
@@ -3226,8 +3224,10 @@ int main(int argc, char *argv[]) {
             }
         } else switch (argv[argi][1]) {
             case 'r':
-                _assert(!flag_s);
-                _assert(!flag_S);
+                if (flag_s || flag_S) {
+                    fprintf(stderr, "ldid: Can only specify one of -r, -S, -s\n");
+                    exit(1);
+                }
                 flag_r = true;
             break;
 
@@ -3263,7 +3263,10 @@ int main(int argc, char *argv[]) {
                     do_sha1 = true;
                 else if (strcmp(hash, "sha256") == 0)
                     do_sha256 = true;
-                else _assert(false);
+                else {
+                    fprintf(stderr, "ldid: only sha1 and sha256 are supported at this time\n");
+                    exit(1);
+                }
             } break;
 
             case 'h': flag_h = true; break;
@@ -3279,7 +3282,10 @@ int main(int argc, char *argv[]) {
             case 'a': flag_a = true; break;
 
             case 'A':
-                _assert(!flag_A);
+                if (flag_A) {
+                    fprintf(stderr, "ldid: -A can only be specified once\n");
+                    exit(1);
+                }
                 flag_A = true;
                 if (argv[argi][2] != '\0') {
                     const char *cpu = argv[argi] + 2;
@@ -3314,7 +3320,10 @@ int main(int argc, char *argv[]) {
                     flags |= kSecCodeSignatureLibraryValidation;
                 else if (strcmp(name, "runtime") == 0)
                     flags |= kSecCodeSignatureRuntime;
-                else _assert(false);
+                else {
+                    fprintf(stderr, "ldid: -C: Unsupported option\n");
+                    exit(1);
+                }
             } break;
 
             case 'P':
@@ -3322,14 +3331,18 @@ int main(int argc, char *argv[]) {
             break;
 
             case 's':
-                _assert(!flag_r);
-                _assert(!flag_S);
+                if (flag_r || flag_S) {
+                    fprintf(stderr, "ldid: Can only specify one of -r, -S, -s\n");
+                    exit(1);
+                }
                 flag_s = true;
             break;
 
             case 'S':
-                _assert(!flag_r);
-                _assert(!flag_s);
+                if (flag_r || flag_s) {
+                    fprintf(stderr, "ldid: Can only specify one of -r, -S, -s\n");
+                    exit(1);
+                }
                 flag_S = true;
                 if (argv[argi][2] != '\0') {
                     const char *xml = argv[argi] + 2;
@@ -3393,7 +3406,10 @@ int main(int argc, char *argv[]) {
         std::string path(file);
 
         struct stat info;
-        _syscall(stat(path.c_str(), &info));
+        if (stat(path.c_str(), &info) == -1) {
+            fprintf(stderr, "ldid: %s: %s\n", path.c_str(), strerror(errno));
+            exit(1);
+        }
 
         if (S_ISDIR(info.st_mode)) {
             if (!flag_S) {
