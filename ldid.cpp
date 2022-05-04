@@ -136,7 +136,8 @@
     for (auto success : (long[]) {EINTR, __VA_ARGS__}) \
         if (error == success) \
             return (decltype(expr)) -success; \
-    _assert_(false, "errno=%u", error); \
+    fprintf(stderr, "ldid: %s: %s\n", __func__, strerror(error)); \
+    exit(1); \
 } }()
 
 #define _trace() \
@@ -651,11 +652,13 @@ static std::string der(plist_t data) {
         } break;
 
         case PLIST_REAL: {
-            _assert(false);
+            fprintf(stderr, "ldid: Invalid plist entry type\n");
+            exit(1);
         } break;
 
         case PLIST_DATE: {
-            _assert(false);
+            fprintf(stderr, "ldid: Invalid plist entry type\n");
+            exit(1);
         } break;
 
         case PLIST_DATA: {
@@ -701,7 +704,8 @@ static std::string der(plist_t data) {
         } break;
 
         default: {
-            _assert_(false, "unsupported plist type %d", type);
+            fprintf(stderr, "ldid: Unsupported plist type %d", type);
+            exit(1);
         } break;
     }
 }
@@ -839,7 +843,8 @@ class MachHeader :
             break;
 
             default:
-                _assert(false);
+                fprintf(stderr, "ldid: Unknown header magic\nAre you sure that is a Mach-O?\n");
+                exit(1);
         }
 
         void *post = mach_header_ + 1;
@@ -847,12 +852,13 @@ class MachHeader :
             post = (uint32_t *) post + 1;
         load_command_ = (struct load_command *) post;
 
-        _assert(
-            Swap(mach_header_->filetype) == MH_EXECUTE ||
-            Swap(mach_header_->filetype) == MH_DYLIB ||
-            Swap(mach_header_->filetype) == MH_DYLINKER ||
-            Swap(mach_header_->filetype) == MH_BUNDLE
-        );
+        if (Swap(mach_header_->filetype) != MH_EXECUTE &&
+            Swap(mach_header_->filetype) != MH_DYLIB &&
+            Swap(mach_header_->filetype) != MH_DYLINKER &&
+            Swap(mach_header_->filetype) != MH_BUNDLE) {
+            fprintf(stderr, "ldid: Unsupported Mach-O type\n");
+            exit(1);
+        }
     }
 
     bool Bits64() const {
@@ -1286,8 +1292,11 @@ class File {
     }
 
     void open(const char *path, int flags) {
-        _assert(file_ == -1);
-        file_ = _syscall(::open(path, flags));
+        file_ = ::open(path, flags);
+        if (file_ == -1) {
+            fprintf(stderr, "ldid: %s: %s\n", path, strerror(errno));
+            exit(1);
+        }
     }
 
     int file() const {
@@ -1749,7 +1758,10 @@ class Buffer {
     Buffer(PKCS7 *pkcs) :
         Buffer()
     {
-        _assert(i2d_PKCS7_bio(bio_, pkcs) != 0);
+        if(i2d_PKCS7_bio(bio_, pkcs) == 0){
+            fprintf(stderr, "ldid: An error occured while getting the PKCS12 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            exit(1);
+        }
     }
 
     ~Buffer() {
@@ -1779,7 +1791,10 @@ class Stuff {
         value_(d2i_PKCS12_bio(bio, NULL)),
         ca_(NULL)
     {
-        _assert(value_ != NULL);
+        if(value_ == NULL){
+            fprintf(stderr, "ldid: An error occured while getting the PKCS12 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            exit(1);
+        }
 
         if (!PKCS12_verify_mac(value_, "", 0) && password.empty()) {
             char passbuf[2048];
@@ -1787,13 +1802,21 @@ class Stuff {
             password = passbuf;
         }
 
-        _assert(PKCS12_parse(value_, password.c_str(), &key_, &cert_, &ca_) != 0);
-        _assert(key_ != NULL);
-        _assert(cert_ != NULL);
+        if(PKCS12_parse(value_, password.c_str(), &key_, &cert_, &ca_) <= 0){
+            fprintf(stderr, "ldid: An error occured while parsing: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            exit(1);
+        }
+        if(key_ == NULL || cert_ == NULL){
+            fprintf(stderr, "ldid: An error occured while parsing: %s\nYour p12 cert might not be valid\n", ERR_error_string(ERR_get_error(), NULL));
+            exit(1);
+        }
 
         if (ca_ == NULL)
             ca_ = sk_X509_new_null();
-        _assert(ca_ != NULL);
+        if(ca_ == NULL){
+            fprintf(stderr, "ldid: An error occured while parsing: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            exit(1);
+        }
     }
 
     Stuff(const std::string &data) :
@@ -1832,7 +1855,10 @@ class Signature {
   public:
     Signature(const Stuff &stuff, const Buffer &data, const std::string &xml) {
         value_ = PKCS7_new();
-        _assert(value_ != NULL);
+        if(value_ == NULL){
+            fprintf(stderr, "ldid: An error occured while getting creating PKCS7 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            exit(1);
+        }
 
         _assert(PKCS7_set_type(value_, NID_pkcs7_signed));
         _assert(PKCS7_content_new(value_, NID_pkcs7_data));
@@ -1842,7 +1868,9 @@ class Signature {
             _assert(PKCS7_add_certificate(value_, sk_X509_value(certs, e - i - 1)));
 
         auto info(PKCS7_sign_add_signer(value_, stuff, stuff, NULL, PKCS7_NOSMIMECAP));
-        _assert(info != NULL);
+        if(info == NULL){
+            fprintf(stderr, "ldid: An error occured while signing: %s\n", ERR_error_string(ERR_get_error(), NULL));
+        }
 
         PKCS7_set_detached(value_, 1);
 
@@ -2044,7 +2072,10 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
     if (!key.empty()) {
         Stuff stuff(key);
         auto name(X509_get_subject_name(stuff));
-        _assert(name != NULL);
+        if(name == NULL){
+            fprintf(stderr, "ldid: Your certificate might not be valid: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            exit(1);
+        }
         get(team, name, NID_organizationalUnitName);
         get(common, name, NID_commonName);
     }
@@ -2200,7 +2231,10 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
 #ifndef LDID_NOPLIST
             auto entitlements(plist(baton.entitlements_));
             _scope({ plist_free(entitlements); });
-            _assert(plist_get_node_type(entitlements) == PLIST_DICT);
+            if (plist_get_node_type(entitlements) != PLIST_DICT) {
+                fprintf(stderr, "ldid: Entitlements should be a plist dicionary\n");
+                exit(1);
+            }
 
             const auto entitled([&](const char *key) {
                 auto item(plist_dict_get_item(entitlements, key));
@@ -2790,7 +2824,10 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
         else if (parent.Look("Resources/" + info)) {
             info = "Resources/" + info;
             return "";
-        } else _assert_(false, "cannot find Info.plist");
+        } else {
+            fprintf(stderr, "ldid: Could not find Info.plist\n");
+            exit(1);
+        }
     }());
 
     folder.Open(info, fun([&](std::streambuf &buffer, size_t length, const void *flag) {
@@ -3167,6 +3204,10 @@ int main(int argc, char *argv[]) {
             bool foundarch = false;
             flag_A = true;
             argi++;
+            if (argi == argc) {
+                fprintf(stderr, "ldid: -arch must be followed by an architecture string\n");
+                exit(1);
+            }
             for (int i = 0; archs[i].name != NULL; i++) {
                 if (strcmp(archs[i].name, argv[argi]) == 0) {
                     flag_CPUType = archs[i].cputype;
@@ -3183,8 +3224,10 @@ int main(int argc, char *argv[]) {
             }
         } else switch (argv[argi][1]) {
             case 'r':
-                _assert(!flag_s);
-                _assert(!flag_S);
+                if (flag_s || flag_S) {
+                    fprintf(stderr, "ldid: Can only specify one of -r, -S, -s\n");
+                    exit(1);
+                }
                 flag_r = true;
             break;
 
@@ -3220,7 +3263,10 @@ int main(int argc, char *argv[]) {
                     do_sha1 = true;
                 else if (strcmp(hash, "sha256") == 0)
                     do_sha256 = true;
-                else _assert(false);
+                else {
+                    fprintf(stderr, "ldid: only sha1 and sha256 are supported at this time\n");
+                    exit(1);
+                }
             } break;
 
             case 'h': flag_h = true; break;
@@ -3236,7 +3282,10 @@ int main(int argc, char *argv[]) {
             case 'a': flag_a = true; break;
 
             case 'A':
-                _assert(!flag_A);
+                if (flag_A) {
+                    fprintf(stderr, "ldid: -A can only be specified once\n");
+                    exit(1);
+                }
                 flag_A = true;
                 if (argv[argi][2] != '\0') {
                     const char *cpu = argv[argi] + 2;
@@ -3271,7 +3320,10 @@ int main(int argc, char *argv[]) {
                     flags |= kSecCodeSignatureLibraryValidation;
                 else if (strcmp(name, "runtime") == 0)
                     flags |= kSecCodeSignatureRuntime;
-                else _assert(false);
+                else {
+                    fprintf(stderr, "ldid: -C: Unsupported option\n");
+                    exit(1);
+                }
             } break;
 
             case 'P':
@@ -3279,14 +3331,18 @@ int main(int argc, char *argv[]) {
             break;
 
             case 's':
-                _assert(!flag_r);
-                _assert(!flag_S);
+                if (flag_r || flag_S) {
+                    fprintf(stderr, "ldid: Can only specify one of -r, -S, -s\n");
+                    exit(1);
+                }
                 flag_s = true;
             break;
 
             case 'S':
-                _assert(!flag_r);
-                _assert(!flag_s);
+                if (flag_r || flag_s) {
+                    fprintf(stderr, "ldid: Can only specify one of -r, -S, -s\n");
+                    exit(1);
+                }
                 flag_S = true;
                 if (argv[argi][2] != '\0') {
                     const char *xml = argv[argi] + 2;
@@ -3350,10 +3406,16 @@ int main(int argc, char *argv[]) {
         std::string path(file);
 
         struct stat info;
-        _syscall(stat(path.c_str(), &info));
+        if (stat(path.c_str(), &info) == -1) {
+            fprintf(stderr, "ldid: %s: %s\n", path.c_str(), strerror(errno));
+            exit(1);
+        }
 
         if (S_ISDIR(info.st_mode)) {
-            _assert(flag_S);
+            if (!flag_S) {
+                fprintf(stderr, "ldid: Only -S can be used on directories\n");
+                exit(1);
+            }
 #ifndef LDID_NOPLIST
             ldid::DiskFolder folder(path + "/");
             path += "/" + Sign("", folder, key, requirements, ldid::fun([&](const std::string &, const std::string &) -> std::string { return entitlements; }), dummy_).path;
@@ -3451,9 +3513,12 @@ int main(int argc, char *argv[]) {
                 encryption->cryptid = mach_header.Swap(0);
             }
 
-            if (flag_e) {
-                _assert(signature != NULL);
+            if ((flag_e || flag_q || flag_s || flag_h) && signature == NULL) {
+                fprintf(stderr, "ldid: -e, -q, -s, and -h requre a signed binary\n");
+                exit(1);
+            }
 
+            if (flag_e) {
                 uint32_t data = mach_header.Swap(signature->dataoff);
 
                 uint8_t *top = reinterpret_cast<uint8_t *>(mach_header.GetBase());
@@ -3469,8 +3534,6 @@ int main(int argc, char *argv[]) {
             }
 
             if (flag_q) {
-                _assert(signature != NULL);
-
                 uint32_t data = mach_header.Swap(signature->dataoff);
 
                 uint8_t *top = reinterpret_cast<uint8_t *>(mach_header.GetBase());
@@ -3486,8 +3549,6 @@ int main(int argc, char *argv[]) {
             }
 
             if (flag_s) {
-                _assert(signature != NULL);
-
                 uint32_t data = mach_header.Swap(signature->dataoff);
 
                 uint8_t *top = reinterpret_cast<uint8_t *>(mach_header.GetBase());
@@ -3511,8 +3572,6 @@ int main(int argc, char *argv[]) {
             }
 
             if (flag_h) {
-                _assert(signature != NULL);
-
                 auto algorithms(GetAlgorithms());
 
                 uint32_t data = mach_header.Swap(signature->dataoff);
