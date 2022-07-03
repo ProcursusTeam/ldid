@@ -2,6 +2,7 @@
  * Copyright (C) 2007-2015  Jay Freeman (saurik)
 */
 
+/* SPDX-License-Identifier: AGPL-3.0-only */
 /* GNU Affero General Public License, Version 3 {{{ */
 /*
  * This program is free software: you can redistribute it and/or modify
@@ -49,6 +50,7 @@
 # endif
 #include <openssl/err.h>
 #include <openssl/pem.h>
+#include <openssl/cms.h>
 #include <openssl/pkcs7.h>
 #include <openssl/pkcs12.h>
 #include <openssl/ui.h>
@@ -545,6 +547,41 @@ static inline void pad(std::streambuf &stream, size_t size) {
     char padding[size];
     memset(padding, 0, size);
     put(stream, padding, size);
+}
+
+/*
+ * Heavily based on zsign's _GenerateASN1Type(): https://github.com/zhlynn/zsign/blob/44f15cae53e4a5a000fa7486dd72f472a4c75ee4/openssl.cpp#L116
+ * SPDX-License-Identifier: BSD-3-Clause OR AGPL-3.0-only
+ */
+static ASN1_TYPE *GenerateASN1Type(const std::string &value)
+{
+    std::string asn1String = "asn1=SEQUENCE:A\n[A]\nC=OBJECT:sha256\nB=FORMAT:HEX,OCT:" + value + "\n";
+
+    BIO *bio = BIO_new(BIO_s_mem());
+    BIO_puts(bio, asn1String.c_str());
+    _scope({ BIO_free(bio); });
+
+    CONF *conf = NCONF_new(NULL);
+    _scope({ NCONF_free(conf); });
+
+    long line = -1;
+    int result = NCONF_load_bio(conf, bio, &line);
+    if (result <= 0)
+    {
+        printf("Error generating ASN1 Type: %d (Line %ld)\n", result, line);
+        ERR_print_errors_fp(stdout);
+        return NULL;
+    }
+
+    char *string = NCONF_get_string(conf, "default", "asn1");
+    if (string == NULL)
+    {
+        ERR_print_errors_fp(stdout);
+        return NULL;
+    }
+
+    ASN1_TYPE *type = ASN1_generate_nconf(string, conf);
+    return type;
 }
 
 template <typename Type_>
@@ -1764,6 +1801,13 @@ class Buffer {
         }
     }
 
+    Buffer(CMS_ContentInfo *cms) :
+    Buffer()
+    {
+        _assert(i2d_CMS_bio(bio_, cms) != 0);
+    }
+
+
     ~Buffer() {
         BIO_free_all(bio_);
     }
@@ -1850,50 +1894,68 @@ class Stuff {
 
 class Signature {
   private:
-    PKCS7 *value_;
+    CMS_ContentInfo *value_;
 
   public:
-    Signature(const Stuff &stuff, const Buffer &data, const std::string &xml) {
-        value_ = PKCS7_new();
-        if(value_ == NULL){
-            fprintf(stderr, "ldid: An error occured while getting creating PKCS7 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
-            exit(1);
+    Signature(const Stuff &stuff, const Buffer &data, const std::string &xml,const std::vector<char>& alternateCDSHA256) {
+        //
+        int flags = CMS_PARTIAL | CMS_DETACHED | CMS_NOSMIMECAP | CMS_BINARY;
+        //--------------------------------------------
+        auto issuer_name(X509_get_issuer_name(stuff));
+        _assert(issuer_name != NULL);
+        std::string issuer;
+        auto index(X509_NAME_get_index_by_NID(issuer_name, NID_commonName, -1));
+        _assert(index >= 0);
+        auto next(X509_NAME_get_index_by_NID(issuer_name, NID_commonName, index));
+        _assert(next == -1);
+        auto entry(X509_NAME_get_entry(issuer_name, index));
+        _assert(entry != NULL);
+        auto asn(X509_NAME_ENTRY_get_data(entry));
+        _assert(asn != NULL);
+        issuer.assign(reinterpret_cast<const char *>(ASN1_STRING_get0_data(asn)), ASN1_STRING_length(asn));
+
+        CMS_ContentInfo *stream = CMS_sign(NULL, NULL, stuff, NULL, flags);
+
+        CMS_SignerInfo *info = CMS_add1_signer(stream, stuff, stuff, EVP_sha256(), flags);
+
+
+        // Hash Agility
+        ASN1_OBJECT *obj = OBJ_txt2obj("1.2.840.113635.100.9.1", 1);
+        CMS_signed_add1_attr_by_OBJ(info, obj, 0x4, xml.c_str(), (int)xml.size());
+
+        // CDHashes (iOS 15.1+)
+        std::string sha256;
+        for (size_t i = 0; i < alternateCDSHA256.size(); i++)
+        {
+            char buf[16] = {0};
+            sprintf(buf, "%02X", (uint8_t)alternateCDSHA256[i]);
+            sha256 += buf;
         }
 
-        _assert(PKCS7_set_type(value_, NID_pkcs7_signed));
-        _assert(PKCS7_content_new(value_, NID_pkcs7_data));
+        X509_ATTRIBUTE *attribute = X509_ATTRIBUTE_new();
 
-        STACK_OF(X509) *certs(stuff);
-        for (unsigned i(0), e(sk_X509_num(certs)); i != e; i++)
-            _assert(PKCS7_add_certificate(value_, sk_X509_value(certs, e - i - 1)));
+        ASN1_OBJECT *obj2 = OBJ_txt2obj("1.2.840.113635.100.9.2", 1);
+        X509_ATTRIBUTE_set1_object(attribute, obj2);
 
-        auto info(PKCS7_sign_add_signer(value_, stuff, stuff, NULL, PKCS7_NOSMIMECAP));
-        if(info == NULL){
-            fprintf(stderr, "ldid: An error occured while signing: %s\n", ERR_error_string(ERR_get_error(), NULL));
+        ASN1_TYPE *type256 = GenerateASN1Type(sha256);
+        if (type256 != NULL)
+        {
+            X509_ATTRIBUTE_set1_data(attribute, V_ASN1_SEQUENCE, type256->value.asn1_string->data, type256->value.asn1_string->length);
         }
 
-        PKCS7_set_detached(value_, 1);
+        CMS_signed_add1_attr(info, attribute);
 
-        ASN1_OCTET_STRING *string(ASN1_OCTET_STRING_new());
-        _assert(string != NULL);
-        try {
-            _assert(ASN1_STRING_set(string, xml.data(), xml.size()));
+        CMS_final(stream, data, NULL, flags);
 
-            static auto nid(OBJ_create("1.2.840.113635.100.9.1", "", ""));
-            _assert(PKCS7_add_signed_attribute(info, nid, V_ASN1_OCTET_STRING, string));
-        } catch (...) {
-            ASN1_OCTET_STRING_free(string);
-            throw;
-        }
 
-        _assert(PKCS7_final(value_, data, PKCS7_BINARY));
+        value_ = stream;
+        _assert(value_ != NULL);
     }
 
     ~Signature() {
-        PKCS7_free(value_);
+        CMS_ContentInfo_free(value_);
     }
-
-    operator PKCS7 *() const {
+    operator CMS_ContentInfo *() const {
         return value_;
     }
 };
@@ -2380,6 +2442,8 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
             plist_dict_set_item(plist, "cdhashes", cdhashes);
 #endif
 
+            std::vector<char> alternateCDSHA256;
+
             unsigned total(0);
             for (Algorithm *pointer : GetAlgorithms()) {
                 Algorithm &algorithm(*pointer);
@@ -2391,6 +2455,11 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
                 std::vector<char> hash;
                 algorithm(hash, blob.data(), blob.size());
                 hash.resize(20);
+
+                if (algorithm.type_ == CS_HASHTYPE_SHA256_256){
+                    alternateCDSHA256 = hash;
+                }
+
 
 #ifdef LDID_NOPLIST
                 auto value(CFDataCreate(kCFAllocatorDefault, reinterpret_cast<const UInt8 *>(hash.data()), hash.size()));
@@ -2419,7 +2488,7 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
             Stuff stuff(key);
             Buffer bio(sign);
 
-            Signature signature(stuff, sign, std::string(xml, size));
+            Signature signature(stuff, sign, std::string(xml, size), alternateCDSHA256);
             Buffer result(signature);
             std::string value(result);
             put(data, value.data(), value.size());

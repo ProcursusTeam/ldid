@@ -1,6 +1,8 @@
 #ifndef LDID_HPP
 #define LDID_HPP
 
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
 #include <cstdlib>
 #include <map>
 #include <set>
