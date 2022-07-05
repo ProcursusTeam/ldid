@@ -31,11 +31,14 @@ ldid: $(SRC:%=%.o)
 	$(CXX) $(CXXFLAGS) -o ldid $^ $(LDFLAGS) $(LIBS)
 
 install: all
-	$(INSTALL) -D -m755 ldid $(DESTDIR)$(BINDIR)/ldid
+	$(INSTALL) -d $(DESTDIR)$(BINDIR)/
+	$(INSTALL) -m755 ldid $(DESTDIR)$(BINDIR)/ldid
 	$(LN) -sf ldid $(DESTDIR)$(BINDIR)/ldid2
-	$(INSTALL) -D -m644 docs/ldid.1 $(DESTDIR)$(MANDIR)/man1/ldid.1
+	$(INSTALL) -d $(DESTDIR)$(MANDIR)/man1/
+	$(INSTALL) -m644 docs/ldid.1 $(DESTDIR)$(MANDIR)/man1/ldid.1
 	for lang in $(MANPAGE_LANGS); do \
-		$(INSTALL) -D -m644 docs/ldid.$$lang.1 $(DESTDIR)$(MANDIR)/$$lang/man1/ldid.1; \
+		$(INSTALL) -d $(DESTDIR)$(MANDIR)/$$lang/man1/; \
+		$(INSTALL) -m644 docs/ldid.$$lang.1 $(DESTDIR)$(MANDIR)/$$lang/man1/ldid.1; \
 	done
 
 clean:

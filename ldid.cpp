@@ -3460,7 +3460,10 @@ int main(int argc, char *argv[]) {
         }
 
     _assert(flag_S || key.empty());
-    _assert(flag_S || flag_I == NULL);
+    if (flag_I != NULL && !flag_S) {
+        fprintf(stderr, "ldid: -I requires -S\n");
+        exit(1);
+    }
 
     if (flag_d && !flag_h) {
         flag_h = true;
