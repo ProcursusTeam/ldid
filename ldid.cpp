@@ -3539,6 +3539,10 @@ int main(int argc, char *argv[]) {
             }
 
             if (flag_h) {
+                char *buf = _syscall(realpath(file.c_str(), NULL));
+                printf("Executable=%s\n", buf);
+                free(buf);
+
                 auto algorithms(GetAlgorithms());
 
                 uint32_t data = mach_header.Swap(signature->dataoff);
@@ -3552,6 +3556,7 @@ int main(int argc, char *argv[]) {
                     size_t size_;
                     Algorithm &algorithm_;
                     std::string hash_;
+                    uint32_t offset;
                 };
 
                 std::map<uint8_t, Candidate> candidates;
@@ -3567,7 +3572,7 @@ int main(int argc, char *argv[]) {
                         auto &algorithm(*algorithms[type - 1]);
                         uint8_t hash[algorithm.size_];
                         algorithm(hash, blob + begin, end - begin);
-                        candidates.insert({type, {directory, end - begin, algorithm, Hex(hash, 20)}});
+                        candidates.insert({type, {directory, end - begin, algorithm, Hex(hash, 20), begin}});
                     }
                 }
 
@@ -3577,6 +3582,8 @@ int main(int argc, char *argv[]) {
 
                 const auto directory(best->second.directory_);
                 const auto flags(Swap(directory->flags));
+
+                printf("Identifier=%s\n", blob + best->second.offset + Swap(directory->identOffset));
 
                 std::string names;
                 if (flags & kSecCodeSignatureHost)

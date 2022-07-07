@@ -4,3 +4,4 @@ ldid
 .vscode
 compile_commands.json
 .cache
+*.core
