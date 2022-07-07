@@ -1,11 +1,15 @@
-VERSION  ?= 2.1.5
+ifneq (,$(wildcard .git))
+VERSION  ?= $(shell git describe --tags)
+else
+VERSION  ?= 2.1.5-procursus3
+endif
 
 CC       ?= cc
 CXX      ?= c++
 INSTALL  ?= install
 LN       ?= ln
 
-CXXFLAGS ?= -std=c++11 -O2 -pipe
+CXXFLAGS ?= -O2 -pipe
 LDFLAGS  ?=
 
 PREFIX   ?= /usr/local
@@ -14,17 +18,28 @@ BINDIR   ?= $(PREFIX)/bin
 MANDIR   ?= $(PREFIX)/share/man
 
 SRC      := ldid.cpp
-LIBS     ?= -lcrypto -lplist-2.0
+LIBS     ?=
+
+LIBPLIST_INCLUDES  ?= $(shell pkg-config --cflags libplist-2.0)
+LIBPLIST_LIBS      ?= $(shell pkg-config --libs libplist-2.0)
+
+ifeq ($(shell uname -s),FreeBSD)
+LIBCRYPTO_INCLUDES ?= -I/usr/include
+LIBCRYPTO_LIBS     ?= -L/usr/lib -lcrypto
+else
+LIBCRYPTO_INCLUDES ?= $(shell pkg-config --cflags libcrypto)
+LIBCRYPTO_LIBS     ?= $(shell pkg-config --libs libcrypto)
+endif
 
 MANPAGE_LANGS := zh_TW zh_CN
 
 all: ldid
 
 %.cpp.o: %.cpp
-	$(CXX) -c $(CXXFLAGS) $(CPPFLAGS) -I. -DLDID_VERSION=\"$(VERSION)\" $< -o $@
+	$(CXX) -c -std=c++11 $(CXXFLAGS) $(LIBCRYPTO_INCLUDES) $(LIBPLIST_INCLUDES) $(CPPFLAGS) -I. -DLDID_VERSION=\"$(VERSION)\" $< -o $@
 
 ldid: $(SRC:%=%.o)
-	$(CXX) $(CXXFLAGS) -o ldid $^ $(LDFLAGS) $(LIBS)
+	$(CXX) -o ldid $^ $(LDFLAGS) $(LIBCRYPTO_LIBS) $(LIBPLIST_LIBS) $(LIBS)
 
 install: all
 	$(INSTALL) -d $(DESTDIR)$(BINDIR)/
