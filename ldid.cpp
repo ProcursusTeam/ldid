@@ -1845,16 +1845,24 @@ class Signature {
             exit(1);
         }
 
-        _assert(PKCS7_set_type(value_, NID_pkcs7_signed));
-        _assert(PKCS7_content_new(value_, NID_pkcs7_data));
+        if (PKCS7_set_type(value_, NID_pkcs7_signed) == 0 ||
+           PKCS7_content_new(value_, NID_pkcs7_data) == 0) {
+            fprintf(stderr, "ldid: An error occured while getting creating PKCS7 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            exit(1);
+        }
 
         STACK_OF(X509) *certs(stuff);
-        for (unsigned i(0), e(sk_X509_num(certs)); i != e; i++)
-            _assert(PKCS7_add_certificate(value_, sk_X509_value(certs, e - i - 1)));
+        for (unsigned i(0), e(sk_X509_num(certs)); i != e; i++) {
+            if (PKCS7_add_certificate(value_, sk_X509_value(certs, e - i - 1)) == 0) {
+                fprintf(stderr, "ldid: An error occured while signing: %s\n", ERR_error_string(ERR_get_error(), NULL));
+                exit(1);
+            }
+        }
 
         auto info(PKCS7_sign_add_signer(value_, stuff, stuff, NULL, PKCS7_NOSMIMECAP));
         if (info == NULL){
             fprintf(stderr, "ldid: An error occured while signing: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            exit(1);
         }
 
         X509_ATTRIBUTE *attribute = X509_ATTRIBUTE_new();
@@ -1878,18 +1886,31 @@ class Signature {
         PKCS7_set_detached(value_, 1);
 
         ASN1_OCTET_STRING *string(ASN1_OCTET_STRING_new());
-        _assert(string != NULL);
+        if (string == NULL) {
+            fprintf(stderr, "ldid: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            exit(1);
+        }
+
         try {
-            _assert(ASN1_STRING_set(string, xml.data(), xml.size()));
+            if (ASN1_STRING_set(string, xml.data(), xml.size()) == 0) {
+                fprintf(stderr, "ldid: %s\n", ERR_error_string(ERR_get_error(), NULL));
+                exit(1);
+            }
 
             static auto nid(OBJ_create("1.2.840.113635.100.9.1", "", ""));
-            _assert(PKCS7_add_signed_attribute(info, nid, V_ASN1_OCTET_STRING, string));
+            if (PKCS7_add_signed_attribute(info, nid, V_ASN1_OCTET_STRING, string) == 0) {
+                fprintf(stderr, "ldid: %s\n", ERR_error_string(ERR_get_error(), NULL));
+                exit(1);
+            }
         } catch (...) {
             ASN1_OCTET_STRING_free(string);
             throw;
         }
 
-        _assert(PKCS7_final(value_, data, PKCS7_BINARY));
+        if (PKCS7_final(value_, data, PKCS7_BINARY) == 0) {
+            fprintf(stderr, "ldid: Failed to sign: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            exit(1);
+        }
     }
 
     ~Signature() {
