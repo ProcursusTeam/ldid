@@ -54,21 +54,7 @@
 #include <openssl/pkcs12.h>
 #include <openssl/ui.h>
 
-#include <openssl/sha.h>
-
-#define LDID_SHA1_DIGEST_LENGTH SHA_DIGEST_LENGTH
-#define LDID_SHA1 SHA1
-#define LDID_SHA1_CTX SHA_CTX
-#define LDID_SHA1_Init SHA1_Init
-#define LDID_SHA1_Update SHA1_Update
-#define LDID_SHA1_Final SHA1_Final
-
-#define LDID_SHA256_DIGEST_LENGTH SHA256_DIGEST_LENGTH
-#define LDID_SHA256 SHA256
-#define LDID_SHA256_CTX SHA256_CTX
-#define LDID_SHA256_Init SHA256_Init
-#define LDID_SHA256_Update SHA256_Update
-#define LDID_SHA256_Final SHA256_Final
+#include <openssl/evp.h>
 
 #include <plist/plist.h>
 
@@ -1145,7 +1131,7 @@ struct AlgorithmSHA1 :
     Algorithm
 {
     AlgorithmSHA1() :
-        Algorithm(LDID_SHA1_DIGEST_LENGTH, CS_HASHTYPE_SHA160_160)
+        Algorithm(SHA_DIGEST_LENGTH, CS_HASHTYPE_SHA160_160)
     {
     }
 
@@ -1154,7 +1140,7 @@ struct AlgorithmSHA1 :
     }
 
     void operator ()(uint8_t *hash, const void *data, size_t size) const {
-        LDID_SHA1(static_cast<const uint8_t *>(data), size, hash);
+        SHA1(static_cast<const uint8_t *>(data), size, hash);
     }
 
     void operator ()(ldid::Hash &hash, const void *data, size_t size) const {
@@ -1162,7 +1148,7 @@ struct AlgorithmSHA1 :
     }
 
     void operator ()(std::vector<char> &hash, const void *data, size_t size) const {
-        hash.resize(LDID_SHA1_DIGEST_LENGTH);
+        hash.resize(SHA_DIGEST_LENGTH);
         return operator ()(reinterpret_cast<uint8_t *>(hash.data()), data, size);
     }
 
@@ -1175,7 +1161,7 @@ struct AlgorithmSHA256 :
     Algorithm
 {
     AlgorithmSHA256() :
-        Algorithm(LDID_SHA256_DIGEST_LENGTH, CS_HASHTYPE_SHA256_256)
+        Algorithm(SHA256_DIGEST_LENGTH, CS_HASHTYPE_SHA256_256)
     {
     }
 
@@ -1184,7 +1170,7 @@ struct AlgorithmSHA256 :
     }
 
     void operator ()(uint8_t *hash, const void *data, size_t size) const {
-        LDID_SHA256(static_cast<const uint8_t *>(data), size, hash);
+        SHA256(static_cast<const uint8_t *>(data), size, hash);
     }
 
     void operator ()(ldid::Hash &hash, const void *data, size_t size) const {
@@ -1192,7 +1178,7 @@ struct AlgorithmSHA256 :
     }
 
     void operator ()(std::vector<char> &hash, const void *data, size_t size) const {
-        hash.resize(LDID_SHA256_DIGEST_LENGTH);
+        hash.resize(SHA256_DIGEST_LENGTH);
         return operator ()(reinterpret_cast<uint8_t *>(hash.data()), data, size);
     }
 
@@ -1942,25 +1928,31 @@ class HashBuffer :
   private:
     ldid::Hash &hash_;
 
-    LDID_SHA1_CTX sha1_;
-    LDID_SHA256_CTX sha256_;
+    EVP_MD_CTX *sha1_;
+    EVP_MD_CTX *sha256_;
 
   public:
     HashBuffer(ldid::Hash &hash) :
         hash_(hash)
     {
-        LDID_SHA1_Init(&sha1_);
-        LDID_SHA256_Init(&sha256_);
+        sha1_ = EVP_MD_CTX_new();
+        sha256_ = EVP_MD_CTX_new();
+        
+        EVP_DigestInit_ex2(sha1_, EVP_get_digestbyname("sha1"), nullptr);
+        EVP_DigestInit_ex2(sha256_, EVP_get_digestbyname("sha256"), nullptr);
     }
 
     ~HashBuffer() {
-        LDID_SHA1_Final(reinterpret_cast<uint8_t *>(hash_.sha1_), &sha1_);
-        LDID_SHA256_Final(reinterpret_cast<uint8_t *>(hash_.sha256_), &sha256_);
+        EVP_DigestFinal_ex(sha1_, reinterpret_cast<uint8_t *>(hash_.sha1_), nullptr);
+        EVP_DigestFinal_ex(sha256_, reinterpret_cast<uint8_t *>(hash_.sha256_), nullptr);
+        
+        EVP_MD_CTX_free(sha1_);
+        EVP_MD_CTX_free(sha256_);
     }
 
     virtual std::streamsize xsputn(const char_type *data, std::streamsize size) {
-        LDID_SHA1_Update(&sha1_, data, size);
-        LDID_SHA256_Update(&sha256_, data, size);
+        EVP_DigestUpdate(sha1_, data, size);
+        EVP_DigestUpdate(sha256_, data, size);
         return size;
     }
 
