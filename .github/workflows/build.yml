@@ -208,7 +208,7 @@ jobs:
       run: |
         export LDID_VERSION=$(echo "$(git describe --tags --abbrev=0)")
         make -j$(sysctl -n hw.ncpu) \
-          CXXFLAGS="${CXXFLAGS} -flto=thin" \
+          CXXFLAGS="-std=c++11 ${CXXFLAGS} -flto=thin" \
           VERSION="${LDID_VERSION}" \
           LIBS="${LIBPLIST_LIB} ${LIBCRYPTO_LIB}"
         strip ldid
