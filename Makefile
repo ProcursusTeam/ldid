@@ -5,8 +5,7 @@ CXX      ?= c++
 INSTALL  ?= install
 LN       ?= ln
 
-CFLAGS   ?= -O2 -pipe
-CXXFLAGS ?= $(CFLAGS) -std=c++11
+CXXFLAGS ?= -std=c++11 -O2 -pipe
 LDFLAGS  ?=
 
 PREFIX   ?= /usr/local
