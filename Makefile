@@ -1,5 +1,5 @@
 ifneq (,$(wildcard .git))
-VERSION  ?= $(shell git describe --tags)+git$(shell git rev-parse --short HEAD)
+VERSION  ?= $(shell git describe --tags)
 else
 VERSION  ?= 2.1.5-procursus3
 endif
