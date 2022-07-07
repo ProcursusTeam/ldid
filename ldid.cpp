@@ -1417,7 +1417,10 @@ std::string Analyze(const void *data, size_t size) {
             if (entitlements.empty())
                 entitlements.assign(data, size);
             else
-                _assert(entitlements.compare(0, entitlements.size(), data, size) == 0);
+               if (entitlements.compare(0, entitlements.size(), data, size) != 0) {
+                   fprintf(stderr, "ldid: Entitlements do not match\n");
+                   exit(1);
+               }
         }));
 
     return entitlements;
@@ -1437,8 +1440,7 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
 
         _foreach (load_command, mach_header.GetLoadCommands()) {
             uint32_t cmd(mach_header.Swap(load_command->cmd));
-            if (false);
-            else if (cmd == LC_CODE_SIGNATURE)
+            if (cmd == LC_CODE_SIGNATURE)
                 signature = reinterpret_cast<struct linkedit_data_command *>(load_command);
             else if (cmd == LC_SYMTAB)
                 symtab = reinterpret_cast<struct symtab_command *>(load_command);
@@ -1762,7 +1764,7 @@ class Buffer {
     Buffer(PKCS7 *pkcs) :
         Buffer()
     {
-        if(i2d_PKCS7_bio(bio_, pkcs) == 0){
+        if (i2d_PKCS7_bio(bio_, pkcs) == 0){
             fprintf(stderr, "ldid: An error occured while getting the PKCS12 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
@@ -1802,7 +1804,7 @@ class Stuff {
         value_(d2i_PKCS12_bio(bio, NULL)),
         ca_(NULL)
     {
-        if(value_ == NULL){
+        if (value_ == NULL){
             fprintf(stderr, "ldid: An error occured while getting the PKCS12 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
@@ -1813,18 +1815,18 @@ class Stuff {
             password = passbuf;
         }
 
-        if(PKCS12_parse(value_, password.c_str(), &key_, &cert_, &ca_) <= 0){
+        if (PKCS12_parse(value_, password.c_str(), &key_, &cert_, &ca_) <= 0){
             fprintf(stderr, "ldid: An error occured while parsing: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
-        if(key_ == NULL || cert_ == NULL){
+        if (key_ == NULL || cert_ == NULL){
             fprintf(stderr, "ldid: An error occured while parsing: %s\nYour p12 cert might not be valid\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
 
         if (ca_ == NULL)
             ca_ = sk_X509_new_null();
-        if(ca_ == NULL){
+        if (ca_ == NULL){
             fprintf(stderr, "ldid: An error occured while parsing: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
@@ -2059,13 +2061,25 @@ namespace ldid {
 
 static void get(std::string &value, X509_NAME *name, int nid) {
     auto index(X509_NAME_get_index_by_NID(name, nid, -1));
-    _assert(index >= 0);
+    if (index < 0) {
+        fprintf(stderr, "ldid: An error occursed while parsing the certificate: %s\n", ERR_error_string(ERR_get_error(), NULL));
+        exit(1);
+    }
     auto next(X509_NAME_get_index_by_NID(name, nid, index));
-    _assert(next == -1);
+    if (next != -1) {
+        fprintf(stderr, "ldid: An error occursed while parsing the certificate: %s\n", ERR_error_string(ERR_get_error(), NULL));
+        exit(1);
+    }
     auto entry(X509_NAME_get_entry(name, index));
-    _assert(entry != NULL);
+    if (entry == NULL) {
+        fprintf(stderr, "ldid: An error occursed while parsing the certificate: %s\n", ERR_error_string(ERR_get_error(), NULL));
+        exit(1);
+    }
     auto asn(X509_NAME_ENTRY_get_data(entry));
-    _assert(asn != NULL);
+    if (asn == NULL) {
+        fprintf(stderr, "ldid: An error occursed while parsing the certificate: %s\n", ERR_error_string(ERR_get_error(), NULL));
+        exit(1);
+    }
     value.assign(reinterpret_cast<const char *>(ASN1_STRING_get0_data(asn)), ASN1_STRING_length(asn));
 }
 
@@ -2099,7 +2113,7 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
     if (!key.empty()) {
         Stuff stuff(key);
         auto name(X509_get_subject_name(stuff));
-        if(name == NULL){
+        if (name == NULL){
             fprintf(stderr, "ldid: Your certificate might not be valid: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
@@ -2168,11 +2182,17 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
         if (!baton.entitlements_.empty() || !entitlements.empty()) {
             auto combined(plist(baton.entitlements_));
             _scope({ plist_free(combined); });
-            _assert(plist_get_node_type(combined) == PLIST_DICT);
+            if (plist_get_node_type(combined) != PLIST_DICT) {
+                fprintf(stderr, "ldid: Existing entitlements are in wrong format\n");
+                exit(1);
+            };
 
             auto merging(plist(entitlements));
             _scope({ plist_free(merging); });
-            _assert(plist_get_node_type(merging) == PLIST_DICT);
+            if (plist_get_node_type(merging) != PLIST_DICT) {
+                fprintf(stderr, "ldid: Entitlements need a root key of dict\n");
+                exit(1);
+            };
 
             plist_dict_iter iterator(NULL);
             plist_dict_new_iter(merging, &iterator);
@@ -2495,8 +2515,7 @@ void DiskFolder::Find(const std::string &root, const std::string &base, const Fu
 #ifdef __WIN32__
         struct stat info;
         _syscall(stat((path + name).c_str(), &info));
-        if (false);
-        else if (S_ISDIR(info.st_mode))
+        if (S_ISDIR(info.st_mode))
             directory = true;
         else if (S_ISREG(info.st_mode))
             directory = false;
@@ -2672,7 +2691,10 @@ static plist_t plist(const std::string &data) {
         plist_from_bin(data.data(), data.size(), &plist);
     else
         plist_from_xml(data.data(), data.size(), &plist);
-    _assert(plist != NULL);
+    if (plist == NULL) {
+        fprintf(stderr, "ldid: Failed to parse plist\n");
+        exit(1);
+    }
     return plist;
 }
 
@@ -2681,13 +2703,20 @@ static void plist_d(std::streambuf &buffer, size_t length, const Functor<void (p
     copy(buffer, data, length, dummy_);
     auto node(plist(data.str()));
     _scope({ plist_free(node); });
-    _assert(plist_get_node_type(node) == PLIST_DICT);
+    if (plist_get_node_type(node) != PLIST_DICT) {
+        fprintf(stderr, "ldid: Unexpected plist type. Expected <dict>\n");
+        exit(1);
+    }
     code(node);
 }
 
 static std::string plist_s(plist_t node) {
-    _assert(node != NULL);
-    _assert(plist_get_node_type(node) == PLIST_STRING);
+    if (node == NULL)
+        return NULL;
+    if (plist_get_node_type(node) != PLIST_STRING) {
+        fprintf(stderr, "ldid: Unexpected plist type. Expected <string>\n");
+        exit(1);
+    }
     char *data;
     plist_get_string_val(node, &data);
     _scope({ free(data); });
@@ -2815,8 +2844,7 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
         if (parent.Look(info))
             return "";
         mac = true;
-        if (false);
-        else if (parent.Look("Contents/" + info))
+        if (parent.Look("Contents/" + info))
             return "Contents/";
         else if (parent.Look("Resources/" + info)) {
             info = "Resources/" + info;
@@ -2829,8 +2857,18 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
 
     folder.Open(info, fun([&](std::streambuf &buffer, size_t length, const void *flag) {
         plist_d(buffer, length, fun([&](plist_t node) {
-            executable = plist_s(plist_dict_get_item(node, "CFBundleExecutable"));
-            identifier = plist_s(plist_dict_get_item(node, "CFBundleIdentifier"));
+            plist_t nodebuf(plist_dict_get_item(node, "CFBundleExecutable"));
+            if (nodebuf == NULL) {
+                fprintf(stderr, "ldid: Cannot find key CFBundleExecutable\n");
+                exit(1);
+            }
+            executable = plist_s(nodebuf);
+            nodebuf = plist_dict_get_item(node, "CFBundleIdentifier");
+            if (nodebuf == NULL) {
+                fprintf(stderr, "ldid: Cannot find key CFBundleIdentifier\n");
+                exit(1);
+            }
+            identifier = plist_s(nodebuf);
         }));
     }));
 
@@ -3229,11 +3267,17 @@ int main(int argc, char *argv[]) {
             case 'E': {
                 const char *string = argv[argi] + 2;
                 const char *colon = strchr(string, ':');
-                _assert(colon != NULL);
+                if (colon == NULL) {
+                    usage(argv[0]);
+                    exit(1);
+                }
                 Map file(colon + 1, O_RDONLY, PROT_READ, MAP_PRIVATE);
                 char *arge;
                 unsigned number(strtoul(string, &arge, 0));
-                _assert(arge == colon);
+                if (arge != colon || (number == 0 && errno == EINVAL)) {
+                    usage(argv[0]);
+                    exit(1);
+                }
                 auto &slot(slots[number]);
                 for (Algorithm *algorithm : GetAlgorithms())
                     (*algorithm)(slot, file.data(), file.size());
@@ -3251,8 +3295,7 @@ int main(int argc, char *argv[]) {
                     do_sha256 = false;
                 }
 
-                if (false);
-                else if (strcmp(hash, "sha1") == 0)
+                if (strcmp(hash, "sha1") == 0)
                     do_sha1 = true;
                 else if (strcmp(hash, "sha256") == 0)
                     do_sha256 = true;
@@ -3283,19 +3326,27 @@ int main(int argc, char *argv[]) {
                 if (argv[argi][2] != '\0') {
                     const char *cpu = argv[argi] + 2;
                     const char *colon = strchr(cpu, ':');
-                    _assert(colon != NULL);
+                    if (colon == NULL) {
+                        usage(argv[0]);
+                        exit(1);
+                    }
                     char *arge;
                     flag_CPUType = strtoul(cpu, &arge, 0);
-                    _assert(arge == colon);
+                    if (arge != colon || (flag_CPUType == 0 && errno == EINVAL)) {
+                        usage(argv[0]);
+                        exit(1);
+                    }
                     flag_CPUSubtype = strtoul(colon + 1, &arge, 0);
-                    _assert(arge == argv[argi] + strlen(argv[argi]));
+                    if (arge != argv[argi] + strlen(argv[argi]) || (flag_CPUSubtype == 0 && errno == EINVAL)) {
+                        usage(argv[0]);
+                        exit(1);
+                    }
                 }
             break;
 
             case 'C': {
                 const char *name = argv[argi] + 2;
-                if (false);
-                else if (strcmp(name, "host") == 0)
+                if (strcmp(name, "host") == 0)
                     flags |= kSecCodeSignatureHost;
                 else if (strcmp(name, "adhoc") == 0)
                     flags |= kSecCodeSignatureAdhoc;
@@ -3358,6 +3409,7 @@ int main(int argc, char *argv[]) {
                     key.open(argv[argi] + 2, O_RDONLY, PROT_READ, MAP_PRIVATE);
             break;
 
+            case 'T': break;
 
             case 'u': {
                 flag_u = true;
@@ -3373,15 +3425,9 @@ int main(int argc, char *argv[]) {
             break;
         }
 
-    _assert(flag_S || key.empty());
     if (flag_I != NULL && !flag_S) {
         fprintf(stderr, "ldid: -I requires -S\n");
         exit(1);
-    }
-
-    if (flag_d && !flag_h) {
-        flag_h = true;
-        fprintf(stderr, "WARNING: -d also (temporarily) does the behavior of -h for compatibility with a fork of ldid\n");
     }
 
     if (files.empty())
@@ -3421,7 +3467,7 @@ int main(int argc, char *argv[]) {
             Commit(path, temp);
         }
 
-        Map mapping(path, false);
+        Map mapping(path, flag_D ? true : false);
         FatHeader fat_header(mapping.data(), mapping.size());
 
         _foreach (mach_header, fat_header.GetMachHeaders()) {
@@ -3441,8 +3487,7 @@ int main(int argc, char *argv[]) {
             _foreach (load_command, mach_header.GetLoadCommands()) {
                 uint32_t cmd(mach_header.Swap(load_command->cmd));
 
-                if (false);
-                else if (cmd == LC_CODE_SIGNATURE)
+                if (cmd == LC_CODE_SIGNATURE)
                     signature = reinterpret_cast<struct linkedit_data_command *>(load_command);
                 else if (cmd == LC_ENCRYPTION_INFO || cmd == LC_ENCRYPTION_INFO_64)
                     encryption = reinterpret_cast<struct encryption_info_command *>(load_command);
@@ -3465,7 +3510,10 @@ int main(int argc, char *argv[]) {
             }
 
             if (flag_D) {
-                _assert(encryption != NULL);
+                if (encryption == NULL) {
+                    fprintf(stderr, "ldid: -D requires an encrypted binary\n");
+                    exit(1);
+                }
                 encryption->cryptid = mach_header.Swap(0);
             }
 
