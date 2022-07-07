@@ -24,7 +24,7 @@ LIBPLIST_INCLUDES  ?= $(shell pkg-config --cflags libplist-2.0)
 LIBPLIST_LIBS      ?= $(shell pkg-config --libs libplist-2.0)
 
 ifeq ($(shell uname -s),FreeBSD)
-LIBCRYPTO_INCLUDES ?= /usr/include
+LIBCRYPTO_INCLUDES ?= -I/usr/include
 LIBCRYPTO_LIBS     ?= -L/usr/lib -lcrypto
 else
 LIBCRYPTO_INCLUDES ?= $(shell pkg-config --cflags libcrypto)
