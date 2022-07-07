@@ -1938,8 +1938,8 @@ class HashBuffer :
         sha1_ = EVP_MD_CTX_new();
         sha256_ = EVP_MD_CTX_new();
         
-        EVP_DigestInit_ex2(sha1_, EVP_get_digestbyname("sha1"), nullptr);
-        EVP_DigestInit_ex2(sha256_, EVP_get_digestbyname("sha256"), nullptr);
+        EVP_DigestInit_ex(sha1_, EVP_get_digestbyname("sha1"), nullptr);
+        EVP_DigestInit_ex(sha256_, EVP_get_digestbyname("sha256"), nullptr);
     }
 
     ~HashBuffer() {
