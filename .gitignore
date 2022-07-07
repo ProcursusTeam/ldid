@@ -2,3 +2,5 @@ ldid
 *.o
 .DS_Store
 .vscode
+compile_commands.json
+.cache

@@ -14,15 +14,12 @@ PREFIX   ?= /usr/local
 BINDIR   ?= $(PREFIX)/bin
 MANDIR   ?= $(PREFIX)/share/man
 
-SRC      := $(wildcard *.c) $(wildcard *.cpp)
+SRC      := ldid.cpp
 LIBS     ?= -lcrypto -lplist-2.0
 
 MANPAGE_LANGS := zh_TW zh_CN
 
 all: ldid
-
-%.c.o: %.c
-	$(CC) -c $(CFLAGS) $(CPPFLAGS) -I. $< -o $@
 
 %.cpp.o: %.cpp
 	$(CXX) -c $(CXXFLAGS) $(CPPFLAGS) -I. -DLDID_VERSION=\"$(VERSION)\" $< -o $@

@@ -43,7 +43,6 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#ifndef LDID_NOSMIME
 #include <openssl/opensslv.h>
 # if OPENSSL_VERSION_MAJOR >= 3
 #  include <openssl/provider.h>
@@ -54,25 +53,7 @@
 #include <openssl/pkcs7.h>
 #include <openssl/pkcs12.h>
 #include <openssl/ui.h>
-#endif
 
-#ifdef __APPLE__
-#include <CommonCrypto/CommonDigest.h>
-
-#define LDID_SHA1_DIGEST_LENGTH CC_SHA1_DIGEST_LENGTH
-#define LDID_SHA1 CC_SHA1
-#define LDID_SHA1_CTX CC_SHA1_CTX
-#define LDID_SHA1_Init CC_SHA1_Init
-#define LDID_SHA1_Update CC_SHA1_Update
-#define LDID_SHA1_Final CC_SHA1_Final
-
-#define LDID_SHA256_DIGEST_LENGTH CC_SHA256_DIGEST_LENGTH
-#define LDID_SHA256 CC_SHA256
-#define LDID_SHA256_CTX CC_SHA256_CTX
-#define LDID_SHA256_Init CC_SHA256_Init
-#define LDID_SHA256_Update CC_SHA256_Update
-#define LDID_SHA256_Final CC_SHA256_Final
-#else
 #include <openssl/sha.h>
 
 #define LDID_SHA1_DIGEST_LENGTH SHA_DIGEST_LENGTH
@@ -88,13 +69,8 @@
 #define LDID_SHA256_Init SHA256_Init
 #define LDID_SHA256_Update SHA256_Update
 #define LDID_SHA256_Final SHA256_Final
-#endif
 
-#ifndef LDID_NOPLIST
 #include <plist/plist.h>
-#elif __APPLE__
-#include <CoreFoundation/CoreFoundation.h>
-#endif
 
 #include "ldid.hpp"
 
@@ -151,9 +127,7 @@
 #define _packed \
     __attribute__((packed))
 
-#ifndef LDID_NOSMIME
 std::string password;
-#endif
 
 template <typename Type_>
 struct Iterator_ {
@@ -662,7 +636,6 @@ static std::string der(const std::pair<std::string, std::string> &value) {
     return data.str();
 }
 
-#ifndef LDID_NOPLIST
 static std::string der(plist_t data) {
     switch (const auto type = plist_get_node_type(data)) {
         case PLIST_BOOLEAN: {
@@ -746,7 +719,6 @@ static std::string der(plist_t data) {
         } break;
     }
 }
-#endif
 
 static inline uint16_t Swap_(uint16_t value) {
     return
@@ -1183,9 +1155,6 @@ enum MatchOperation {
 #define APPLE_ADS_OID APPLE_OID, 0x64
 #define APPLE_EXTENSION_OID APPLE_ADS_OID, 6
 
-#ifndef LDID_NOFLAGT
-extern "C" uint32_t hash(uint8_t *k, uint32_t length, uint32_t initval);
-#endif
 
 struct Algorithm {
     size_t size_;
@@ -1414,13 +1383,11 @@ class Map {
         return std::string(static_cast<char *>(data_), size_);
     }
 };
-#endif
+#endif // LDID_NOTOOLS
 
 namespace ldid {
 
-#ifndef LDID_NOPLIST
 static plist_t plist(const std::string &data);
-#endif
 
 void Analyze(const MachHeader &mach_header, const Functor<void (const char *data, size_t size)> &entitle) {
     _foreach (load_command, mach_header.GetLoadCommands())
@@ -1765,7 +1732,6 @@ static size_t put(std::streambuf &output, uint32_t magic, const Blobs &blobs) {
     return offset;
 }
 
-#ifndef LDID_NOSMIME
 class Buffer {
   private:
     BIO *bio_;
@@ -1959,7 +1925,6 @@ class Signature {
         return value_;
     }
 };
-#endif
 
 class NullBuffer :
     public std::streambuf
@@ -2085,11 +2050,10 @@ static void Commit(const std::string &path, const std::string &temp) {
 
     _syscall(rename(temp.c_str(), path.c_str()));
 }
-#endif
+#endif // LDID_NOTOOLS
 
 namespace ldid {
 
-#ifndef LDID_NOSMIME
 static void get(std::string &value, X509_NAME *name, int nid) {
     auto index(X509_NAME_get_index_by_NID(name, nid, -1));
     _assert(index >= 0);
@@ -2101,7 +2065,6 @@ static void get(std::string &value, X509_NAME *name, int nid) {
     _assert(asn != NULL);
     value.assign(reinterpret_cast<const char *>(ASN1_STRING_get0_data(asn)), ASN1_STRING_length(asn));
 }
-#endif
 
 static void req(std::streambuf &buffer, uint32_t value) {
     value = Swap(value);
@@ -2130,7 +2093,6 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
     std::string team;
     std::string common;
 
-#ifndef LDID_NOSMIME
     if (!key.empty()) {
         Stuff stuff(key);
         auto name(X509_get_subject_name(stuff));
@@ -2141,7 +2103,6 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
         get(team, name, NID_organizationalUnitName);
         get(common, name, NID_commonName);
     }
-#endif
 
 
     std::stringbuf backing;
@@ -2196,9 +2157,6 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
         alloc += sizeof(struct BlobIndex);
         alloc += backing.str().size();
 
-#ifdef LDID_NOPLIST
-        baton.entitlements_ = entitlements;
-#else
         if (merge)
             Analyze(mach_header, fun([&](const char *data, size_t size) {
                 baton.entitlements_.assign(data, size);
@@ -2236,7 +2194,6 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
 
             baton.entitlements_.assign(xml, size);
         }
-#endif
 
         if (!baton.entitlements_.empty()) {
             special = std::max(special, CSSLOT_ENTITLEMENTS);
@@ -2265,13 +2222,11 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
         for (Algorithm *algorithm : GetAlgorithms())
             alloc = Align(alloc + directory + (special + normal) * algorithm->size_, 16);
 
-#ifndef LDID_NOSMIME
         if (!key.empty()) {
             alloc += sizeof(struct BlobIndex);
             alloc += sizeof(struct Blob);
             alloc += certificate;
         }
-#endif
 
         return alloc;
     }), fun([&](const MachHeader &mach_header, const Baton &baton, std::streambuf &output, size_t limit, size_t left, size_t right, const std::string &overlap, const char *top, const Progress &progress) -> size_t {
@@ -2290,7 +2245,6 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
             put(data, baton.entitlements_.data(), baton.entitlements_.size());
             insert(blobs, CSSLOT_ENTITLEMENTS, CSMAGIC_EMBEDDED_ENTITLEMENTS, data);
 
-#ifndef LDID_NOPLIST
             auto entitlements(plist(baton.entitlements_));
             _scope({ plist_free(entitlements); });
             if (plist_get_node_type(entitlements) != PLIST_DICT) {
@@ -2321,7 +2275,6 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
                 execs |= kSecCodeExecSegCanLoadCdHash;
             if (entitled("com.apple.private.amfi.can-execute-cdhash"))
                 execs |= kSecCodeExecSegCanExecCdHash;
-#endif
         }
 
         if (!baton.derformat_.empty()) {
@@ -2424,23 +2377,12 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
             ++total;
         }
 
-#ifndef LDID_NOSMIME
         if (!key.empty()) {
-#ifdef LDID_NOPLIST
-            auto plist(CFDictionaryCreateMutable(kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
-            _scope({ CFRelease(plist); });
-
-            auto cdhashes(CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks));
-            _scope({ CFRelease(cdhashes); });
-
-            CFDictionarySetValue(plist, CFSTR("cdhashes"), cdhashes);
-#else
             auto plist(plist_new_dict());
             _scope({ plist_free(plist); });
 
             auto cdhashes(plist_new_array());
             plist_dict_set_item(plist, "cdhashes", cdhashes);
-#endif
 
             std::vector<char> alternateCDSHA256;
 
@@ -2461,26 +2403,13 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
                 }
 
 
-#ifdef LDID_NOPLIST
-                auto value(CFDataCreate(kCFAllocatorDefault, reinterpret_cast<const UInt8 *>(hash.data()), hash.size()));
-                _scope({ CFRelease(value); });
-                CFArrayAppendValue(cdhashes, value);
-#else
                 plist_array_append_item(cdhashes, plist_new_data(hash.data(), hash.size()));
-#endif
             }
 
-#ifdef LDID_NOPLIST
-            auto created(CFPropertyListCreateXMLData(kCFAllocatorDefault, plist));
-            _scope({ CFRelease(created); });
-            auto xml(reinterpret_cast<const char *>(CFDataGetBytePtr(created)));
-            auto size(CFDataGetLength(created));
-#else
             char *xml(NULL);
             uint32_t size;
             plist_to_xml(plist, &xml, &size);
             _scope({ free(xml); });
-#endif
 
             std::stringbuf data;
             const std::string &sign(blobs[CSSLOT_CODEDIRECTORY]);
@@ -2496,7 +2425,6 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
             const auto &save(insert(blobs, CSSLOT_SIGNATURESLOT, CSMAGIC_BLOBWRAPPER, data));
             _assert(save.size() <= certificate);
         }
-#endif
 
         return put(output, CSMAGIC_EMBEDDED_SIGNATURE, blobs);
     }), progress);
@@ -2623,7 +2551,7 @@ void DiskFolder::Open(const std::string &path, const Functor<void (std::streambu
 void DiskFolder::Find(const std::string &path, const Functor<void (const std::string &)> &code, const Functor<void (const std::string &, const Functor<std::string ()> &)> &link) const {
     Find(path, "", code, link);
 }
-#endif
+#endif // LDID_NOTOOLS
 
 SubFolder::SubFolder(Folder &parent, const std::string &path) :
     parent_(parent),
@@ -2733,7 +2661,6 @@ static void copy(std::streambuf &source, std::streambuf &target, size_t length, 
     }
 }
 
-#ifndef LDID_NOPLIST
 static plist_t plist(const std::string &data) {
     if (data.empty())
         return plist_new_dict();
@@ -2763,7 +2690,6 @@ static std::string plist_s(plist_t node) {
     _scope({ free(data); });
     return data;
 }
-#endif
 
 enum Mode {
     NoMode,
@@ -2849,7 +2775,6 @@ struct RuleCode {
     }
 };
 
-#ifndef LDID_NOPLIST
 static Hash Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, Hash &hash, std::streambuf &save, const std::string &identifier, const std::string &entitlements, bool merge, const std::string &requirements, const std::string &key, const Slots &slots, size_t length, uint32_t flags, bool platform, const Progress &progress) {
     // XXX: this is a miserable fail
     std::stringbuf temp;
@@ -3169,7 +3094,6 @@ Bundle Sign(const std::string &root, Folder &folder, const std::string &key, con
     State local;
     return Sign(root, folder, key, local, requirements, alter, progress);
 }
-#endif
 
 #endif
 }
@@ -3202,13 +3126,11 @@ static void usage(const char *argv0) {
 
 #ifndef LDID_NOTOOLS
 int main(int argc, char *argv[]) {
-#ifndef LDID_NOSMIME
     OpenSSL_add_all_algorithms();
 # if OPENSSL_VERSION_MAJOR >= 3
     OSSL_PROVIDER *legacy = OSSL_PROVIDER_load(NULL, "legacy");
     OSSL_PROVIDER *deflt = OSSL_PROVIDER_load(NULL, "default");
 # endif
-#endif
 
     union {
         uint16_t word;
@@ -3224,9 +3146,6 @@ int main(int argc, char *argv[]) {
     bool flag_H(false);
     bool flag_h(false);
 
-#ifndef LDID_NOFLAGT
-    bool flag_T(false);
-#endif
 
     bool flag_S(false);
     bool flag_s(false);
@@ -3249,10 +3168,6 @@ int main(int argc, char *argv[]) {
 
     const char *flag_I(NULL);
 
-#ifndef LDID_NOFLAGT
-    bool timeh(false);
-    uint32_t timev(0);
-#endif
 
     Map entitlements;
     Map requirements;
@@ -3432,18 +3347,6 @@ int main(int argc, char *argv[]) {
                     key.open(argv[argi] + 2, O_RDONLY, PROT_READ, MAP_PRIVATE);
             break;
 
-#ifndef LDID_NOFLAGT
-            case 'T': {
-                flag_T = true;
-                if (argv[argi][2] == '-')
-                    timeh = true;
-                else {
-                    char *arge;
-                    timev = strtoul(argv[argi] + 2, &arge, 0);
-                    _assert(arge == argv[argi] + strlen(argv[argi]));
-                }
-            } break;
-#endif
 
             case 'u': {
                 flag_u = true;
@@ -3488,12 +3391,8 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "ldid: Only -S can be used on directories\n");
                 exit(1);
             }
-#ifndef LDID_NOPLIST
             ldid::DiskFolder folder(path + "/");
             path += "/" + Sign("", folder, key, requirements, ldid::fun([&](const std::string &, const std::string &) -> std::string { return entitlements; }), dummy_).path;
-#else
-            _assert(false);
-#endif
         } else if (flag_S || flag_r) {
             Map input(path, O_RDONLY, PROT_READ, MAP_PRIVATE);
 
@@ -3512,10 +3411,6 @@ int main(int argc, char *argv[]) {
         }
 
         bool modify(false);
-#ifndef LDID_NOFLAGT
-        if (flag_T)
-            modify = true;
-#endif
         if (flag_s)
             modify = true;
 
@@ -3556,24 +3451,6 @@ int main(int argc, char *argv[]) {
                         }
                     }
                 }
-#ifndef LDID_NOFLAGT
-                else if (cmd == LC_ID_DYLIB) {
-                    volatile struct dylib_command *dylib_command(reinterpret_cast<struct dylib_command *>(load_command));
-
-                    if (flag_T) {
-                        uint32_t timed;
-
-                        if (!timeh)
-                            timed = timev;
-                        else {
-                            dylib_command->dylib.timestamp = 0;
-                            timed = hash(reinterpret_cast<uint8_t *>(mach_header.GetBase()), mach_header.GetSize(), timev);
-                        }
-
-                        dylib_command->dylib.timestamp = mach_header.Swap(timed);
-                    }
-                }
-#endif
             }
 
             if (flag_d && encryption != NULL) {
@@ -3726,13 +3603,11 @@ int main(int argc, char *argv[]) {
         ++filei;
     }
 
-#ifndef LDID_NOSMIME
 # if OPENSSL_VERSION_MAJOR >= 3
     OSSL_PROVIDER_unload(legacy);
     OSSL_PROVIDER_unload(deflt);
 # endif
-#endif
 
     return filee;
 }
-#endif
+#endif // LDID_NOTOOLS

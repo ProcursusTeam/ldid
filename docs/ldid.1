@@ -26,7 +26,6 @@
 .Op Fl Q Ns Ar requirements.xml
 .Op Fl q
 .Op Fl r | Fl S Ns Ar file.xml | Fl s
-.Op Fl T Ns Ar timestamp
 .Op Fl u
 .Op Fl arch Ar arch_type
 .Ar
@@ -128,15 +127,6 @@ is specified then the entitlements found in
 will be embedded in the Mach-O.
 .It Fl s
 Resign the Mach-O binaries while keeping the existing entitlements.
-.It Fl T Ns Ar timestamp
-When signing a dylib, set the timestamp to
-.Ar timestamp .
-.Ar timestamp
-should be an UNIX timestamp in seconds, if
-.Ar timestamp
-is a single dash
-.Pq Sq Fl ,
-the timestamp will be set to a hash of the Mach-O header.
 .It Fl U Ns Ar password
 Use
 .Ar password

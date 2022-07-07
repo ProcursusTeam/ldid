@@ -26,7 +26,6 @@
 .Op Fl Q Ns Ar 需求.xml
 .Op Fl q
 .Op Fl r | Fl S Ns Ar 檔案.xml | Fl s
-.Op Fl T Ns Ar 時間印章
 .Op Fl u
 .Op Fl arch Ar 架構類型
 .Ar
@@ -129,16 +128,6 @@
 中的權限會被嵌入到Mach-O中。
 .It Fl s
 重新簽署Mach-O檔案但保留現有權限。
-.It Fl T Ns Ar 時間印章
-當簽署一個動態鏈結函式庫時，把時間印章設定為
-.Ar 時間印章
-。
-.Ar 時間印章
-應該是一個以秒作為單位的UNIX時間印章，如果
-.Ar
-是一個連字號的話
-.Pq Sq Fl ,
-時間印章會被設定為Mach-O頭中的時間印章。
 .It Fl U Ns Ar 密碼
 使用
 .Ar 密碼
