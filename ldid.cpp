@@ -1317,14 +1317,6 @@ class Map {
     void *data_;
     size_t size_;
 
-    void clear() {
-        if (data_ == NULL)
-            return;
-        _syscall(munmap(data_, size_));
-        data_ = NULL;
-        size_ = 0;
-    }
-
   public:
     Map() :
         data_(NULL),
@@ -1370,6 +1362,14 @@ class Map {
             open(path, O_RDWR, PROT_READ | PROT_WRITE, MAP_SHARED);
         else
             open(path, O_RDONLY, PROT_READ, MAP_PRIVATE);
+    }
+
+    void clear() {
+        if (data_ == NULL)
+            return;
+        _syscall(munmap(data_, size_));
+        data_ = NULL;
+        size_ = 0;
     }
 
     void *data() const {
@@ -3329,6 +3329,8 @@ int main(int argc, char *argv[]) {
                     exit(1);
                 }
                 flag_s = true;
+                entitlements.clear();
+                flag_M = true;
             break;
 
             case 'S':
@@ -3419,11 +3421,7 @@ int main(int argc, char *argv[]) {
             Commit(path, temp);
         }
 
-        bool modify(false);
-        if (flag_s)
-            modify = true;
-
-        Map mapping(path, modify);
+        Map mapping(path, false);
         FatHeader fat_header(mapping.data(), mapping.size());
 
         _foreach (mach_header, fat_header.GetMachHeaders()) {
@@ -3471,8 +3469,8 @@ int main(int argc, char *argv[]) {
                 encryption->cryptid = mach_header.Swap(0);
             }
 
-            if ((flag_e || flag_q || flag_s || flag_h) && signature == NULL) {
-                fprintf(stderr, "ldid: -e, -q, -s, and -h requre a signed binary\n");
+            if ((flag_e || flag_q || flag_h) && signature == NULL) {
+                fprintf(stderr, "ldid: -e, -q, and -h requre a signed binary\n");
                 exit(1);
             }
 
@@ -3503,29 +3501,6 @@ int main(int argc, char *argv[]) {
                         uint32_t begin = Swap(super->index[index].offset);
                         struct Blob *requirement = reinterpret_cast<struct Blob *>(blob + begin);
                         fwrite(requirement, 1, Swap(requirement->length), stdout);
-                    }
-            }
-
-            if (flag_s) {
-                uint32_t data = mach_header.Swap(signature->dataoff);
-
-                uint8_t *top = reinterpret_cast<uint8_t *>(mach_header.GetBase());
-                uint8_t *blob = top + data;
-                struct SuperBlob *super = reinterpret_cast<struct SuperBlob *>(blob);
-
-                for (size_t index(0); index != Swap(super->count); ++index)
-                    if (Swap(super->index[index].type) == CSSLOT_CODEDIRECTORY) {
-                        uint32_t begin = Swap(super->index[index].offset);
-                        struct CodeDirectory *directory = reinterpret_cast<struct CodeDirectory *>(blob + begin + sizeof(Blob));
-
-                        uint8_t (*hashes)[LDID_SHA1_DIGEST_LENGTH] = reinterpret_cast<uint8_t (*)[LDID_SHA1_DIGEST_LENGTH]>(blob + begin + Swap(directory->hashOffset));
-                        uint32_t pages = Swap(directory->nCodeSlots);
-
-                        if (pages != 1)
-                            for (size_t i = 0; i != pages - 1; ++i)
-                                LDID_SHA1(top + PageSize_ * i, PageSize_, hashes[i]);
-                        if (pages != 0)
-                            LDID_SHA1(top + PageSize_ * (pages - 1), ((data - 1) % PageSize_) + 1, hashes[pages - 1]);
                     }
             }
 
