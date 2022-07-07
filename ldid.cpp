@@ -128,6 +128,7 @@
     __attribute__((packed))
 
 std::string password;
+std::vector<std::string> cleanup;
 
 template <typename Type_>
 struct Iterator_ {
@@ -2036,6 +2037,7 @@ static std::string Temporary(std::filebuf &file, const Split &split) {
     std::string temp(split.dir + ".ldid." + split.base);
     mkdir_p(split.dir);
     _assert_(file.open(temp.c_str(), std::ios::out | std::ios::trunc | std::ios::binary) == &file, "open(): %s", temp.c_str());
+    cleanup.push_back(temp);
     return temp;
 }
 
@@ -2049,6 +2051,7 @@ static void Commit(const std::string &path, const std::string &temp) {
     }
 
     _syscall(rename(temp.c_str(), path.c_str()));
+    cleanup.erase(std::remove(cleanup.begin(), cleanup.end(), temp), cleanup.end());
 }
 #endif // LDID_NOTOOLS
 
@@ -3124,8 +3127,14 @@ static void usage(const char *argv0) {
     fprintf(stderr, "More information: 'man ldid'\n");
 }
 
+void cleanupfunc(void) {
+    for (const auto &temp : cleanup)
+        remove(temp.c_str());
+}
+
 #ifndef LDID_NOTOOLS
 int main(int argc, char *argv[]) {
+    std::atexit(cleanupfunc);
     OpenSSL_add_all_algorithms();
 # if OPENSSL_VERSION_MAJOR >= 3
     OSSL_PROVIDER *legacy = OSSL_PROVIDER_load(NULL, "legacy");
