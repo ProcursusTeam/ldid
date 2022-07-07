@@ -3149,7 +3149,7 @@ static void usage(const char *argv0) {
     fprintf(stderr, "            host | kill | library-validation | restrict | runtime]] [-D] [-d]\n");
     fprintf(stderr, "            [-Enum:file] [-e] [-H[sha1 | sha256]] [-h] [-Iname]\n");
     fprintf(stderr, "            [-Kkey.p12 [-Upassword]] [-M] [-P] [-Qrequirements.xml] [-q]\n");
-    fprintf(stderr, "            [-r | -Sfile.xml | -s] [-Ttimestamp] [-u] [-arch arch_type] file ...\n");
+    fprintf(stderr, "            [-r | -Sfile.xml | -s] [-u] [-arch arch_type] file ...\n");
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "   -S[file.xml]  Pseudo-sign using the entitlements in file.xml\n");
     fprintf(stderr, "   -Kkey.p12     Sign using private key in key.p12\n");
