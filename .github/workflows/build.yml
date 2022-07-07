@@ -179,6 +179,7 @@ jobs:
         echo "${HOME}/sccache-v${SCCACHE_VERSION}-x86_64-apple-darwin" >> $GITHUB_PATH
         echo "CC=sccache clang -arch ${ARCH} -mmacosx-version-min=10.13" >> $GITHUB_ENV
         echo "CXX=sccache clang++ -arch ${ARCH} -mmacosx-version-min=10.13" >> $GITHUB_ENV
+        echo "CXXFLAGS=-Os" >> $GITHUB_ENV
         echo "CFLAGS=-Os" >> $GITHUB_ENV
 
     - name: build libplist
@@ -189,7 +190,7 @@ jobs:
         ./configure --host=${HOST_ARCH}-apple-darwin --without-cython --enable-static --disable-shared
         make -j$(sysctl -n hw.ncpu)
 
-        echo "CFLAGS=${CFLAGS} -I${DEP_PATH}/libplist-${LIBPLIST_VERSION}/include" >> $GITHUB_ENV
+        echo "CXXFLAGS=${CXXFLAGS} -I${DEP_PATH}/libplist-${LIBPLIST_VERSION}/include" >> $GITHUB_ENV
         echo "LIBPLIST_LIB=${DEP_PATH}/libplist-${LIBPLIST_VERSION}/src/.libs/libplist-2.0.a" >> $GITHUB_ENV
 
     - name: build openssl
@@ -200,14 +201,14 @@ jobs:
         ./config --prefix=/usr no-shared no-module darwin64-${ARCH}-cc
         make -j$(sysctl -n hw.ncpu) build_generated libcrypto.a
 
-        echo "CFLAGS=${CFLAGS} -I${DEP_PATH}/openssl-${OPENSSL_VERSION}/include" >> $GITHUB_ENV
+        echo "CXXFLAGS=${CXXFLAGS} -I${DEP_PATH}/openssl-${OPENSSL_VERSION}/include" >> $GITHUB_ENV
         echo "LIBCRYPTO_LIB=${DEP_PATH}/openssl-${OPENSSL_VERSION}/libcrypto.a" >> $GITHUB_ENV
 
     - name: build
       run: |
         export LDID_VERSION=$(echo "$(git describe --tags --abbrev=0)")
         make -j$(sysctl -n hw.ncpu) \
-          CFLAGS="${CFLAGS} -flto=thin" \
+          CXXFLAGS="${CXXFLAGS} -flto=thin" \
           VERSION="${LDID_VERSION}" \
           LIBS="${LIBPLIST_LIB} ${LIBCRYPTO_LIB}"
         strip ldid
