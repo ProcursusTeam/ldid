@@ -78,7 +78,7 @@ jobs:
         echo "RANLIB=${TRIPLE}-gcc-ranlib" >> $GITHUB_ENV
         echo "CFLAGS=-Os -fPIC -fno-pie -no-pie -static -flto -ffunction-sections -fdata-sections" >> $GITHUB_ENV
         echo "CXXFLAGS=-Os -fPIC -fno-pie -no-pie -static -flto -ffunction-sections -fdata-sections" >> $GITHUB_ENV
-        echo "LDFLAGS=-Wl,--gc-sections -Wl,-strip-all -flto" >> $GITHUB_ENV
+        echo "LDFLAGS=-Os -fPIC -fno-pie -no-pie -static -Wl,--gc-sections -Wl,-strip-all -flto -ffunction-sections -fdata-sections" >> $GITHUB_ENV
 
     - name: build libplist
       run: |
@@ -106,9 +106,7 @@ jobs:
 
     - name: build
       run: |
-        export LDID_VERSION=$(echo "$(git describe --tags --abbrev=0)")
         make -j$(nproc) \
-          VERSION="${LDID_VERSION}" \
           LDFLAGS="-static -static-libstdc++ ${LDFLAGS}"
         ${TRIPLE}-strip ldid
 
@@ -205,11 +203,9 @@ jobs:
 
     - name: build
       run: |
-        export LDID_VERSION=$(echo "$(git describe --tags --abbrev=0)")
         make -j$(sysctl -n hw.ncpu) \
           CXXFLAGS="-flto=thin ${CXXFLAGS}" \
-          LDFLAGS="-flto=thin" \
-          VERSION="${LDID_VERSION}"
+          LDFLAGS="-flto=thin"
         strip ldid
 
     - uses: actions/upload-artifact@v1

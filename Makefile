@@ -1,4 +1,8 @@
+ifneq (,$(wildcard .git))
+VERSION  ?= 2.1.5-procursus3+git$(shell git rev-parse --short HEAD)
+else
 VERSION  ?= 2.1.5-procursus3
+endif
 
 CC       ?= cc
 CXX      ?= c++
