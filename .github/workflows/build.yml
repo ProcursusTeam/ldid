@@ -77,6 +77,7 @@ jobs:
         echo "NM=${TRIPLE}-gcc-nm" >> $GITHUB_ENV
         echo "RANLIB=${TRIPLE}-gcc-ranlib" >> $GITHUB_ENV
         echo "CFLAGS=-Os -fPIC -fno-pie -no-pie -static -flto -ffunction-sections -fdata-sections" >> $GITHUB_ENV
+        echo "CXXFLAGS=-Os -fPIC -fno-pie -no-pie -static -flto -ffunction-sections -fdata-sections" >> $GITHUB_ENV
         echo "LDFLAGS=-Wl,--gc-sections -Wl,-strip-all -flto" >> $GITHUB_ENV
 
     - name: build libplist
