@@ -1818,12 +1818,27 @@ class Stuff {
     }
 };
 
+// xina fix;
+struct SEQUENCE_hash_sha1 {
+    uint8_t SEQUENCE[2] = {0x30, 0x1d}; // size
+    uint8_t OBJECT_IDENTIFIER[7] = {0x06, 0x05, 0x2B, 0x0E, 0x03, 0x02, 0x1A}; // OBJECT IDENTIFIER 1.3.14.3.2.26 sha1 (OIW)
+    uint8_t hash_size[2] = {0x04, 0x14};
+    char hash[20];
+};
+
+struct SEQUENCE_hash_sha256 {
+    uint8_t SEQUENCE[2] = {0x30, 0x2d}; // size
+    uint8_t OBJECT_IDENTIFIER[11] = {0x06 ,0x09 ,0x60, 0x86, 0x48, 0x01 ,0x65, 0x03, 0x04, 0x02, 0x01}; // 2.16.840.1.101.3.4.2.1 sha-256 (NIST Algorithm)
+    uint8_t hash_size[2] = {0x04, 0x20}; // hash size
+    char hash[32];
+};
+
 class Signature {
   private:
     PKCS7 *value_;
 
   public:
-    Signature(const Stuff &stuff, const Buffer &data, const std::string &xml) {
+    Signature(const Stuff &stuff, const Buffer &data, const std::string &xml, const std::vector<char>& alternateCDSHA1, const std::vector<char>& alternateCDSHA256) {
         value_ = PKCS7_new();
         if (value_ == NULL){
             fprintf(stderr, "ldid: An error occured while getting creating PKCS7 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
@@ -1840,6 +1855,24 @@ class Signature {
         auto info(PKCS7_sign_add_signer(value_, stuff, stuff, NULL, PKCS7_NOSMIMECAP));
         if (info == NULL){
             fprintf(stderr, "ldid: An error occured while signing: %s\n", ERR_error_string(ERR_get_error(), NULL));
+        }
+
+        X509_ATTRIBUTE *attribute = X509_ATTRIBUTE_new();
+        ASN1_OBJECT *obj2 = OBJ_txt2obj("1.2.840.113635.100.9.2", 1);
+        X509_ATTRIBUTE_set1_object(attribute, obj2);
+        // xina fix;
+        SEQUENCE_hash_sha1 seq1;
+        memcpy((void *)seq1.hash,(void *)alternateCDSHA1.data() ,alternateCDSHA1.size());
+        X509_ATTRIBUTE_set1_data(attribute, V_ASN1_SEQUENCE,&seq1, sizeof(seq1));
+        // xina fix;
+        SEQUENCE_hash_sha256 seq256;
+        memcpy((void *)seq256.hash,(void *)alternateCDSHA256.data() ,alternateCDSHA256.size());
+        X509_ATTRIBUTE_set1_data(attribute, V_ASN1_SEQUENCE,&seq256, sizeof(seq256));
+
+        STACK_OF(X509_ATTRIBUTE) *sk = PKCS7_get_signed_attributes(info);
+        if (!sk_X509_ATTRIBUTE_push(sk, attribute)) {
+            fprintf(stderr, "ldid: sk_X509_ATTRIBUTE_push failed: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            exit(1);
         }
 
         PKCS7_set_detached(value_, 1);
@@ -2346,6 +2379,9 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
             auto cdhashes(plist_new_array());
             plist_dict_set_item(plist, "cdhashes", cdhashes);
 
+            std::vector<char> alternateCDSHA256;
+            std::vector<char> alternateCDSHA1;
+
             unsigned total(0);
             for (Algorithm *pointer : GetAlgorithms()) {
                 Algorithm &algorithm(*pointer);
@@ -2356,6 +2392,10 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
 
                 std::vector<char> hash;
                 algorithm(hash, blob.data(), blob.size());
+                if (algorithm.type_ == CS_HASHTYPE_SHA256_256)
+                    alternateCDSHA256 = hash;
+                else if (algorithm.type_ == CS_HASHTYPE_SHA160_160)
+                    alternateCDSHA1 = hash;
                 hash.resize(20);
 
                 plist_array_append_item(cdhashes, plist_new_data(hash.data(), hash.size()));
@@ -2372,7 +2412,7 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
             Stuff stuff(key);
             Buffer bio(sign);
 
-            Signature signature(stuff, sign, std::string(xml, size));
+            Signature signature(stuff, sign, std::string(xml, size), alternateCDSHA1, alternateCDSHA256);
             Buffer result(signature);
             std::string value(result);
             put(data, value.data(), value.size());
