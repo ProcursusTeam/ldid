@@ -88,8 +88,8 @@ jobs:
         ./configure --host=${TRIPLE} --prefix=/usr --without-cython --enable-static --disable-shared
         make -j$(nproc)
 
-        echo "CPPFLAGS=${CPPFLAGS} -I${DEP_PATH}/libplist-${LIBPLIST_VERSION}/include" >> $GITHUB_ENV
-        echo "LIBPLIST_LIB=${DEP_PATH}/libplist-${LIBPLIST_VERSION}/src/.libs/libplist-2.0.a" >> $GITHUB_ENV
+        echo "LIBPLIST_INCLUDES=-I${DEP_PATH}/libplist-${LIBPLIST_VERSION}/include" >> $GITHUB_ENV
+        echo "LIBPLIST_LIBS=${DEP_PATH}/libplist-${LIBPLIST_VERSION}/src/.libs/libplist-2.0.a" >> $GITHUB_ENV
 
     - name: build openssl
       run: |
@@ -101,16 +101,15 @@ jobs:
         ./config --prefix=/usr --static -static no-module ${PLATFORM}
         make -j$(nproc) build_generated libcrypto.a
 
-        echo "CPPFLAGS=${CPPFLAGS} -I${DEP_PATH}/openssl-${OPENSSL_VERSION}/include" >> $GITHUB_ENV
-        echo "LIBCRYPTO_LIB=${DEP_PATH}/openssl-${OPENSSL_VERSION}/libcrypto.a" >> $GITHUB_ENV
+        echo "LIBCRYPTO_INCLUDES=-I${DEP_PATH}/openssl-${OPENSSL_VERSION}/include" >> $GITHUB_ENV
+        echo "LIBCRYPTO_LIBS=${DEP_PATH}/openssl-${OPENSSL_VERSION}/libcrypto.a" >> $GITHUB_ENV
 
     - name: build
       run: |
         export LDID_VERSION=$(echo "$(git describe --tags --abbrev=0)")
         make -j$(nproc) \
           VERSION="${LDID_VERSION}" \
-          LDFLAGS="-static -static-libstdc++ ${LDFLAGS}" \
-          LIBS="${LIBPLIST_LIB} ${LIBCRYPTO_LIB}"
+          LDFLAGS="-static -static-libstdc++ ${LDFLAGS}"
         ${TRIPLE}-strip ldid
 
     - uses: actions/upload-artifact@v1
@@ -190,8 +189,8 @@ jobs:
         ./configure --host=${HOST_ARCH}-apple-darwin --without-cython --enable-static --disable-shared
         make -j$(sysctl -n hw.ncpu)
 
-        echo "CXXFLAGS=${CXXFLAGS} -I${DEP_PATH}/libplist-${LIBPLIST_VERSION}/include" >> $GITHUB_ENV
-        echo "LIBPLIST_LIB=${DEP_PATH}/libplist-${LIBPLIST_VERSION}/src/.libs/libplist-2.0.a" >> $GITHUB_ENV
+        echo "LIBPLIST_INCLUDES=-I${DEP_PATH}/libplist-${LIBPLIST_VERSION}/include" >> $GITHUB_ENV
+        echo "LIBPLIST_LIBS=${DEP_PATH}/libplist-${LIBPLIST_VERSION}/src/.libs/libplist-2.0.a" >> $GITHUB_ENV
 
     - name: build openssl
       run: |
@@ -201,16 +200,16 @@ jobs:
         ./config --prefix=/usr no-shared no-module darwin64-${ARCH}-cc
         make -j$(sysctl -n hw.ncpu) build_generated libcrypto.a
 
-        echo "CXXFLAGS=${CXXFLAGS} -I${DEP_PATH}/openssl-${OPENSSL_VERSION}/include" >> $GITHUB_ENV
-        echo "LIBCRYPTO_LIB=${DEP_PATH}/openssl-${OPENSSL_VERSION}/libcrypto.a" >> $GITHUB_ENV
+        echo "LIBCRYPTO_INCLUDES=${CXXFLAGS} -I${DEP_PATH}/openssl-${OPENSSL_VERSION}/include" >> $GITHUB_ENV
+        echo "LIBCRYPTO_LIBS=${DEP_PATH}/openssl-${OPENSSL_VERSION}/libcrypto.a" >> $GITHUB_ENV
 
     - name: build
       run: |
         export LDID_VERSION=$(echo "$(git describe --tags --abbrev=0)")
         make -j$(sysctl -n hw.ncpu) \
-          CXXFLAGS="-std=c++11 ${CXXFLAGS} -flto=thin" \
-          VERSION="${LDID_VERSION}" \
-          LIBS="${LIBPLIST_LIB} ${LIBCRYPTO_LIB}"
+          CXXFLAGS="-flto=thin ${CXXFLAGS}" \
+          LDFLAGS="-flto=thin" \
+          VERSION="${LDID_VERSION}"
         strip ldid
 
     - uses: actions/upload-artifact@v1

@@ -1,11 +1,11 @@
-VERSION  ?= 2.1.5
+VERSION  ?= 2.1.5-procursus3
 
 CC       ?= cc
 CXX      ?= c++
 INSTALL  ?= install
 LN       ?= ln
 
-CXXFLAGS ?= -std=c++11 -O2 -pipe
+CXXFLAGS ?= -O2 -pipe
 LDFLAGS  ?=
 
 PREFIX   ?= /usr/local
@@ -14,17 +14,22 @@ BINDIR   ?= $(PREFIX)/bin
 MANDIR   ?= $(PREFIX)/share/man
 
 SRC      := ldid.cpp
-LIBS     ?= -lcrypto -lplist-2.0
+LIBS     ?=
+
+LIBCRYPTO_INCLUDES ?= $(shell pkg-config --cflags libcrypto)
+LIBPLIST_INCLUDES  ?= $(shell pkg-config --cflags libplist-2.0)
+LIBCRYPTO_LIBS     ?= $(shell pkg-config --libs libcrypto)
+LIBPLIST_LIBS      ?= $(shell pkg-config --libs libplist-2.0)
 
 MANPAGE_LANGS := zh_TW zh_CN
 
 all: ldid
 
 %.cpp.o: %.cpp
-	$(CXX) -c $(CXXFLAGS) $(CPPFLAGS) -I. -DLDID_VERSION=\"$(VERSION)\" $< -o $@
+	$(CXX) -c -std=c++11 $(CXXFLAGS) $(LIBCRYPTO_INCLUDES) $(LIBPLIST_INCLUDES) $(CPPFLAGS) -I. -DLDID_VERSION=\"$(VERSION)\" $< -o $@
 
 ldid: $(SRC:%=%.o)
-	$(CXX) $(CXXFLAGS) -o ldid $^ $(LDFLAGS) $(LIBS)
+	$(CXX) -o ldid $^ $(LDFLAGS) $(LIBCRYPTO_LIBS) $(LIBPLIST_LIBS) $(LIBS)
 
 install: all
 	$(INSTALL) -d $(DESTDIR)$(BINDIR)/
