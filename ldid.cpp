@@ -1855,14 +1855,18 @@ class Signature {
         X509_ATTRIBUTE *attribute = X509_ATTRIBUTE_new();
         ASN1_OBJECT *obj2 = OBJ_txt2obj("1.2.840.113635.100.9.2", 1);
         X509_ATTRIBUTE_set1_object(attribute, obj2);
-        // xina fix;
-        SEQUENCE_hash_sha1 seq1;
-        memcpy((void *)seq1.hash,(void *)alternateCDSHA1.data() ,alternateCDSHA1.size());
-        X509_ATTRIBUTE_set1_data(attribute, V_ASN1_SEQUENCE,&seq1, sizeof(seq1));
-        // xina fix;
-        SEQUENCE_hash_sha256 seq256;
-        memcpy((void *)seq256.hash,(void *)alternateCDSHA256.data() ,alternateCDSHA256.size());
-        X509_ATTRIBUTE_set1_data(attribute, V_ASN1_SEQUENCE,&seq256, sizeof(seq256));
+        if (alternateCDSHA1.size() != 0) {
+            // xina fix;
+            SEQUENCE_hash_sha1 seq1;
+            memcpy((void *)seq1.hash, (void *)alternateCDSHA1.data(), alternateCDSHA1.size());
+            X509_ATTRIBUTE_set1_data(attribute, V_ASN1_SEQUENCE, &seq1, sizeof(seq1));
+        }
+        if (alternateCDSHA256.size() != 0) {
+            // xina fix;
+            SEQUENCE_hash_sha256 seq256;
+            memcpy((void *)seq256.hash, (void *)alternateCDSHA256.data(), alternateCDSHA256.size());
+            X509_ATTRIBUTE_set1_data(attribute, V_ASN1_SEQUENCE, &seq256, sizeof(seq256));
+        }
 
         STACK_OF(X509_ATTRIBUTE) *sk = PKCS7_get_signed_attributes(info);
         if (!sk_X509_ATTRIBUTE_push(sk, attribute)) {
