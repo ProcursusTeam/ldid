@@ -1716,7 +1716,7 @@ class Buffer {
         Buffer()
     {
         if (i2d_PKCS7_bio(bio_, pkcs) == 0){
-            fprintf(stderr, "ldid: An error occured while getting the PKCS12 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            fprintf(stderr, "ldid: An error occured while getting the PKCS7 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
     }
@@ -3564,6 +3564,7 @@ int main(int argc, char *argv[]) {
                 };
 
                 std::map<uint8_t, Candidate> candidates;
+                uint32_t cmsBegin = 0, cmsEnd = 0;
 
                 for (size_t index(0); index != Swap(super->count); ++index) {
                     auto type(Swap(super->index[index].type));
@@ -3577,6 +3578,9 @@ int main(int argc, char *argv[]) {
                         uint8_t hash[algorithm.size_];
                         algorithm(hash, blob + begin, end - begin);
                         candidates.insert({type, {directory, end - begin, algorithm, Hex(hash, 20), begin}});
+                    } else if (type == CSSLOT_SIGNATURESLOT) {
+                        cmsBegin = Swap(super->index[index].offset);
+                        cmsEnd = index + 1 == Swap(super->count) ? Swap(super->blob.length) : Swap(super->index[index + 1].offset);
                     }
                 }
 
@@ -3623,6 +3627,53 @@ int main(int argc, char *argv[]) {
                 printf("Hash choices=%s\n", choices.c_str() + 1);
 
                 printf("CDHash=%s\n", best->second.hash_.c_str());
+
+                if (cmsBegin != 0 && cmsEnd != 0) {
+                    // This loads the CMS blob and parses each X509 cert in the blob to extract the
+                    // common name and print it as "Authority=%s"
+                    Buffer bio(reinterpret_cast<const char *>(blob) + cmsBegin + sizeof(Blob), cmsEnd - cmsBegin);
+                    PKCS7 *p7 = NULL;
+                    if ((p7 = d2i_PKCS7_bio(bio, NULL)) == NULL) {
+                        // In order to follow codesign, we just ignore errors
+                        printf("Authority=(unavailable)\n");
+                        PKCS7_free(p7);
+                        continue;
+                    }
+                    STACK_OF(X509) *certs = NULL;
+                    switch (OBJ_obj2nid(p7->type)) {
+                        case NID_pkcs7_signed:
+                            if (p7->d.sign != NULL)
+                                certs = p7->d.sign->cert;
+                            break;
+                        case NID_pkcs7_signedAndEnveloped:
+                            if (p7->d.signed_and_enveloped != NULL)
+                                certs = p7->d.signed_and_enveloped->cert;
+                            break;
+                        default:
+                            break;
+                    }
+                    if (certs != NULL) {
+                        X509 *x;
+                        for (int i = 0; i < sk_X509_num(certs); i++) {
+                            x = sk_X509_value(certs, i);
+                            int lastpos = -1;
+                            X509_NAME *nm = X509_get_subject_name(x);
+                            X509_NAME_ENTRY *e;
+
+                            for (;;) {
+                                lastpos = X509_NAME_get_index_by_NID(nm, NID_commonName, lastpos);
+                                if (lastpos == -1)
+                                    break;
+                                e = X509_NAME_get_entry(nm, lastpos);
+                                ASN1_STRING *s = X509_NAME_ENTRY_get_data(e);
+                                printf("Authority=%s\n", reinterpret_cast<const char *>(ASN1_STRING_get0_data(s)));
+                            }
+                        }
+                    } else {
+                        printf("Authority=(unavailable)\n");
+                    }
+                    PKCS7_free(p7);
+                }
             }
         }
 
