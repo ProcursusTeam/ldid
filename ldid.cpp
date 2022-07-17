@@ -3636,44 +3636,48 @@ int main(int argc, char *argv[]) {
                     if ((p7 = d2i_PKCS7_bio(bio, NULL)) == NULL) {
                         // In order to follow codesign, we just ignore errors
                         printf("Authority=(unavailable)\n");
-                        PKCS7_free(p7);
-                        continue;
-                    }
-                    STACK_OF(X509) *certs = NULL;
-                    switch (OBJ_obj2nid(p7->type)) {
-                        case NID_pkcs7_signed:
-                            if (p7->d.sign != NULL)
-                                certs = p7->d.sign->cert;
-                            break;
-                        case NID_pkcs7_signedAndEnveloped:
-                            if (p7->d.signed_and_enveloped != NULL)
-                                certs = p7->d.signed_and_enveloped->cert;
-                            break;
-                        default:
-                            break;
-                    }
-                    if (certs != NULL) {
-                        X509 *x;
-                        for (int i = 0; i < sk_X509_num(certs); i++) {
-                            x = sk_X509_value(certs, i);
-                            int lastpos = -1;
-                            X509_NAME *nm = X509_get_subject_name(x);
-                            X509_NAME_ENTRY *e;
-
-                            for (;;) {
-                                lastpos = X509_NAME_get_index_by_NID(nm, NID_commonName, lastpos);
-                                if (lastpos == -1)
-                                    break;
-                                e = X509_NAME_get_entry(nm, lastpos);
-                                ASN1_STRING *s = X509_NAME_ENTRY_get_data(e);
-                                printf("Authority=%s\n", reinterpret_cast<const char *>(ASN1_STRING_get0_data(s)));
-                            }
-                        }
                     } else {
-                        printf("Authority=(unavailable)\n");
+                        STACK_OF(X509) *certs = NULL;
+                        switch (OBJ_obj2nid(p7->type)) {
+                            case NID_pkcs7_signed:
+                                if (p7->d.sign != NULL)
+                                    certs = p7->d.sign->cert;
+                                break;
+                            case NID_pkcs7_signedAndEnveloped:
+                                if (p7->d.signed_and_enveloped != NULL)
+                                    certs = p7->d.signed_and_enveloped->cert;
+                                break;
+                            default:
+                                break;
+                        }
+                        if (certs != NULL) {
+                            X509 *x;
+                            for (int i = 0; i < sk_X509_num(certs); i++) {
+                                x = sk_X509_value(certs, i);
+                                int lastpos = -1;
+                                X509_NAME *nm = X509_get_subject_name(x);
+                                X509_NAME_ENTRY *e;
+
+                                for (;;) {
+                                    lastpos = X509_NAME_get_index_by_NID(nm, NID_commonName, lastpos);
+                                    if (lastpos == -1)
+                                        break;
+                                    e = X509_NAME_get_entry(nm, lastpos);
+                                    ASN1_STRING *s = X509_NAME_ENTRY_get_data(e);
+                                    printf("Authority=%s\n", reinterpret_cast<const char *>(ASN1_STRING_get0_data(s)));
+                                }
+                            }
+                        } else {
+                            printf("Authority=(unavailable)\n");
+                        }
                     }
                     PKCS7_free(p7);
                 }
+
+                if (Swap(directory->teamIDOffset) > 0)
+                    printf("TeamIdentifier=%s\n", blob + best->second.offset + Swap(directory->teamIDOffset));
+                else
+                    printf("TeamIdentifier=not set\n");
             }
         }
 
