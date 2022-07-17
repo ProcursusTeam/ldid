@@ -3577,7 +3577,7 @@ int main(int argc, char *argv[]) {
                         auto &algorithm(*algorithms[type - 1]);
                         uint8_t hash[algorithm.size_];
                         algorithm(hash, blob + begin, end - begin);
-                        candidates.insert({type, {directory, end - begin, algorithm, Hex(hash, 20), begin}});
+                        candidates.insert({type, {directory, end - begin, algorithm, Hex(hash, algorithm.size_), begin}});
                     } else if (type == CSSLOT_SIGNATURESLOT) {
                         cmsBegin = Swap(super->index[index].offset);
                         cmsEnd = index + 1 == Swap(super->count) ? Swap(super->blob.length) : Swap(super->index[index + 1].offset);
@@ -3622,7 +3622,8 @@ int main(int argc, char *argv[]) {
                     auto choice(candidate.second.algorithm_.name());
                     choices += ',';
                     choices += choice;
-                    printf("CandidateCDHash %s=%s\n", choice, candidate.second.hash_.c_str());
+                    printf("CandidateCDHash %s=%.40s\n", choice, candidate.second.hash_.c_str());
+                    printf("CandidateCDHashFull %s=%s\n", choice, candidate.second.hash_.c_str());
                 }
                 printf("Hash choices=%s\n", choices.c_str() + 1);
 
