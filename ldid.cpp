@@ -3627,7 +3627,7 @@ int main(int argc, char *argv[]) {
                 }
                 printf("Hash choices=%s\n", choices.c_str() + 1);
 
-                printf("CDHash=%s\n", best->second.hash_.c_str());
+                printf("CDHash=%.40s\n", best->second.hash_.c_str());
 
                 if (cmsBegin != 0 && cmsEnd != 0) {
                     // This loads the CMS blob and parses each X509 cert in the blob to extract the
