@@ -2093,7 +2093,7 @@ static void req(std::streambuf &buffer, uint8_t (&&data)[Size_]) {
     put(buffer, zeros, 3 - (Size_ + 3) % 4);
 }
 
-Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, bool merge, const std::string &requirements, const std::string &key, const Slots &slots, uint32_t flags, bool platform, const Progress &progress) {
+Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, bool merge, const std::string &requirements, const std::string &key, const Slots &slots, uint32_t flags, uint8_t platform, const Progress &progress) {
     Hash hash;
 
 
@@ -2327,7 +2327,7 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
             directory.nCodeSlots = Swap(normal);
             directory.hashSize = algorithm.size_;
             directory.hashType = algorithm.type_;
-            directory.platform = platform ? 0x01 : 0x00;
+            directory.platform = platform;
             directory.pageSize = PageShift_;
             directory.spare2 = Swap(uint32_t(0));
             directory.scatterOffset = Swap(uint32_t(0));
@@ -2797,7 +2797,7 @@ struct RuleCode {
     }
 };
 
-static Hash Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, Hash &hash, std::streambuf &save, const std::string &identifier, const std::string &entitlements, bool merge, const std::string &requirements, const std::string &key, const Slots &slots, size_t length, uint32_t flags, bool platform, const Progress &progress) {
+static Hash Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, Hash &hash, std::streambuf &save, const std::string &identifier, const std::string &entitlements, bool merge, const std::string &requirements, const std::string &key, const Slots &slots, size_t length, uint32_t flags, uint8_t platform, const Progress &progress) {
     // XXX: this is a miserable fail
     std::stringbuf temp;
     put(temp, prefix, size);
@@ -3198,7 +3198,7 @@ int main(int argc, char *argv[]) {
     bool flag_M(false);
 
     uint32_t flags(0);
-    bool platform(false);
+    uint8_t platform(0);
 
     uint32_t flag_CPUType(_not(uint32_t));
     uint32_t flag_CPUSubtype(_not(uint32_t));
@@ -3361,7 +3361,13 @@ int main(int argc, char *argv[]) {
             } break;
 
             case 'P':
-                platform = true;
+                if (argv[argi][2] != '\0') {
+                    char *platformchar = argv[argi] + 2;
+                    char *arge;
+                    platform = strtoul(platformchar, &arge, 0);
+                } else {
+                    platform = 13;
+                }
             break;
 
             case 's':
