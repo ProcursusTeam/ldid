@@ -2822,7 +2822,7 @@ struct State {
     }
 };
 
-Bundle Sign(const std::string &root, Folder &parent, const std::string &key, State &local, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, const Progress &progress) {
+Bundle Sign(const std::string &root, Folder &parent, const std::string &key, State &local, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, bool merge, const Progress &progress) {
     std::string executable;
     std::string identifier;
 
@@ -2930,7 +2930,7 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
         State remote;
         bundles[nested[1]] = Sign(root + bundle, subfolder, key, remote, "", Starts(name, "PlugIns/") ? alter :
             static_cast<const Functor<std::string (const std::string &, const std::string &)> &>(fun([&](const std::string &, const std::string &) -> std::string { return entitlements; }))
-        , progress);
+        , merge, progress);
         local.Merge(bundle, remote);
     }), fun([&](const std::string &name, const Functor<std::string ()> &read) {
     }));
@@ -3114,16 +3114,16 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
             Slots slots;
             slots[1] = local.files.at(info);
             slots[3] = local.files.at(signature);
-            bundle.hash = Sign(NULL, 0, buffer, local.files[executable], save, identifier, entitlements, false, requirements, key, slots, length, 0, false, Progression(progress, root + executable));
+            bundle.hash = Sign(NULL, 0, buffer, local.files[executable], save, identifier, entitlements, merge, requirements, key, slots, length, 0, false, Progression(progress, root + executable));
         }));
     }));
 
     return bundle;
 }
 
-Bundle Sign(const std::string &root, Folder &folder, const std::string &key, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, const Progress &progress) {
+Bundle Sign(const std::string &root, Folder &folder, const std::string &key, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, bool merge, const Progress &progress) {
     State local;
-    return Sign(root, folder, key, local, requirements, alter, progress);
+    return Sign(root, folder, key, local, requirements, alter, merge, progress);
 }
 
 #endif
@@ -3434,13 +3434,13 @@ int main(int argc, char *argv[]) {
         }
 
         if (S_ISDIR(info.st_mode)) {
-            if (!flag_S) {
-                fprintf(stderr, "ldid: Only -S can be used on directories\n");
+            if (!flag_S && !flag_s) {
+                fprintf(stderr, "ldid: Only -S and -s can be used on directories\n");
                 exit(1);
             }
             ldid::DiskFolder folder(path + "/");
-            path += "/" + Sign("", folder, key, requirements, ldid::fun([&](const std::string &, const std::string &) -> std::string { return entitlements; }), dummy_).path;
-        } else if (flag_S || flag_r) {
+            path += "/" + Sign("", folder, key, requirements, ldid::fun([&](const std::string &, const std::string &) -> std::string { return entitlements; }), flag_M, dummy_).path;
+        } else if (flag_S || flag_r || flag_s) {
             Map input(path, O_RDONLY, PROT_READ, MAP_PRIVATE);
 
             std::filebuf output;
