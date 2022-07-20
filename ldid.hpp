@@ -157,7 +157,7 @@ struct Bundle {
     Hash hash;
 };
 
-Bundle Sign(const std::string &root, Folder &folder, const std::string &key, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, bool merge, const Progress &progress);
+Bundle Sign(const std::string &root, Folder &folder, const std::string &key, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, bool merge, uint8_t platform, const Progress &progress);
 
 typedef std::map<uint32_t, Hash> Slots;
 
