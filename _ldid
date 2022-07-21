@@ -12,6 +12,6 @@ _arguments \
 	'-H-[Hash type]:hash:(sha1 sha256)' \
 	'-I-[Set identifier]:identifier' \
 	'-K-[Signing private key]:key:_files' \
-	'-P[Set as platform]' \
+	'-P-[Set as platform]:number' \
 	'-U-[Password for -K]' \
 	'*: :_files'

@@ -22,7 +22,7 @@
 .Op Fl I Ns Ar name
 .Op Fl K Ns Ar key.p12 Op Fl U Ns Ar password
 .Op Fl M
-.Op Fl P
+.Op Fl P Ns Op Ar num
 .Op Fl Q Ns Ar requirements
 .Op Fl q
 .Op Fl r | Fl S Ns Ar file.xml | Fl s
@@ -106,8 +106,12 @@ When used with
 merge the new and existing entitlements instead of replacing the existing
 entitlements, this is useful for adding a few specific entitlements to a
 handful of binaries.
-.It Fl P
+.It Fl P Ns Op Ar num
 Mark the Mach-O as a platform binary.
+If
+.Ar num
+is specified, the platform field in the CodeDirectory will be set to that number.
+The default is 13, as per Apple binaries.
 .It Fl Q Ns Ar requirements.xml
 Embed the requirements found in
 .Ar requirements .
