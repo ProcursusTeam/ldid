@@ -74,7 +74,9 @@ in the special codesign slot at
 .Ar num .
 .It Fl e
 Print the entitlements in each slice, or the slice specified by
-.Fl A ,
+.Fl A
+or
+.Fl arch
 to
 .Ar stdout .
 .It Fl H Ns Op Ar sha1 | Ar sha256
@@ -112,6 +114,9 @@ If
 .Ar num
 is specified, the platform field in the CodeDirectory will be set to that number.
 The default is 13, as per Apple binaries.
+Specifying the platform to set to using
+.Fl P
+is a Procursus extension.
 .It Fl Q Ns Ar requirements.xml
 Embed the requirements found in
 .Ar requirements .
