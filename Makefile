@@ -7,7 +7,6 @@ endif
 CC       ?= cc
 CXX      ?= c++
 INSTALL  ?= install
-LN       ?= ln
 
 CXXFLAGS ?= -O2 -pipe
 LDFLAGS  ?=
@@ -44,7 +43,6 @@ ldid: $(SRC:%=%.o)
 install: all
 	$(INSTALL) -d $(DESTDIR)$(BINDIR)/
 	$(INSTALL) -m755 ldid $(DESTDIR)$(BINDIR)/ldid
-	$(LN) -sf ldid $(DESTDIR)$(BINDIR)/ldid2
 	$(INSTALL) -d $(DESTDIR)$(MANDIR)/man1/
 	$(INSTALL) -m644 docs/ldid.1 $(DESTDIR)$(MANDIR)/man1/ldid.1
 	for lang in $(MANPAGE_LANGS); do \
