@@ -32,9 +32,9 @@
 .Sh DESCRIPTION
 .Nm
 adds SHA1 and SHA256 hashes to a Mach-O file so that they can be run
-on a system that has validation but not signature verification.
+on a system that has validation, but not signature verification.
 .Bl -tag -width -indent
-.It Fl A Ns Ar cputype : Ns Ar subtype
+.It Fl A Ns Op Ar cputype : Ns Ar subtype
 When used with
 .Fl a , Fl D , Fl e , Fl h , Fl q ,
 or
@@ -67,7 +67,7 @@ for details about these options.
 Reset the cryptid.
 .It Fl d
 Print the cryptid in the binaries if it exists.
-.It Fl E Ns Ar num : Ns Ar file
+.It Fl E Ns Op Ar num : Ns Ar file
 Embed the hashes of
 .Ar file
 in the special codesign slot at
@@ -83,16 +83,16 @@ to
 Disable the hash not specified.
 This is useful to replicate the default behavior of
 .Xr codesign 1 ,
-which only provides an sha256 signature.
+which only provides a sha256 signature.
 .It Fl h
 Print information about the signature, such as
 hash types, flags, CDHash, and CodeDirectory version to
 .Ar stdout .
-.It Fl I Ns Ar name
+.It Fl I Ns Op Ar name
 Set the identifier used in the binaries signature to
 .Ar name .
 If not specified, the basename of the binary is used.
-.It Fl K Ns Ar key.p12
+.It Fl K Ns Op Ar key.p12
 Sign using the identity in
 .Ar key.p12 .
 This will give the binary a valid signature so that it can be run
@@ -106,18 +106,19 @@ or you can specify from the command line with
 When used with
 .Fl S ,
 merge the new and existing entitlements instead of replacing the existing
-entitlements, this is useful for adding a few specific entitlements to a
+entitlements.
+This is useful for adding a few specific entitlements to a
 handful of binaries.
 .It Fl P Ns Op Ar num
 Mark the Mach-O as a platform binary.
 If
 .Ar num
 is specified, the platform field in the CodeDirectory will be set to that number.
-The default is 13, as per Apple binaries.
-Specifying the platform to set to using
+The default number is 13, as per Apple binaries.
+Specifying the platform using
 .Fl P
 is a Procursus extension.
-.It Fl Q Ns Ar requirements.xml
+.It Fl Q Ns Op Ar requirements.xml
 Embed the requirements found in
 .Ar requirements .
 .It Fl q
@@ -133,14 +134,14 @@ is specified then the entitlements found in
 will be embedded in the Mach-O.
 .It Fl s
 Resign the Mach-O binaries while keeping the existing entitlements.
-.It Fl U Ns Ar password
+.It Fl U Ns Op Ar password
 Use
 .Ar password
 as the password for the p12 certificate instead of prompting.
 This is a Procursus extension.
 .It Fl u
 If the binary was linked against UIKit, then print the UIKit version that the
-Mach-O binaries were linked against.
+Mach-O binary was linked against.
 .El
 .Sh EXAMPLES
 The command:
@@ -186,7 +187,7 @@ to
 The
 .Nm
 utility was written by
-.An Jay \*qSaurik\*q Freeman .
+.An Jay (\*qSaurik\*q) Freeman .
 iPhoneOS 1.2.0 and 2.0 support was added on April 6, 2008.
 .Fl S
 was added on June 13, 2008.
