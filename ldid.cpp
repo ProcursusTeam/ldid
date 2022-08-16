@@ -1245,8 +1245,13 @@ class File {
     }
 
     ~File() {
+        close();
+    }
+
+    void close() {
         if (file_ != -1)
-            _syscall(close(file_));
+            _syscall(::close(file_));
+        file_ = -1;
     }
 
     void open(const char *path, int flags) {
@@ -1305,7 +1310,11 @@ class Map {
         _syscall(fstat(file, &stat));
         size_ = stat.st_size;
 
-        data_ = _syscall(mmap(NULL, size_, pflag, mflag, file, 0));
+        data_ = mmap(NULL, size_, pflag, mflag, file, 0);
+        if (data_ == MAP_FAILED) {
+            fprintf(stderr, "ldid: mmap: %s\n", strerror(errno));
+            exit(1);
+        }
     }
 
     void open(const std::string &path, bool edit) {
@@ -1321,6 +1330,7 @@ class Map {
         _syscall(munmap(data_, size_));
         data_ = NULL;
         size_ = 0;
+        file_.close();
     }
 
     void *data() const {
@@ -2012,7 +2022,7 @@ class Split {
 static void mkdir_p(const std::string &path) {
     if (path.empty())
         return;
-#ifdef __WIN32__
+#if defined (__WIN32__) || defined (_MSC_VER) || defined (__MINGW32__)
     if (_syscall(mkdir(path.c_str()), EEXIST) == -EEXIST)
         return;
 #else
@@ -2036,10 +2046,14 @@ static std::string Temporary(std::filebuf &file, const Split &split) {
 static void Commit(const std::string &path, const std::string &temp) {
     struct stat info;
     if (_syscall(stat(path.c_str(), &info), ENOENT) == 0) {
-#ifndef __WIN32__
+#if !defined (__WIN32__) && !defined (_MSC_VER) && !defined (__MINGW32__)
         _syscall(chown(temp.c_str(), info.st_uid, info.st_gid));
 #endif
         _syscall(chmod(temp.c_str(), info.st_mode));
+
+#if defined (__WIN32__) || defined (_MSC_VER) || defined (__MINGW32__)
+        _syscall(remove(path.c_str()));
+#endif
     }
 
     _syscall(rename(temp.c_str(), path.c_str()));
@@ -2470,7 +2484,7 @@ DiskFolder::~DiskFolder() {
             Commit(commit.first, commit.second);
 }
 
-#ifndef __WIN32__
+#if !defined (__WIN32__) && !defined (_MSC_VER) && !defined (__MINGW32__)
 std::string readlink(const std::string &path) {
     for (size_t size(1024); ; size *= 2) {
         std::string data;
@@ -2502,7 +2516,7 @@ void DiskFolder::Find(const std::string &root, const std::string &base, const Fu
 
         bool directory;
 
-#ifdef __WIN32__
+#if defined (__WIN32__) || defined (_MSC_VER) || defined (__MINGW32__)
         struct stat info;
         _syscall(stat((path + name).c_str(), &info));
         if (S_ISDIR(info.st_mode))
@@ -3460,6 +3474,9 @@ int main(int argc, char *argv[]) {
                 ldid::Sign(input.data(), input.size(), output, identifier, entitlements, flag_M, requirements, key, slots, flags, platform, dummy_);
             }
 
+            input.clear();
+            output.close();
+
             Commit(path, temp);
         }
 
@@ -3549,7 +3566,14 @@ int main(int argc, char *argv[]) {
             }
 
             if (flag_h) {
-                char *buf = _syscall(realpath(file.c_str(), NULL));
+                #if defined (__WIN32__) || defined (_MSC_VER) || defined (__MINGW32__)
+                    #define realpath(N,R) _fullpath((R),(N),PATH_MAX)
+                #endif
+                char *buf = realpath(file.c_str(), NULL);
+                if (buf == NULL) {
+                    fprintf(stderr, "ldid: realpath: %s\n", strerror(errno));
+                    exit(1);
+                }
                 printf("Executable=%s\n", buf);
                 free(buf);
 
