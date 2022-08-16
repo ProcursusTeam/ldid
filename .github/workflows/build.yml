@@ -20,7 +20,7 @@ on:
 env:
   LIBPLIST_VERSION: 2.2.0
   OPENSSL_VERSION: 3.0.5
-  SCCACHE_VERSION: 0.2.15
+  SCCACHE_VERSION: 0.3.0
 
 jobs:
   build-linux:
