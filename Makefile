@@ -35,7 +35,7 @@ MANPAGE_LANGS := zh_TW zh_CN
 
 EXT ?=
 
-all: ldid
+all: ldid$(EXT)
 
 %.cpp.o: %.cpp
 	$(CXX) -c -std=c++11 $(CXXFLAGS) $(LIBCRYPTO_INCLUDES) $(LIBPLIST_INCLUDES) $(CPPFLAGS) -I. -DLDID_VERSION=\"$(VERSION)\" $< -o $@
