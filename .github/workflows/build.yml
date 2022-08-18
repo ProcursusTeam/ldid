@@ -134,8 +134,8 @@ jobs:
         cd ${DEP_PATH}/mman-win32-master
         ./configure --prefix=/ --disable-shared --enable-static --cross-prefix="${TRIPLE}-"
         make -j$(nproc)
-        mkdir -p include/sys/
-        ln -s ../../mman.h include/sys/
+        mkdir -p include/sys/ || true
+        ln -s ../../mman.h include/sys/ || true
 
         echo "CXXFLAGS=${CXXFLAGS} -I${DEP_PATH}/mman-win32-master/include" >> $GITHUB_ENV
         echo "LIBS=${LIBS} ${DEP_PATH}/mman-win32-master/libmman.a" >> $GITHUB_ENV
