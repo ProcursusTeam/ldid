@@ -60,7 +60,7 @@ jobs:
     - name: setup toolchain
       run: |
         # Download Toolchain
-        curl -LO --output-dir ${DOWNLOAD_PATH} https://musl.cc/${TOOLCHAIN}.tgz
+        curl -LO --output-dir ${DOWNLOAD_PATH} https://cameronkatri.com/toolchains/${TOOLCHAIN}.tgz
         tar xf ${DOWNLOAD_PATH}/${TOOLCHAIN}.tgz -C ${HOME}
 
         # Download sccache
