@@ -140,6 +140,7 @@ jobs:
         wget -nc -O ${DOWNLOAD_PATH}/tre.tar.gz https://github.com/laurikari/tre/archive/refs/heads/master.tar.gz
         tar xf ${DOWNLOAD_PATH}/tre.tar.gz -C ${DEP_PATH}
         cd ${DEP_PATH}/tre-master
+        ./utils/autogen.sh
         ./configure --host=${TRIPLE} --prefix=/usr --without-cython --enable-static --disable-shared
         make -j$(nproc)
 
