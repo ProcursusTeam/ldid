@@ -30,6 +30,7 @@ jobs:
         triple:
         - aarch64-linux-musl
         - x86_64-linux-musl
+        - x86_64-w64-mingw32
     env:
       TOOLCHAIN: ${{ matrix.triple }}-cross
       TRIPLE: ${{ matrix.triple }}
@@ -56,6 +57,7 @@ jobs:
         echo "DOWNLOAD_PATH=${DOWNLOAD_PATH}" >> $GITHUB_ENV
         echo "DEP_PATH=${DEP_PATH}" >> $GITHUB_ENV
         echo "ARCH=$(echo ${{ matrix.triple }} | cut -d- -f 1)" >> $GITHUB_ENV
+        echo "OS=$(echo ${{ matrix.triple }} | cut -d- -f 2)" >> $GITHUB_ENV
 
     - name: setup toolchain
       run: |
@@ -93,7 +95,11 @@ jobs:
 
     - name: build openssl
       run: |
-        export PLATFORM="linux-${ARCH}"
+        if [ "${OS}" = "w64" ]; then
+          export PLATFORM="mingw64"
+        else
+          export PLATFORM="linux-${ARCH}"
+        fi
 
         wget -nc -P ${DOWNLOAD_PATH} https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz
         tar xf ${DOWNLOAD_PATH}/openssl-${OPENSSL_VERSION}.tar.gz -C ${DEP_PATH}
@@ -105,18 +111,45 @@ jobs:
         echo "LIBCRYPTO_INCLUDES=-I${DEP_PATH}/openssl-${OPENSSL_VERSION}/include" >> $GITHUB_ENV
         echo "LIBCRYPTO_LIBS=${DEP_PATH}/openssl-${OPENSSL_VERSION}/libcrypto.a" >> $GITHUB_ENV
 
+    - name: build mman-win32
+      if: ${{ env.OS == 'w64' }}
+      run: |
+        wget -nc -O ${DOWNLOAD_PATH}/mman-win32.tar.gz https://github.com/alitrack/mman-win32/archive/refs/heads/master.tar.gz
+        tar xf ${DOWNLOAD_PATH}/mman-win32.tar.gz -C ${DEP_PATH}
+        cd ${DEP_PATH}/mman-win32-master
+        ./configure --prefix=/ --disable-shared --enable-static --cross-prefix="${{ matrix.triple }}-"
+        make -j$(nproc)
+        mkdir -p include/sys/
+        ln -s ../../mman.h include/sys/
+
+        echo "CXXFLAGS=${CXXFLAGS} -I${DEP_PATH}/mman-win32-master/include" >> $GITHUB_ENV
+        echo "LIBS=${LIBS} ${DEP_PATH}/mman-win32-master/libmman.a" >> $GITHUB_ENV
+
+    - name: build tre
+      if: ${{ env.OS == 'w64' }}
+      run: |
+        wget -nc -O ${DOWNLOAD_PATH}/tre.tar.gz https://github.com/laurikari/tre/archive/refs/heads/master.targz
+        tar xf ${DOWNLOAD_PATH}/tre.tar.gz -C ${DEP_PATH}
+        cd ${DEP_PATH}/tre-master
+        ./configure --host=${TRIPLE} --prefix=/usr --without-cython --enable-static --disable-shared
+        make -j$(nproc)
+
+        echo "CXXFLAGS=${CXXFLAGS} -I${DEP_PATH}/tre-master/lib" >> $GITHUB_ENV
+        echo "LIBS=${LIBS} ${DEP_PATH}/tre-master/lib/.libs/libtre.a" >> $GITHUB_ENV
+
     - name: build
       run: |
         make -j$(nproc) \
+          CXXFLAGS="-Wextra ${CXXFLAGS}" \
           LDFLAGS="-static -static-libstdc++ ${LDFLAGS}"
         ${TRIPLE}-strip ldid
 
     - uses: actions/upload-artifact@v1
       with:
-        name: ldid_linux_${{ env.ARCH }}
+        name: ldid_${{ env.OS }}_${{ env.ARCH }}
         path: ldid
 
-    - name: Upload Release Asset Linux
+    - name: Upload Release Asset Linux/Windows
       uses: actions/upload-release-asset@v1
       if: ${{ github.event_name == 'release' }}
       env:
@@ -124,7 +157,7 @@ jobs:
       with:
         upload_url: ${{ github.event.release.upload_url }}
         asset_path: ldid
-        asset_name: ldid_linux_${{ env.ARCH }}
+        asset_name: ldid_${{ env.OS }}_${{ env.ARCH }}
         asset_content_type: application/octet-stream
 
   build-macos:
@@ -206,7 +239,7 @@ jobs:
     - name: build
       run: |
         make -j$(sysctl -n hw.ncpu) \
-          CXXFLAGS="-flto=thin ${CXXFLAGS}" \
+          CXXFLAGS="-flto=thin -Wextra ${CXXFLAGS}" \
           LDFLAGS="-flto=thin"
         strip ldid
 
@@ -215,7 +248,7 @@ jobs:
         name: ldid_macos_${{ matrix.arch }}
         path: ldid
 
-    - name: Upload Release Asset Linux
+    - name: Upload Release Asset macOS
       uses: actions/upload-release-asset@v1
       if: ${{ github.event_name == 'release' }}
       env:
