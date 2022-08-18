@@ -24,7 +24,7 @@ env:
 
 jobs:
   build-linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         triple:
@@ -98,7 +98,8 @@ jobs:
         curl -LO --output-dir ${DOWNLOAD_PATH} https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz
         tar xf ${DOWNLOAD_PATH}/openssl-${OPENSSL_VERSION}.tar.gz -C ${DEP_PATH}
         cd ${DEP_PATH}/openssl-${OPENSSL_VERSION}
-        ./config --prefix=/usr --static -static no-module ${PLATFORM}
+        ./config -static enable-fips enable-capieng no-module enable-ktls no-zlib \
+               no-async no-comp no-idea no-mdc2 no-rc5 no-ec2m no-sm2 no-sm4 no-ssl3 no-seed no-weak-ssl-ciphers ${PLATFORM}
         make -j$(nproc) build_generated libcrypto.a
 
         echo "LIBCRYPTO_INCLUDES=-I${DEP_PATH}/openssl-${OPENSSL_VERSION}/include" >> $GITHUB_ENV
@@ -195,7 +196,8 @@ jobs:
         curl -LO --output-dir ${DOWNLOAD_PATH} https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz
         tar xf ${DOWNLOAD_PATH}/openssl-${OPENSSL_VERSION}.tar.gz -C ${DEP_PATH}
         cd ${DEP_PATH}/openssl-${OPENSSL_VERSION}
-        ./config --prefix=/usr no-shared no-module darwin64-${ARCH}-cc
+        ./config -static enable-fips enable-capieng no-module enable-ktls no-zlib \
+               no-async no-comp no-idea no-mdc2 no-rc5 no-ec2m no-sm2 no-sm4 no-ssl3 no-seed no-weak-ssl-ciphers darwin64-${ARCH}-cc
         make -j$(sysctl -n hw.ncpu) build_generated libcrypto.a
 
         echo "LIBCRYPTO_INCLUDES=${CXXFLAGS} -I${DEP_PATH}/openssl-${OPENSSL_VERSION}/include" >> $GITHUB_ENV
