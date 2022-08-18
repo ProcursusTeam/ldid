@@ -164,7 +164,7 @@ jobs:
 
     - uses: actions/upload-artifact@v1
       with:
-        name: ldid_${{ env.OS }}_${{ env.ARCH }}${{ env.EXT }}
+        name: ldid_${{ env.OS }}_${{ env.ARCH }}
         path: ldid${{ env.EXT }}
 
     - name: Upload Release Asset Linux/Windows
