@@ -137,6 +137,7 @@ jobs:
     - name: build tre
       if: ${{ env.OS == 'w64' }}
       run: |
+        sudo apt-get install -y autopoint
         wget -nc -O ${DOWNLOAD_PATH}/tre.tar.gz https://github.com/laurikari/tre/archive/refs/heads/master.tar.gz
         tar xf ${DOWNLOAD_PATH}/tre.tar.gz -C ${DEP_PATH}
         cd ${DEP_PATH}/tre-master
