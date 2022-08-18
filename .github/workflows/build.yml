@@ -153,6 +153,11 @@ jobs:
         make -j$(nproc) \
           CXXFLAGS="-Wextra ${CXXFLAGS}" \
           LDFLAGS="-static -static-libstdc++ ${LDFLAGS}" \
+          LIBCRYPTO_INCLUDES="${LIBCRYPTO_INCLUDES}" \
+          LIBCRYPTO_LIBS="${LIBCRYPTO_LIBS}" \
+          LIBPLIST_INCLUDES="${LIBPLIST_LIBS}" \
+          LIBPLIST_LIBS="${LIBPLIST_LIBS}" \
+          LIBS="${LIBS}" \
           EXT="${EXT}"
         ${TRIPLE}-strip ldid${EXT}
 
@@ -245,7 +250,7 @@ jobs:
                no-async no-comp no-idea no-mdc2 no-rc5 no-ec2m no-sm2 no-sm4 no-ssl3 no-seed no-weak-ssl-ciphers darwin64-${ARCH}-cc
         make -j$(sysctl -n hw.ncpu) build_generated libcrypto.a
 
-        echo "LIBCRYPTO_INCLUDES=${CXXFLAGS} -I${DEP_PATH}/openssl-${OPENSSL_VERSION}/include" >> $GITHUB_ENV
+        echo "LIBCRYPTO_INCLUDES=-I${DEP_PATH}/openssl-${OPENSSL_VERSION}/include" >> $GITHUB_ENV
         echo "LIBCRYPTO_LIBS=${DEP_PATH}/openssl-${OPENSSL_VERSION}/libcrypto.a" >> $GITHUB_ENV
 
     - name: build
