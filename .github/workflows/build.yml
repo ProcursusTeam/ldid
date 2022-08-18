@@ -114,7 +114,11 @@ jobs:
         make -j$(nproc) build_generated libcrypto.a
 
         echo "LIBCRYPTO_INCLUDES=-I${DEP_PATH}/openssl-${OPENSSL_VERSION}/include" >> $GITHUB_ENV
-        echo "LIBCRYPTO_LIBS=${DEP_PATH}/openssl-${OPENSSL_VERSION}/libcrypto.a" >> $GITHUB_ENV
+        if [ "${OS}" = "w64" ]; then
+          echo "LIBCRYPTO_LIBS=${DEP_PATH}/openssl-${OPENSSL_VERSION}/libcrypto.a -lws2_32 -lgdi32 -ladvapi32 -lcrypt32 -luser32" >> $GITHUB_ENV
+        else
+          echo "LIBCRYPTO_LIBS=${DEP_PATH}/openssl-${OPENSSL_VERSION}/libcrypto.a" >> $GITHUB_ENV
+        fi
 
     - name: build mman-win32
       if: ${{ env.OS == 'w64' }}
