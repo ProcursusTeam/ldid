@@ -58,6 +58,11 @@ jobs:
         echo "DEP_PATH=${DEP_PATH}" >> $GITHUB_ENV
         echo "ARCH=$(echo ${{ matrix.triple }} | cut -d- -f 1)" >> $GITHUB_ENV
         echo "OS=$(echo ${{ matrix.triple }} | cut -d- -f 2)" >> $GITHUB_ENV
+        if [ "$(echo ${{ matrix.triple }} | cut -d- -f 2)" = "w64" ]; then
+          echo "EXT=.exe" >> $GITHUB_ENV
+        else
+          echo "EXT=" >> $GITHUB_ENV
+        fi
 
     - name: setup toolchain
       run: |
@@ -117,7 +122,7 @@ jobs:
         wget -nc -O ${DOWNLOAD_PATH}/mman-win32.tar.gz https://github.com/alitrack/mman-win32/archive/refs/heads/master.tar.gz
         tar xf ${DOWNLOAD_PATH}/mman-win32.tar.gz -C ${DEP_PATH}
         cd ${DEP_PATH}/mman-win32-master
-        ./configure --prefix=/ --disable-shared --enable-static --cross-prefix="${{ matrix.triple }}-"
+        ./configure --prefix=/ --disable-shared --enable-static --cross-prefix="${TRIPLE}-"
         make -j$(nproc)
         mkdir -p include/sys/
         ln -s ../../mman.h include/sys/
@@ -128,7 +133,7 @@ jobs:
     - name: build tre
       if: ${{ env.OS == 'w64' }}
       run: |
-        wget -nc -O ${DOWNLOAD_PATH}/tre.tar.gz https://github.com/laurikari/tre/archive/refs/heads/master.targz
+        wget -nc -O ${DOWNLOAD_PATH}/tre.tar.gz https://github.com/laurikari/tre/archive/refs/heads/master.tar.gz
         tar xf ${DOWNLOAD_PATH}/tre.tar.gz -C ${DEP_PATH}
         cd ${DEP_PATH}/tre-master
         ./configure --host=${TRIPLE} --prefix=/usr --without-cython --enable-static --disable-shared
@@ -141,13 +146,14 @@ jobs:
       run: |
         make -j$(nproc) \
           CXXFLAGS="-Wextra ${CXXFLAGS}" \
-          LDFLAGS="-static -static-libstdc++ ${LDFLAGS}"
-        ${TRIPLE}-strip ldid
+          LDFLAGS="-static -static-libstdc++ ${LDFLAGS}" \
+          EXT="${EXT}"
+        ${TRIPLE}-strip ldid${EXT}
 
     - uses: actions/upload-artifact@v1
       with:
-        name: ldid_${{ env.OS }}_${{ env.ARCH }}
-        path: ldid
+        name: ldid_${{ env.OS }}_${{ env.ARCH }}${{ env.EXT }}
+        path: ldid${{ env.EXT }}
 
     - name: Upload Release Asset Linux/Windows
       uses: actions/upload-release-asset@v1
@@ -156,8 +162,8 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ github.event.release.upload_url }}
-        asset_path: ldid
-        asset_name: ldid_${{ env.OS }}_${{ env.ARCH }}
+        asset_path: ldid${{ env.EXT }}
+        asset_name: ldid_${{ env.OS }}_${{ env.ARCH }}${{ env.EXT }}
         asset_content_type: application/octet-stream
 
   build-macos:
