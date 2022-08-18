@@ -129,13 +129,13 @@ jobs:
     - name: build mman-win32
       if: ${{ env.OS == 'w64' }}
       run: |
-        wget -nc -O ${DOWNLOAD_PATH}/mman-win32.tar.gz https://github.com/alitrack/mman-win32/archive/refs/heads/master.tar.gz
-        tar xf ${DOWNLOAD_PATH}/mman-win32.tar.gz -C ${DEP_PATH} || true
+        wget -nc -O ${DOWNLOAD_PATH}/mman-win32.tar.gz https://github.com/alitrack/mman-win32/archive/refs/heads/master.tar.gz || true
+        tar xf ${DOWNLOAD_PATH}/mman-win32.tar.gz -C ${DEP_PATH}
         cd ${DEP_PATH}/mman-win32-master
-        ./configure --prefix=/ --disable-shared --enable-static --cross-prefix="${TRIPLE}-" || true
-        make -j$(nproc) || true
-        mkdir -p include/sys/ || true
-        ln -s ../../mman.h include/sys/ || true
+        ./configure --prefix=/ --disable-shared --enable-static --cross-prefix="${TRIPLE}-"
+        make -j$(nproc)
+        mkdir -p include/sys/
+        ln -s ../../mman.h include/sys/
 
         echo "CXXFLAGS=${CXXFLAGS} -I${DEP_PATH}/mman-win32-master/include" >> $GITHUB_ENV
         echo "LIBS=${LIBS} ${DEP_PATH}/mman-win32-master/libmman.a" >> $GITHUB_ENV
@@ -144,7 +144,7 @@ jobs:
       if: ${{ env.OS == 'w64' }}
       run: |
         sudo apt-get install -y autopoint
-        wget -nc -O ${DOWNLOAD_PATH}/tre.tar.gz https://github.com/laurikari/tre/archive/refs/heads/master.tar.gz
+        wget -nc -O ${DOWNLOAD_PATH}/tre.tar.gz https://github.com/laurikari/tre/archive/refs/heads/master.tar.gz || true
         tar xf ${DOWNLOAD_PATH}/tre.tar.gz -C ${DEP_PATH}
         cd ${DEP_PATH}/tre-master
         ./utils/autogen.sh
