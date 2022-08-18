@@ -46,7 +46,7 @@ jobs:
           ~/dep_src
         key: build-linux-${{ matrix.triple }}-${{ env.GITHUB_SHA }}
         restore-keys: |
-          build-linux-${{ matrix.triple }}
+          build-linux-${{ matrix.triple }}-
 
     - name: setup environment
       run: |
@@ -60,11 +60,11 @@ jobs:
     - name: setup toolchain
       run: |
         # Download Toolchain
-        curl -LO --output-dir ${DOWNLOAD_PATH} https://cameronkatri.com/toolchains/${TOOLCHAIN}.tgz
+        wget -nc -P ${DOWNLOAD_PATH} https://cameronkatri.com/toolchains/${TOOLCHAIN}.tgz
         tar xf ${DOWNLOAD_PATH}/${TOOLCHAIN}.tgz -C ${HOME}
 
         # Download sccache
-        curl -LO --output-dir ${DOWNLOAD_PATH} \
+        wget -nc -P ${DOWNLOAD_PATH} \
           https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz
         tar xf ${DOWNLOAD_PATH}/sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz -C ${HOME}
         mv ${HOME}/sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl/sccache ${HOME}/${TOOLCHAIN}/bin
@@ -82,7 +82,7 @@ jobs:
 
     - name: build libplist
       run: |
-        curl -LO --output-dir ${DOWNLOAD_PATH} https://github.com/libimobiledevice/libplist/releases/download/${LIBPLIST_VERSION}/libplist-${LIBPLIST_VERSION}.tar.bz2
+        wget -nc -P ${DOWNLOAD_PATH} https://github.com/libimobiledevice/libplist/releases/download/${LIBPLIST_VERSION}/libplist-${LIBPLIST_VERSION}.tar.bz2
         tar xf ${DOWNLOAD_PATH}/libplist-${LIBPLIST_VERSION}.tar.bz2 -C ${DEP_PATH}
         cd ${DEP_PATH}/libplist-${LIBPLIST_VERSION}
         ./configure --host=${TRIPLE} --prefix=/usr --without-cython --enable-static --disable-shared
@@ -95,7 +95,7 @@ jobs:
       run: |
         export PLATFORM="linux-${ARCH}"
 
-        curl -LO --output-dir ${DOWNLOAD_PATH} https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz
+        wget -nc -P ${DOWNLOAD_PATH} https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz
         tar xf ${DOWNLOAD_PATH}/openssl-${OPENSSL_VERSION}.tar.gz -C ${DEP_PATH}
         cd ${DEP_PATH}/openssl-${OPENSSL_VERSION}
         ./config -static enable-fips enable-capieng no-module enable-ktls no-zlib \
@@ -169,7 +169,7 @@ jobs:
         brew install libtool autoconf automake
 
         # Download sccache
-        curl -LO --output-dir ${DOWNLOAD_PATH} \
+        wget -nc -P ${DOWNLOAD_PATH} \
           https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/sccache-v${SCCACHE_VERSION}-x86_64-apple-darwin.tar.gz
         tar xf ${DOWNLOAD_PATH}/sccache-v${SCCACHE_VERSION}-x86_64-apple-darwin.tar.gz -C ${HOME}
         chmod +x ${HOME}/sccache-v${SCCACHE_VERSION}-x86_64-apple-darwin/sccache
@@ -182,7 +182,7 @@ jobs:
 
     - name: build libplist
       run: |
-        curl -LO --output-dir ${DOWNLOAD_PATH} https://github.com/libimobiledevice/libplist/releases/download/${LIBPLIST_VERSION}/libplist-${LIBPLIST_VERSION}.tar.bz2
+        wget -nc -P ${DOWNLOAD_PATH} https://github.com/libimobiledevice/libplist/releases/download/${LIBPLIST_VERSION}/libplist-${LIBPLIST_VERSION}.tar.bz2
         tar xf ${DOWNLOAD_PATH}/libplist-${LIBPLIST_VERSION}.tar.bz2 -C ${DEP_PATH}
         cd ${DEP_PATH}/libplist-${LIBPLIST_VERSION}
         ./configure --host=${HOST_ARCH}-apple-darwin --without-cython --enable-static --disable-shared
@@ -193,7 +193,7 @@ jobs:
 
     - name: build openssl
       run: |
-        curl -LO --output-dir ${DOWNLOAD_PATH} https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz
+        wget -nc -P ${DOWNLOAD_PATH} https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz
         tar xf ${DOWNLOAD_PATH}/openssl-${OPENSSL_VERSION}.tar.gz -C ${DEP_PATH}
         cd ${DEP_PATH}/openssl-${OPENSSL_VERSION}
         ./config -static enable-fips enable-capieng no-module enable-ktls no-zlib \
