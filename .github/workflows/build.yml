@@ -184,14 +184,14 @@ jobs:
       matrix:
         include:
           - arch: x86_64
-            sdk: macosx
+            os: macosx
           - arch: arm64
-            sdk: macosx
+            os: macosx
           - arch: arm64
-            sdk: iphoneos
+            os: iphoneos
     env:
       ARCH: ${{ matrix.arch }}
-      SDK: ${{ matrix.sdk }}
+      OS: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v1
       with:
@@ -202,9 +202,9 @@ jobs:
         path: |
           ~/Library/Caches/Mozilla.sccache
           ~/dep_src
-        key: build-${{ matrix.sdk }}-${{ matrix.arch }}-${ { env.GITHUB_SHA } }
+        key: build-${{ matrix.os }}-${{ matrix.arch }}-${ { env.GITHUB_SHA } }
         restore-keys: |
-          build-${{ matrix.sdk }}-${{ matrix.arch }}-
+          build-${{ matrix.os }}-${{ matrix.arch }}-
 
     - name: setup environment
       run: |
@@ -219,6 +219,7 @@ jobs:
         else
           echo "HOST_ARCH=${ARCH}" >> $GITHUB_ENV
         fi
+        echo "SDK=$(xcrun -sdk ${OS} --show-sdk-path)" >> $GITHUB_ENV
 
     - name: setup toolchain
       run: |
@@ -231,9 +232,9 @@ jobs:
         chmod +x ${HOME}/sccache-v${SCCACHE_VERSION}-x86_64-apple-darwin/sccache
 
         echo "${HOME}/sccache-v${SCCACHE_VERSION}-x86_64-apple-darwin" >> $GITHUB_PATH
-        CC="sccache xcrun -sdk ${SDK} clang -arch ${ARCH}"
-        CXX="sccache xcrun -sdk ${SDK} clang++ -arch ${ARCH}"
-        if [ "${SDK}" = "macosx" ]; then
+        CC="sccache clang -arch ${ARCH} -isysroot ${SDK}"
+        CXX="sccache clang++ -arch ${ARCH} -isysroot ${SDK}"
+        if [ "${OS}" = "macosx" ]; then
           echo "CC=${CC} -mmacosx-version-min=10.13" >> $GITHUB_ENV
         else
           echo "CC=${CC} -miphoneos-version-min=10.0" >> $GITHUB_ENV
@@ -273,7 +274,7 @@ jobs:
 
     - uses: actions/upload-artifact@v1
       with:
-        name: ldid_${{ matrix.sdk }}_${{ matrix.arch }}
+        name: ldid_${{ matrix.os }}_${{ matrix.arch }}
         path: ldid
 
     - name: Upload Release Asset macOS
@@ -284,5 +285,5 @@ jobs:
       with:
         upload_url: ${{ github.event.release.upload_url }}
         asset_path: ldid
-        asset_name: ldid_${{ matrix.sdk }}_${{ matrix.arch }}
+        asset_name: ldid_${{ matrix.os }}_${{ matrix.arch }}
         asset_content_type: application/octet-stream
