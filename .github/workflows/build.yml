@@ -236,8 +236,10 @@ jobs:
         CXX="sccache clang++ -arch ${ARCH} -isysroot ${SDK}"
         if [ "${OS}" = "macosx" ]; then
           echo "CC=${CC} -mmacosx-version-min=10.13" >> $GITHUB_ENV
+          echo "CXX=${CXX} -mmacosx-version-min=10.13" >> $GITHUB_ENV
         else
           echo "CC=${CC} -miphoneos-version-min=10.0" >> $GITHUB_ENV
+          echo "CXX=${CXX} -miphoneos-version-min=10.0" >> $GITHUB_ENV
         fi
         echo "CXXFLAGS=-Os" >> $GITHUB_ENV
         echo "CFLAGS=-Os" >> $GITHUB_ENV
