@@ -2009,7 +2009,11 @@ class Split {
     std::string base;
 
     Split(const std::string &path) {
+#if defined (__WIN32__) || defined (_MSC_VER) || defined (__MINGW32__)
+        size_t slash(path.rfind('\\'));
+#else
         size_t slash(path.rfind('/'));
+#endif
         if (slash == std::string::npos)
             base = path;
         else {
@@ -2029,7 +2033,11 @@ static void mkdir_p(const std::string &path) {
     if (_syscall(mkdir(path.c_str(), 0755), EEXIST) == -EEXIST)
         return;
 #endif
+#if defined (__WIN32__) || defined (_MSC_VER) || defined (__MINGW32__)
+    auto slash(path.rfind('\\', path.size() - 1));
+#else
     auto slash(path.rfind('/', path.size() - 1));
+#endif
     if (slash == std::string::npos)
         return;
     mkdir_p(path.substr(0, slash));
