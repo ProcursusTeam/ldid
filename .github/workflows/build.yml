@@ -182,11 +182,16 @@ jobs:
     runs-on: macos-11
     strategy:
       matrix:
-        arch:
-        - x86_64
-        - arm64
+        include:
+          - arch: x86_64
+            sdk: macosx
+          - arch: arm64
+            sdk: macosx
+          - arch: arm64
+            sdk: iphoneos
     env:
       ARCH: ${{ matrix.arch }}
+      SDK: ${{ matrix.sdk }}
     steps:
     - uses: actions/checkout@v1
       with:
@@ -197,9 +202,9 @@ jobs:
         path: |
           ~/Library/Caches/Mozilla.sccache
           ~/dep_src
-        key: build-macos-${{ matrix.arch }}-${ { env.GITHUB_SHA } }
+        key: build-${{ matrix.sdk }}-${{ matrix.arch }}-${ { env.GITHUB_SHA } }
         restore-keys: |
-          build-macos-${{ matrix.arch }}-
+          build-${{ matrix.sdk }}-${{ matrix.arch }}-
 
     - name: setup environment
       run: |
@@ -226,8 +231,8 @@ jobs:
         chmod +x ${HOME}/sccache-v${SCCACHE_VERSION}-x86_64-apple-darwin/sccache
 
         echo "${HOME}/sccache-v${SCCACHE_VERSION}-x86_64-apple-darwin" >> $GITHUB_PATH
-        echo "CC=sccache clang -arch ${ARCH} -mmacosx-version-min=10.13" >> $GITHUB_ENV
-        echo "CXX=sccache clang++ -arch ${ARCH} -mmacosx-version-min=10.13" >> $GITHUB_ENV
+        echo "CC=sccache xcrun -sdk ${SDK} clang -arch ${ARCH} -miphoneos-version-min=10.0 -mmacosx-version-min=10.13" >> $GITHUB_ENV
+        echo "CXX=sccache xcrun -sdk ${SDK} clang++ -arch ${ARCH} -miphoneos-version-min=10.0 -mmacosx-version-min=10.13" >> $GITHUB_ENV
         echo "CXXFLAGS=-Os" >> $GITHUB_ENV
         echo "CFLAGS=-Os" >> $GITHUB_ENV
 
@@ -263,7 +268,7 @@ jobs:
 
     - uses: actions/upload-artifact@v1
       with:
-        name: ldid_macos_${{ matrix.arch }}
+        name: ldid_${{ matrix.sdk }}_${{ matrix.arch }}
         path: ldid
 
     - name: Upload Release Asset macOS
@@ -274,5 +279,5 @@ jobs:
       with:
         upload_url: ${{ github.event.release.upload_url }}
         asset_path: ldid
-        asset_name: ldid_macos_${{ matrix.arch }}
+        asset_name: ldid_${{ matrix.sdk }}_${{ matrix.arch }}
         asset_content_type: application/octet-stream
