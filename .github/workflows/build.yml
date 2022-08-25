@@ -231,8 +231,13 @@ jobs:
         chmod +x ${HOME}/sccache-v${SCCACHE_VERSION}-x86_64-apple-darwin/sccache
 
         echo "${HOME}/sccache-v${SCCACHE_VERSION}-x86_64-apple-darwin" >> $GITHUB_PATH
-        echo "CC=sccache xcrun -sdk ${SDK} clang -arch ${ARCH} -miphoneos-version-min=10.0 -mmacosx-version-min=10.13" >> $GITHUB_ENV
-        echo "CXX=sccache xcrun -sdk ${SDK} clang++ -arch ${ARCH} -miphoneos-version-min=10.0 -mmacosx-version-min=10.13" >> $GITHUB_ENV
+        CC="sccache xcrun -sdk ${SDK} clang -arch ${ARCH}"
+        CXX="sccache xcrun -sdk ${SDK} clang++ -arch ${ARCH}"
+        if [ "${SDK}" = "macosx" ]; then
+          echo "CC=${CC} -mmacosx-version-min=10.13" >> $GITHUB_ENV
+        else
+          echo "CC=${CC} -miphoneos-version-min=10.0" >> $GITHUB_ENV
+        fi
         echo "CXXFLAGS=-Os" >> $GITHUB_ENV
         echo "CFLAGS=-Os" >> $GITHUB_ENV
 
