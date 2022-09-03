@@ -49,6 +49,7 @@
 #  include <openssl/provider.h>
 # endif
 #include <openssl/err.h>
+#include <openssl/asn1t.h>
 #include <openssl/pem.h>
 #include <openssl/pkcs7.h>
 #include <openssl/pkcs12.h>
@@ -1111,10 +1112,12 @@ enum MatchOperation {
 struct Algorithm {
     size_t size_;
     uint8_t type_;
+    int nid_;
 
-    Algorithm(size_t size, uint8_t type) :
+    Algorithm(size_t size, uint8_t type, int nid) :
         size_(size),
-        type_(type)
+        type_(type),
+        nid_(nid)
     {
     }
 
@@ -1131,7 +1134,7 @@ struct AlgorithmSHA1 :
     Algorithm
 {
     AlgorithmSHA1() :
-        Algorithm(SHA_DIGEST_LENGTH, CS_HASHTYPE_SHA160_160)
+        Algorithm(SHA_DIGEST_LENGTH, CS_HASHTYPE_SHA160_160, NID_sha1)
     {
     }
 
@@ -1161,7 +1164,7 @@ struct AlgorithmSHA256 :
     Algorithm
 {
     AlgorithmSHA256() :
-        Algorithm(SHA256_DIGEST_LENGTH, CS_HASHTYPE_SHA256_256)
+        Algorithm(SHA256_DIGEST_LENGTH, CS_HASHTYPE_SHA256_256, NID_sha256)
     {
     }
 
@@ -1815,27 +1818,79 @@ class Stuff {
     }
 };
 
-// xina fix;
-struct SEQUENCE_hash_sha1 {
-    uint8_t SEQUENCE[2] = {0x30, 0x1d}; // size
-    uint8_t OBJECT_IDENTIFIER[7] = {0x06, 0x05, 0x2B, 0x0E, 0x03, 0x02, 0x1A}; // OBJECT IDENTIFIER 1.3.14.3.2.26 sha1 (OIW)
-    uint8_t hash_size[2] = {0x04, 0x14};
-    char hash[20];
+class Octet {
+  private:
+    ASN1_OCTET_STRING *value_;
+
+  public:
+    Octet() :
+        value_(ASN1_OCTET_STRING_new())
+    {
+        _assert(value_ != NULL);
+    }
+
+    Octet(const std::string &value) :
+        Octet()
+    {
+        _assert(ASN1_STRING_set(value_, value.data(), value.size()));
+    }
+
+    Octet(const uint8_t *data, size_t size) :
+        Octet()
+    {
+        _assert(ASN1_STRING_set(value_, data, size));
+    }
+
+    Octet(const Octet &value) = delete;
+
+    ~Octet() {
+        if (value_ != NULL)
+            ASN1_OCTET_STRING_free(value_);
+    }
+
+    void release() {
+        value_ = NULL;
+    }
+
+    operator ASN1_OCTET_STRING *() const {
+        return value_;
+    }
 };
 
-struct SEQUENCE_hash_sha256 {
-    uint8_t SEQUENCE[2] = {0x30, 0x2d}; // size
-    uint8_t OBJECT_IDENTIFIER[11] = {0x06 ,0x09 ,0x60, 0x86, 0x48, 0x01 ,0x65, 0x03, 0x04, 0x02, 0x01}; // 2.16.840.1.101.3.4.2.1 sha-256 (NIST Algorithm)
-    uint8_t hash_size[2] = {0x04, 0x20}; // hash size
-    char hash[32];
-};
+typedef struct {
+    ASN1_OBJECT *algorithm;
+    ASN1_OCTET_STRING *value;
+} APPLE_CDHASH;
+
+DECLARE_ASN1_FUNCTIONS(APPLE_CDHASH)
+
+ASN1_NDEF_SEQUENCE(APPLE_CDHASH) = {
+    ASN1_SIMPLE(APPLE_CDHASH, algorithm, ASN1_OBJECT),
+    ASN1_SIMPLE(APPLE_CDHASH, value, ASN1_OCTET_STRING),
+} ASN1_NDEF_SEQUENCE_END(APPLE_CDHASH)
+
+IMPLEMENT_ASN1_FUNCTIONS(APPLE_CDHASH)
+
+typedef struct {
+    ASN1_OBJECT *object;
+    STACK_OF(APPLE_CDHASH) *cdhashes;
+} APPLE_CDATTR;
+
+DECLARE_ASN1_FUNCTIONS(APPLE_CDATTR)
+
+ASN1_NDEF_SEQUENCE(APPLE_CDATTR) = {
+    ASN1_SIMPLE(APPLE_CDATTR, object, ASN1_OBJECT),
+    ASN1_SET_OF(APPLE_CDATTR, cdhashes, APPLE_CDHASH),
+} ASN1_NDEF_SEQUENCE_END(APPLE_CDATTR)
+
+IMPLEMENT_ASN1_FUNCTIONS(APPLE_CDATTR)
 
 class Signature {
   private:
     PKCS7 *value_;
 
   public:
-    Signature(const Stuff &stuff, const Buffer &data, const std::string &xml, const std::vector<char>& alternateCDSHA1, const std::vector<char>& alternateCDSHA256) {
+    Signature(const Stuff &stuff, const Buffer &data, const std::string &xml, const ldid::Hash &hash) {
         value_ = PKCS7_new();
         if (value_ == NULL){
             fprintf(stderr, "ldid: An error occured while getting creating PKCS7 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
@@ -1856,57 +1911,71 @@ class Signature {
             }
         }
 
+        STACK_OF(X509_ATTRIBUTE) *attributes(sk_X509_ATTRIBUTE_new_null());
+        _assert(attributes != NULL);
+        _scope({ sk_X509_ATTRIBUTE_pop_free(attributes, X509_ATTRIBUTE_free); });
+
         auto info(PKCS7_sign_add_signer(value_, stuff, stuff, NULL, PKCS7_NOSMIMECAP));
         if (info == NULL){
             fprintf(stderr, "ldid: An error occured while signing: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
 
-        X509_ATTRIBUTE *attribute = X509_ATTRIBUTE_new();
-        ASN1_OBJECT *obj2 = OBJ_txt2obj("1.2.840.113635.100.9.2", 1);
-        X509_ATTRIBUTE_set1_object(attribute, obj2);
-        if (alternateCDSHA1.size() != 0) {
-            // xina fix;
-            SEQUENCE_hash_sha1 seq1;
-            memcpy((void *)seq1.hash, (void *)alternateCDSHA1.data(), alternateCDSHA1.size());
-            X509_ATTRIBUTE_set1_data(attribute, V_ASN1_SEQUENCE, &seq1, sizeof(seq1));
-        }
-        if (alternateCDSHA256.size() != 0) {
-            // xina fix;
-            SEQUENCE_hash_sha256 seq256;
-            memcpy((void *)seq256.hash, (void *)alternateCDSHA256.data(), alternateCDSHA256.size());
-            X509_ATTRIBUTE_set1_data(attribute, V_ASN1_SEQUENCE, &seq256, sizeof(seq256));
+        {
+            auto attribute(X509_ATTRIBUTE_create(NID_pkcs9_contentType, V_ASN1_OBJECT, OBJ_nid2obj(NID_pkcs7_data)));
+            _assert(attribute != NULL);
+            _assert(sk_X509_ATTRIBUTE_push(attributes, attribute) != 0);
         }
 
-        STACK_OF(X509_ATTRIBUTE) *sk = PKCS7_get_signed_attributes(info);
-        if (!sk_X509_ATTRIBUTE_push(sk, attribute)) {
-            fprintf(stderr, "ldid: sk_X509_ATTRIBUTE_push failed: %s\n", ERR_error_string(ERR_get_error(), NULL));
-            exit(1);
-        }
+        {
+            auto cdattr(APPLE_CDATTR_new());
+            _assert(cdattr != NULL);
+            _scope({ APPLE_CDATTR_free(cdattr); });
 
-        PKCS7_set_detached(value_, 1);
+            static auto nid(OBJ_create("1.2.840.113635.100.9.2", "", ""));
+            cdattr->object = OBJ_nid2obj(nid);
 
-        ASN1_OCTET_STRING *string(ASN1_OCTET_STRING_new());
-        if (string == NULL) {
-            fprintf(stderr, "ldid: %s\n", ERR_error_string(ERR_get_error(), NULL));
-            exit(1);
-        }
-
-        try {
-            if (ASN1_STRING_set(string, xml.data(), xml.size()) == 0) {
-                fprintf(stderr, "ldid: %s\n", ERR_error_string(ERR_get_error(), NULL));
-                exit(1);
+            for (Algorithm *pointer : GetAlgorithms()) {
+                Algorithm &algorithm(*pointer);
+                APPLE_CDHASH *cdhash(APPLE_CDHASH_new());
+                _assert(cdhash != NULL);
+                _assert(sk_push((_STACK *) cdattr->cdhashes, cdhash) != 0);
+                cdhash->algorithm = OBJ_nid2obj(algorithm.nid_);
+                Octet string(algorithm[hash], algorithm.size_);
+                cdhash->value = string;
+                string.release();
             }
 
+            // in e20b57270dece66ce2c68aeb5d14dd6d9f3c5d68 OpenSSL removed a "hack"
+            // in the process, they introduced a useful bug in X509_ATTRIBUTE_set1_data
+            // however, I don't want to rely on that or detect the bypass before it
+            // so, instead, I create my own compatible attribute and re-serialize it :/
+
+            ASN1_STRING *seq(ASN1_STRING_new());
+            _assert(seq != NULL);
+            _scope({ ASN1_STRING_free(seq); });
+            seq->length = ASN1_item_i2d((ASN1_VALUE *) cdattr, &seq->data, ASN1_ITEM_rptr(APPLE_CDATTR));
+
+            X509_ATTRIBUTE *attribute(NULL);
+            const unsigned char *data(seq->data);
+            _assert(d2i_X509_ATTRIBUTE(&attribute, &data, seq->length) != 0);
+            _assert(attribute != NULL);
+            _assert(sk_X509_ATTRIBUTE_push(attributes, attribute) != 0);
+        }
+
+        {
+            // XXX: move the "cdhashes" plist code to here and remove xml argument
+
+            Octet string(xml);
             static auto nid(OBJ_create("1.2.840.113635.100.9.1", "", ""));
-            if (PKCS7_add_signed_attribute(info, nid, V_ASN1_OCTET_STRING, string) == 0) {
-                fprintf(stderr, "ldid: %s\n", ERR_error_string(ERR_get_error(), NULL));
-                exit(1);
-            }
-        } catch (...) {
-            ASN1_OCTET_STRING_free(string);
-            throw;
+            auto attribute(X509_ATTRIBUTE_create(nid, V_ASN1_OCTET_STRING, string));
+            _assert(attribute != NULL);
+            string.release();
+            _assert(sk_X509_ATTRIBUTE_push(attributes, attribute) != 0);
         }
+
+        _assert(PKCS7_set_signed_attributes(info, attributes) != 0);
+        PKCS7_set_detached(value_, 1);
 
         if (PKCS7_final(value_, data, PKCS7_BINARY) == 0) {
             fprintf(stderr, "ldid: Failed to sign: %s\n", ERR_error_string(ERR_get_error(), NULL));
@@ -2419,8 +2488,7 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
             auto cdhashes(plist_new_array());
             plist_dict_set_item(plist, "cdhashes", cdhashes);
 
-            std::vector<char> alternateCDSHA256;
-            std::vector<char> alternateCDSHA1;
+            ldid::Hash hash;
 
             unsigned total(0);
             for (Algorithm *pointer : GetAlgorithms()) {
@@ -2430,15 +2498,12 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
                 const auto &blob(blobs[total == 0 ? CSSLOT_CODEDIRECTORY : CSSLOT_ALTERNATE + total - 1]);
                 ++total;
 
-                std::vector<char> hash;
                 algorithm(hash, blob.data(), blob.size());
-                if (algorithm.type_ == CS_HASHTYPE_SHA256_256)
-                    alternateCDSHA256 = hash;
-                else if (algorithm.type_ == CS_HASHTYPE_SHA160_160)
-                    alternateCDSHA1 = hash;
-                hash.resize(20);
 
-                plist_array_append_item(cdhashes, plist_new_data(hash.data(), hash.size()));
+                std::vector<char> cdhash(algorithm[hash], algorithm[hash] + algorithm.size_);
+                cdhash.resize(20);
+
+                plist_array_append_item(cdhashes, plist_new_data(cdhash.data(), cdhash.size()));
             }
 
             char *xml(NULL);
@@ -2452,7 +2517,7 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
             Stuff stuff(key);
             Buffer bio(sign);
 
-            Signature signature(stuff, sign, std::string(xml, size), alternateCDSHA1, alternateCDSHA256);
+            Signature signature(stuff, sign, std::string(xml, size), hash);
             Buffer result(signature);
             std::string value(result);
             put(data, value.data(), value.size());
