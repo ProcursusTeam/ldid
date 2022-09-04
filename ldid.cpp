@@ -1932,7 +1932,7 @@ class Signature {
             _assert(cdattr != NULL);
             _scope({ APPLE_CDATTR_free(cdattr); });
 
-            static auto nid(OBJ_create("1.2.840.113635.100.9.2", "", ""));
+            static auto nid(OBJ_create("1.2.840.113635.100.9.2", NULL, NULL));
             cdattr->object = OBJ_nid2obj(nid);
 
             for (Algorithm *pointer : GetAlgorithms()) {
@@ -1967,7 +1967,7 @@ class Signature {
             // XXX: move the "cdhashes" plist code to here and remove xml argument
 
             Octet string(xml);
-            static auto nid(OBJ_create("1.2.840.113635.100.9.1", "", ""));
+            static auto nid(OBJ_create("1.2.840.113635.100.9.1", NULL, NULL));
             auto attribute(X509_ATTRIBUTE_create(nid, V_ASN1_OCTET_STRING, string));
             _assert(attribute != NULL);
             string.release();
