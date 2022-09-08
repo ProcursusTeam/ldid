@@ -3799,3 +3799,5 @@ int main(int argc, char *argv[]) {
     return filee;
 }
 #endif // LDID_NOTOOLS
+
+// vim: tabstop=4 softtabstop=4 shiftwidth=4 expandtab
