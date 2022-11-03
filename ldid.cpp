@@ -116,6 +116,7 @@
 
 std::string password;
 std::vector<std::string> cleanup;
+bool flag_H(false);
 
 template <typename Type_>
 struct Iterator_ {
@@ -225,6 +226,15 @@ struct load_command {
 #define LC_DYLD_INFO          uint32_t(0x22)
 #define LC_DYLD_INFO_ONLY     uint32_t(0x22 | LC_REQ_DYLD)
 #define LC_ENCRYPTION_INFO_64 uint32_t(0x2c)
+#define LC_BUILD_VERSION      uint32_t(0x32)
+
+#define LC_VERSION_MIN_MACOSX   uint32_t(0x24)
+#define LC_VERSION_MIN_IPHONEOS uint32_t(0x25)
+#define LC_VERSION_MIN_TVOS     uint32_t(0x2F)
+
+#define PLATFORM_MACOS 1
+#define PLATFORM_IOS 2
+#define PLATFORM_TVOS 3
 
 union Version {
     struct {
@@ -235,6 +245,22 @@ union Version {
 
     uint32_t value;
 };
+
+struct build_version_command {
+    uint32_t cmd;
+    uint32_t cmdsize;
+    uint32_t platform;
+    uint32_t minos;
+    uint32_t sdk;
+    uint32_t ntools;
+} _packed;
+
+struct version_min_command {
+    uint32_t cmd;
+    uint32_t cmdsize;
+    uint32_t version;
+    uint32_t sdk;
+} _packed;
 
 struct dylib {
     uint32_t name;
@@ -1408,6 +1434,36 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
                 signature = reinterpret_cast<struct linkedit_data_command *>(load_command);
             else if (cmd == LC_SYMTAB)
                 symtab = reinterpret_cast<struct symtab_command *>(load_command);
+            else if (flag_H == false) {
+                if (cmd == LC_BUILD_VERSION) {
+                    do_sha1 = do_sha256 = true;
+                    auto build = reinterpret_cast<struct build_version_command *>(load_command);
+                    Version ver = { .value = mach_header.Swap(build->minos) };
+                    switch (mach_header.Swap(build->platform)) {
+                        case PLATFORM_MACOS:
+                            if (ver.major >= 10 && ver.minor >= 12)
+                                do_sha1 = false;
+                            break;
+                        case PLATFORM_IOS:
+                        case PLATFORM_TVOS:
+                             if (ver.major >= 11)
+                                do_sha1 = false;
+                            break;
+                    }
+                } else if (cmd == LC_VERSION_MIN_MACOSX) {
+                    do_sha1 = do_sha256 = true;
+                    auto vercmd = reinterpret_cast<struct version_min_command *>(load_command);
+                    Version ver = { .value = mach_header.Swap(vercmd->version) };
+                    if (ver.major >= 10 && ver.minor >= 12)
+                        do_sha1 = false;
+                } else if (cmd == LC_VERSION_MIN_IPHONEOS || cmd == LC_VERSION_MIN_TVOS) {
+                    do_sha1 = do_sha256 = true;
+                    auto vercmd = reinterpret_cast<struct version_min_command *>(load_command);
+                    Version ver = { .value = mach_header.Swap(vercmd->version) };
+                    if (ver.major >= 11)
+                        do_sha1 = false;
+                }
+            }
         }
 
         size_t size;
@@ -3267,7 +3323,6 @@ int main(int argc, char *argv[]) {
     bool flag_e(false);
     bool flag_q(false);
 
-    bool flag_H(false);
     bool flag_h(false);
 
 
