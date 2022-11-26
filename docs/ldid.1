@@ -58,7 +58,7 @@ The list of currently known
 can be found in
 .Xr arch 3 .
 This is a Procursus extension.
-.It Fl C Ns Op Ar adhoc | Ar enforcement | Ar expires | Ar hard | Ar host | Ar kill | Ar library-validation | Ar restrict | Ar runtime
+.It Fl C Ns Op Ar adhoc | Ar enforcement | Ar expires | Ar hard | Ar host | Ar kill | Ar library-validation | Ar restrict | Ar runtime | Ar linker-signed
 Specify the option flags to embed in the code signature.
 See
 .Xr codesign 1
@@ -162,6 +162,14 @@ using the key in
 with the entitlements found in
 .Ar ent.xml ,
 and mark it as an adhoc signature.
+.Pp
+The command:
+.Pp
+.Dl "ldid -S -Cadhoc -Clinker-signed file"
+.Pp
+will fakesign
+.Ar file
+with no entitlements, mark it as adhoc and linker-signed signature.
 .Pp
 The command:
 .Pp
