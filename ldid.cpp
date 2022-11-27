@@ -3479,29 +3479,33 @@ int main(int argc, char *argv[]) {
 
             case 'C': {
                 const char *name = argv[argi] + 2;
-                if (strcmp(name, "host") == 0)
-                    flags |= kSecCodeSignatureHost;
-                else if (strcmp(name, "adhoc") == 0)
-                    flags |= kSecCodeSignatureAdhoc;
-                else if (strcmp(name, "hard") == 0)
-                    flags |= kSecCodeSignatureForceHard;
-                else if (strcmp(name, "kill") == 0)
-                    flags |= kSecCodeSignatureForceKill;
-                else if (strcmp(name, "expires") == 0)
-                    flags |= kSecCodeSignatureForceExpiration;
-                else if (strcmp(name, "restrict") == 0)
-                    flags |= kSecCodeSignatureRestrict;
-                else if (strcmp(name, "enforcement") == 0)
-                    flags |= kSecCodeSignatureEnforcement;
-                else if (strcmp(name, "library-validation") == 0)
-                    flags |= kSecCodeSignatureLibraryValidation;
-                else if (strcmp(name, "runtime") == 0)
-                    flags |= kSecCodeSignatureRuntime;
-                else if (strcmp(name, "linker-signed") == 0)
-                    flags |= kSecCodeSignatureLinkerSigned;
-                else {
-                    fprintf(stderr, "ldid: -C: Unsupported option\n");
-                    exit(1);
+                std::istringstream signtypess(name);
+                std::string signtype;
+                while (std::getline(signtypess, signtype, ',')) {
+                    if (signtype == "host")
+                        flags |= kSecCodeSignatureHost;
+                    else if (signtype == "adhoc")
+                        flags |= kSecCodeSignatureAdhoc;
+                    else if (signtype == "hard")
+                        flags |= kSecCodeSignatureForceHard;
+                    else if (signtype == "kill")
+                        flags |= kSecCodeSignatureForceKill;
+                    else if (signtype == "expires")
+                        flags |= kSecCodeSignatureForceExpiration;
+                    else if (signtype == "restrict")
+                        flags |= kSecCodeSignatureRestrict;
+                    else if (signtype == "enforcement")
+                        flags |= kSecCodeSignatureEnforcement;
+                    else if (signtype == "library-validation")
+                        flags |= kSecCodeSignatureLibraryValidation;
+                    else if (signtype == "runtime")
+                        flags |= kSecCodeSignatureRuntime;
+                    else if (signtype == "linker-signed")
+                        flags |= kSecCodeSignatureLinkerSigned;
+                    else {
+                        fprintf(stderr, "ldid: -C: Unsupported option\n");
+                        exit(1);
+                    }
                 }
             } break;
 
