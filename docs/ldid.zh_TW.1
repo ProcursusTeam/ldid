@@ -68,7 +68,7 @@
 .Xr arch 3
 中找到。
 這是一個Procursus擴展。
-.It Fl C Ns Op Ar adhoc | Ar enforcement | Ar expires | Ar hard | Ar host | Ar kill | Ar library-validation | Ar restrict | Ar runtime
+.It Fl C Ns Op Ar adhoc | Ar enforcement | Ar expires | Ar hard | Ar host | Ar kill | Ar library-validation | Ar restrict | Ar runtime | Ar linker-signed
 設定要在檔案中包含的程式碼簽署選項。
 請看
 .Xr codesign 1
@@ -173,6 +173,14 @@
 也會使用在
 .Ar 權限.xml
 中的權限並把簽署標示為特別用途 (adhoc) 簽署。
+.Pp
+指令：
+.Pp
+.Dl "ldid -S -Cadhoc,linker-signed 檔案"
+.Pp
+會偽簽署
+.Ar 檔案
+而且不嵌入任何權限, 同时会把簽署標示為特別用途 (adhoc,linker-signed) 簽署。
 .Pp
 指令：
 .Pp

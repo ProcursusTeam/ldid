@@ -8,7 +8,7 @@ _arguments \
 	'-q[Print requirements]' \
 	'-e[Print entitlements]' \
 	'-M[Merge entitlements]' \
-	'*-C-[Flags]:flags:(adhoc enforcement expires hard host kill library-validation restrict runtime)' \
+	'*-C-[Flags]:flags:(adhoc enforcement expires hard host kill library-validation restrict runtime linker-signed)' \
 	'-H-[Hash type]:hash:(sha1 sha256)' \
 	'-I-[Set identifier]:identifier' \
 	'-K-[Signing private key]:key:_files' \

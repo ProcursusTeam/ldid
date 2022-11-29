@@ -12,7 +12,7 @@
 .Nm
 .Op Fl A Ns Ar 处理器类型 : Ns Ar 亚类型
 .Op Fl a
-.Op Fl C Ns Op Ar adhoc | Ar enforcement | Ar expires | Ar hard | Ar host | Ar kill | Ar library-validation | Ar restrict | Ar runtime
+.Op Fl C Ns Op Ar adhoc | Ar enforcement | Ar expires | Ar hard | Ar host | Ar kill | Ar library-validation | Ar restrict | Ar runtime | Ar linker-signed
 .Op Fl D
 .Op Fl d
 .Op Fl E Ns Ar 数字 : Ns Ar 档案
@@ -173,6 +173,14 @@
 也会使用在
 .Ar 权限.xml
 中的权限并把签署标示为特别用途 (adhoc) 签署。
+.Pp
+指令：
+.Pp
+.Dl "ldid -S -Cadhoc,linker-signed 档案"
+.Pp
+会伪签署
+.Ar 档案
+而且不嵌入任何权限, 同时会把签署标示为特别用途 (adhoc,linker-signed) 签署。
 .Pp
 指令：
 .Pp
