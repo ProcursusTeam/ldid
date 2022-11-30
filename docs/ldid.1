@@ -32,7 +32,7 @@
 .Sh DESCRIPTION
 .Nm
 adds SHA1 and SHA256 hashes to a Mach-O file so that they can be run
-on a system that has validation but not signature verification.
+on a system that has validation, but not signature verification.
 .Bl -tag -width -indent
 .It Fl A Ns Ar cputype : Ns Ar subtype
 When used with
@@ -83,7 +83,7 @@ to
 Disable the hash not specified.
 This is useful to replicate the default behavior of
 .Xr codesign 1 ,
-which only provides an sha256 signature.
+which only provides a sha256 signature.
 .It Fl h
 Print information about the signature, such as
 hash types, flags, CDHash, and CodeDirectory version to
@@ -106,15 +106,16 @@ or you can specify from the command line with
 When used with
 .Fl S ,
 merge the new and existing entitlements instead of replacing the existing
-entitlements, this is useful for adding a few specific entitlements to a
+entitlements.
+This is useful for adding a few specific entitlements to a
 handful of binaries.
 .It Fl P Ns Op Ar num
 Mark the Mach-O as a platform binary.
 If
 .Ar num
 is specified, the platform field in the CodeDirectory will be set to that number.
-The default is 13, as per Apple binaries.
-Specifying the platform to set to using
+The default number is 13, as per Apple binaries.
+Specifying the platform using
 .Fl P
 is a Procursus extension.
 .It Fl Q Ns Ar requirements.xml
@@ -140,30 +141,29 @@ as the password for the p12 certificate instead of prompting.
 This is a Procursus extension.
 .It Fl u
 If the binary was linked against UIKit, then print the UIKit version that the
-Mach-O binaries were linked against.
+Mach-O binary was linked against.
 .El
 .Sh EXAMPLES
-The command:
+To fakesign
+.Ar file
+with no entitlements
 .Pp
 .Dl "ldid -S file"
 .Pp
-will fakesign
-.Ar file
-with no entitlements.
-.Pp
-The command:
-.Pp
-.Dl "ldid -Cadhoc -K/path/to/key.p12 -Sent.xml file"
-.Pp
-will sign
+To sign
 .Ar file
 using the key in
 .Ar /path/to/key.p12
-with the entitlements found in
+with entitlements found in
 .Ar ent.xml ,
-and mark it as an adhoc signature.
+marking it as an adhoc signature
 .Pp
-The command:
+.Dl "ldid -Cadhoc -K/path/to/key.p12 -Sent.xml file"
+.Pp
+To add entitlements from
+.Ar ent.xml
+to the entitlements already in
+.Ar file
 .Pp
 .Dl "ldid -S -Cadhoc,linker-signed file"
 .Pp
@@ -175,26 +175,19 @@ The command:
 .Pp
 .Dl "ldid -Sent.xml -M file"
 .Pp
-will add the entitlements in
-.Ar ent.xml
-to the entitlements already in
-.Ar file .
-.Pp
-The command:
-.Pp
-.Dl "ldid -e file > ent.xml"
-.Pp
-will save the entitlements found in each slice of
+To save the entitlements found in each slice of
 .Ar file
 to
-.Ar ent.xml .
+.Ar ent.xml
+.Pp
+.Dl "ldid -e file > ent.xml"
 .Sh SEE ALSO
 .Xr codesign 1
 .Sh HISTORY
 The
 .Nm
 utility was written by
-.An Jay \*qSaurik\*q Freeman .
+.An Jay (\*qSaurik\*q) Freeman .
 iPhoneOS 1.2.0 and 2.0 support was added on April 6, 2008.
 .Fl S
 was added on June 13, 2008.
