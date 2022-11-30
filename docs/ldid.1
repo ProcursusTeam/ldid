@@ -34,7 +34,7 @@
 adds SHA1 and SHA256 hashes to a Mach-O file so that they can be run
 on a system that has validation, but not signature verification.
 .Bl -tag -width -indent
-.It Fl A Ns Op Ar cputype : Ns Ar subtype
+.It Fl A Ns Ar cputype : Ns Ar subtype
 When used with
 .Fl a , Fl D , Fl e , Fl h , Fl q ,
 or
@@ -67,7 +67,7 @@ for details about these options.
 Reset the cryptid.
 .It Fl d
 Print the cryptid in the binaries if it exists.
-.It Fl E Ns Op Ar num : Ns Ar file
+.It Fl E Ns Ar num : Ns Ar file
 Embed the hashes of
 .Ar file
 in the special codesign slot at
@@ -88,11 +88,11 @@ which only provides a sha256 signature.
 Print information about the signature, such as
 hash types, flags, CDHash, and CodeDirectory version to
 .Ar stdout .
-.It Fl I Ns Op Ar name
+.It Fl I Ns Ar name
 Set the identifier used in the binaries signature to
 .Ar name .
 If not specified, the basename of the binary is used.
-.It Fl K Ns Op Ar key.p12
+.It Fl K Ns Ar key.p12
 Sign using the identity in
 .Ar key.p12 .
 This will give the binary a valid signature so that it can be run
@@ -118,7 +118,7 @@ The default number is 13, as per Apple binaries.
 Specifying the platform using
 .Fl P
 is a Procursus extension.
-.It Fl Q Ns Op Ar requirements.xml
+.It Fl Q Ns Ar requirements.xml
 Embed the requirements found in
 .Ar requirements .
 .It Fl q
@@ -134,7 +134,7 @@ is specified then the entitlements found in
 will be embedded in the Mach-O.
 .It Fl s
 Resign the Mach-O binaries while keeping the existing entitlements.
-.It Fl U Ns Op Ar password
+.It Fl U Ns Ar password
 Use
 .Ar password
 as the password for the p12 certificate instead of prompting.
@@ -144,43 +144,35 @@ If the binary was linked against UIKit, then print the UIKit version that the
 Mach-O binary was linked against.
 .El
 .Sh EXAMPLES
-The command:
+To fakesign
+.Ar file
+with no entitlements
 .Pp
 .Dl "ldid -S file"
 .Pp
-will fakesign
-.Ar file
-with no entitlements.
-.Pp
-The command:
-.Pp
-.Dl "ldid -Cadhoc -K/path/to/key.p12 -Sent.xml file"
-.Pp
-will sign
+To sign
 .Ar file
 using the key in
 .Ar /path/to/key.p12
-with the entitlements found in
+with entitlements found in
 .Ar ent.xml ,
-and mark it as an adhoc signature.
+marking it as an adhoc signature
 .Pp
-The command:
+.Dl "ldid -Cadhoc -K/path/to/key.p12 -Sent.xml file"
+.Pp
+To add entitlements from
+.Ar ent.xml
+to the entitlements already in
+.Ar file
 .Pp
 .Dl "ldid -Sent.xml -M file"
 .Pp
-will add the entitlements in
-.Ar ent.xml
-to the entitlements already in
-.Ar file .
-.Pp
-The command:
-.Pp
-.Dl "ldid -e file > ent.xml"
-.Pp
-will save the entitlements found in each slice of
+To save the entitlements found in each slice of
 .Ar file
 to
-.Ar ent.xml .
+.Ar ent.xml
+.Pp
+.Dl "ldid -e file > ent.xml"
 .Sh SEE ALSO
 .Xr codesign 1
 .Sh HISTORY
