@@ -33,13 +33,15 @@ endif
 
 MANPAGE_LANGS := zh_TW zh_CN
 
-all: ldid
+EXT ?=
+
+all: ldid$(EXT)
 
 %.cpp.o: %.cpp
 	$(CXX) -c -std=c++11 $(CXXFLAGS) $(LIBCRYPTO_INCLUDES) $(LIBPLIST_INCLUDES) $(CPPFLAGS) -I. -DLDID_VERSION=\"$(VERSION)\" $< -o $@
 
-ldid: $(SRC:%=%.o)
-	$(CXX) -o ldid $^ $(LDFLAGS) $(LIBCRYPTO_LIBS) $(LIBPLIST_LIBS) $(LIBS)
+ldid$(EXT): $(SRC:%=%.o)
+	$(CXX) -o $@ $^ $(LDFLAGS) $(LIBCRYPTO_LIBS) $(LIBPLIST_LIBS) $(LIBS)
 
 install: all
 	$(INSTALL) -d $(DESTDIR)$(BINDIR)/

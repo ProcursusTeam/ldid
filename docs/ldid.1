@@ -58,7 +58,7 @@ The list of currently known
 can be found in
 .Xr arch 3 .
 This is a Procursus extension.
-.It Fl C Ns Op Ar adhoc | Ar enforcement | Ar expires | Ar hard | Ar host | Ar kill | Ar library-validation | Ar restrict | Ar runtime
+.It Fl C Ns Op Ar adhoc | Ar enforcement | Ar expires | Ar hard | Ar host | Ar kill | Ar library-validation | Ar restrict | Ar runtime | Ar linker-signed
 Specify the option flags to embed in the code signature.
 See
 .Xr codesign 1
@@ -164,6 +164,14 @@ To add entitlements from
 .Ar ent.xml
 to the entitlements already in
 .Ar file
+.Pp
+.Dl "ldid -S -Cadhoc,linker-signed file"
+.Pp
+will fakesign
+.Ar file
+with no entitlements, and mark it as adhoc and linker-signed signature.
+.Pp
+The command:
 .Pp
 .Dl "ldid -Sent.xml -M file"
 .Pp
