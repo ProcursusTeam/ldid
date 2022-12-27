@@ -114,6 +114,7 @@
 #define _packed \
     __attribute__((packed))
 
+bool flag_w(false);
 bool flag_U(false);
 std::string password;
 std::vector<std::string> cleanup;
@@ -3063,23 +3064,25 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
     Expression nested("^(Frameworks/[^/]*\\.framework|PlugIns/[^/]*\\.appex(()|/[^/]*.app))/(" + failure + ")Info\\.plist$");
     std::map<std::string, Bundle> bundles;
 
-    folder.Find("", fun([&](const std::string &name) {
-        if (!nested(name))
-            return;
-        auto bundle(Split(name).dir);
-        if (mac) {
-            _assert(!bundle.empty());
-            bundle = Split(bundle.substr(0, bundle.size() - 1)).dir;
-        }
-        SubFolder subfolder(folder, bundle);
+    if (!flag_w) {
+        folder.Find("", fun([&](const std::string &name) {
+            if (!nested(name))
+                return;
+            auto bundle(Split(name).dir);
+            if (mac) {
+                _assert(!bundle.empty());
+                bundle = Split(bundle.substr(0, bundle.size() - 1)).dir;
+            }
+            SubFolder subfolder(folder, bundle);
 
-        State remote;
-        bundles[nested[1]] = Sign(root + bundle, subfolder, key, remote, requirements, Starts(name, "PlugIns/") ? alter :
-            static_cast<const Functor<std::string (const std::string &, const std::string &)> &>(fun([&](const std::string &, const std::string &) -> std::string { return entitlements; }))
-        , merge, platform, progress);
-        local.Merge(bundle, remote);
-    }), fun([&](const std::string &name, const Functor<std::string ()> &read) {
-    }));
+            State remote;
+            bundles[nested[1]] = Sign(root + bundle, subfolder, key, remote, requirements, Starts(name, "PlugIns/") ? alter :
+                static_cast<const Functor<std::string (const std::string &, const std::string &)> &>(fun([&](const std::string &, const std::string &) -> std::string { return entitlements; }))
+            , merge, platform, progress);
+            local.Merge(bundle, remote);
+        }), fun([&](const std::string &name, const Functor<std::string ()> &read) {
+        }));
+    }
 
     std::set<std::string> excludes;
 
@@ -3119,21 +3122,23 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
 
             auto size(most(data, &header.bytes, sizeof(header.bytes)));
 
-            if (name != "_WatchKitStub/WK" && size == sizeof(header.bytes))
-                switch (Swap(header.magic)) {
-                    case FAT_MAGIC:
-                        // Java class file format
-                        if (Swap(header.count) >= 40)
-                            break;
-                    case FAT_CIGAM:
-                    case MH_MAGIC: case MH_MAGIC_64:
-                    case MH_CIGAM: case MH_CIGAM_64:
-                        folder.Save(name, true, flag, fun([&](std::streambuf &save) {
-                            Slots slots;
-                            Sign(header.bytes, size, data, hash, save, identifier, entitlements, merge, requirements, key, slots, length, 0, platform, Progression(progress, root + name));
-                        }));
-                        return;
-                }
+            if (!flag_w) {
+                if (name != "_WatchKitStub/WK" && size == sizeof(header.bytes))
+                    switch (Swap(header.magic)) {
+                        case FAT_MAGIC:
+                            // Java class file format
+                            if (Swap(header.count) >= 40)
+                                break;
+                        case FAT_CIGAM:
+                        case MH_MAGIC: case MH_MAGIC_64:
+                        case MH_CIGAM: case MH_CIGAM_64:
+                            folder.Save(name, true, flag, fun([&](std::streambuf &save) {
+                                Slots slots;
+                                Sign(header.bytes, size, data, hash, save, identifier, entitlements, merge, requirements, key, slots, length, 0, platform, Progression(progress, root + name));
+                            }));
+                            return;
+                    }
+            }
 
             folder.Save(name, false, flag, fun([&](std::streambuf &save) {
                 HashProxy proxy(hash, save);
@@ -3291,9 +3296,10 @@ static void usage(const char *argv0) {
     fprintf(stderr, "            host | kill | library-validation | restrict | runtime | linker-signed]] [-D] [-d]\n");
     fprintf(stderr, "            [-Enum:file] [-e] [-H[sha1 | sha256]] [-h] [-Iname]\n");
     fprintf(stderr, "            [-Kkey.p12 [-Upassword]] [-M] [-P[num]] [-Qrequirements.xml] [-q]\n");
-    fprintf(stderr, "            [-r | -Sfile.xml | -s] [-u] [-arch arch_type] file ...\n");
+    fprintf(stderr, "            [-r | -Sfile.xml | -s] [-w] [-u] [-arch arch_type] file ...\n");
     fprintf(stderr, "Common Options:\n");
     fprintf(stderr, "   -S[file.xml]  Pseudo-sign using the entitlements in file.xml\n");
+    fprintf(stderr, "   -w            Shallow sign\n");
     fprintf(stderr, "   -Kkey.p12     Sign using private key in key.p12\n");
     fprintf(stderr, "   -Upassword    Use password to unlock key.p12\n");
     fprintf(stderr, "   -M            Merge entitlements with any existing\n");
@@ -3541,6 +3547,10 @@ int main(int argc, char *argv[]) {
                     const char *xml = argv[argi] + 2;
                     entitlements.open(xml, O_RDONLY, PROT_READ, MAP_PRIVATE);
                 }
+            break;
+
+            case 'w':
+                flag_w = true;
             break;
 
             case 'M':

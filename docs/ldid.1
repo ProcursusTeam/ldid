@@ -27,6 +27,7 @@
 .Op Fl q
 .Op Fl r | Fl S Ns Ar file.xml | Fl s
 .Op Fl u
+.Op Fl w
 .Op Fl arch Ar arch_type
 .Ar
 .Sh DESCRIPTION
@@ -142,6 +143,8 @@ This is a Procursus extension.
 .It Fl u
 If the binary was linked against UIKit, then print the UIKit version that the
 Mach-O binary was linked against.
+.It Fl w
+Shallow sign.
 .El
 .Sh EXAMPLES
 To fakesign
