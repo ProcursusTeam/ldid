@@ -118,7 +118,6 @@ std::string password;
 bool flag_U(false);
 std::vector<std::string> cleanup;
 bool flag_H(false);
-bool flag_n(false);
 
 template <typename Type_>
 struct Iterator_ {
@@ -2969,7 +2968,7 @@ struct State {
     }
 };
 
-Bundle Sign(const std::string &root, Folder &parent, const std::string &key, State &local, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, bool merge, uint8_t platform, const Progress &progress) {
+Bundle Sign(const std::string &root, Folder &parent, bool recursively, const std::string &key, State &local, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, bool merge, uint8_t platform, const Progress &progress) {
     std::string executable;
     std::string identifier;
 
@@ -3064,7 +3063,7 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
     Expression nested("^(Frameworks/[^/]*\\.framework|PlugIns/[^/]*\\.appex(()|/[^/]*.app))/(" + failure + ")Info\\.plist$");
     std::map<std::string, Bundle> bundles;
 
-    if (flag_n) {
+    if (recursively) {
         folder.Find("", fun([&](const std::string &name) {
             if (!nested(name))
                 return;
@@ -3076,7 +3075,7 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
             SubFolder subfolder(folder, bundle);
 
             State remote;
-            bundles[nested[1]] = Sign(root + bundle, subfolder, key, remote, "", Starts(name, "PlugIns/") ? alter :
+            bundles[nested[1]] = Sign(root + bundle, subfolder, recursively, key, remote, "", Starts(name, "PlugIns/") ? alter :
                 static_cast<const Functor<std::string (const std::string &, const std::string &)> &>(fun([&](const std::string &, const std::string &) -> std::string { return entitlements; }))
             , merge, platform, progress);
             local.Merge(bundle, remote);
@@ -3108,42 +3107,44 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
             return;
         auto &hash(local.files[name]);
 
-        folder.Open(name, fun([&](std::streambuf &data, size_t length, const void *flag) {
-            progress(root + name);
+        if (recursively) {
+            folder.Open(name, fun([&](std::streambuf &data, size_t length, const void *flag) {
+                progress(root + name);
 
-            union {
-                struct {
-                    uint32_t magic;
-                    uint32_t count;
-                };
+                union {
+                    struct {
+                        uint32_t magic;
+                        uint32_t count;
+                    };
 
-                uint8_t bytes[8];
-            } header;
+                    uint8_t bytes[8];
+                } header;
 
-            auto size(most(data, &header.bytes, sizeof(header.bytes)));
+                auto size(most(data, &header.bytes, sizeof(header.bytes)));
 
-            if (name != "_WatchKitStub/WK" && size == sizeof(header.bytes))
-                switch (Swap(header.magic)) {
-                    case FAT_MAGIC:
-                        // Java class file format
-                        if (Swap(header.count) >= 40)
-                            break;
-                    case FAT_CIGAM:
-                    case MH_MAGIC: case MH_MAGIC_64:
-                    case MH_CIGAM: case MH_CIGAM_64:
-                        folder.Save(name, true, flag, fun([&](std::streambuf &save) {
-                            Slots slots;
-                            Sign(header.bytes, size, data, hash, save, identifier, "", false, "", key, slots, length, 0, platform, Progression(progress, root + name));
-                        }));
-                        return;
-                }
+                if (name != "_WatchKitStub/WK" && size == sizeof(header.bytes))
+                    switch (Swap(header.magic)) {
+                        case FAT_MAGIC:
+                            // Java class file format
+                            if (Swap(header.count) >= 40)
+                                break;
+                        case FAT_CIGAM:
+                        case MH_MAGIC: case MH_MAGIC_64:
+                        case MH_CIGAM: case MH_CIGAM_64:
+                            folder.Save(name, true, flag, fun([&](std::streambuf &save) {
+                                Slots slots;
+                                Sign(header.bytes, size, data, hash, save, identifier, "", false, "", key, slots, length, 0, platform, Progression(progress, root + name));
+                            }));
+                            return;
+                    }
 
-            folder.Save(name, false, flag, fun([&](std::streambuf &save) {
-                HashProxy proxy(hash, save);
-                put(proxy, header.bytes, size);
-                copy(data, proxy, length - size, progress);
+                folder.Save(name, false, flag, fun([&](std::streambuf &save) {
+                    HashProxy proxy(hash, save);
+                    put(proxy, header.bytes, size);
+                    copy(data, proxy, length - size, progress);
+                }));
             }));
-        }));
+        }
     }), fun([&](const std::string &name, const Functor<std::string ()> &read) {
         if (exclude(name))
             return;
@@ -3270,9 +3271,9 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
     return bundle;
 }
 
-Bundle Sign(const std::string &root, Folder &folder, const std::string &key, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, bool merge, uint8_t platform, const Progress &progress) {
+Bundle Sign(const std::string &root, Folder &folder, bool recursively, const std::string &key, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, bool merge, uint8_t platform, const Progress &progress) {
     State local;
-    return Sign(root, folder, key, local, requirements, alter, merge, platform, progress);
+    return Sign(root, folder, recursively, key, local, requirements, alter, merge, platform, progress);
 }
 
 #endif
@@ -3335,6 +3336,8 @@ int main(int argc, char *argv[]) {
 
     bool flag_S(false);
     bool flag_s(false);
+
+    bool flag_n(true);
 
     bool flag_D(false);
     bool flag_d(false);
@@ -3605,7 +3608,7 @@ int main(int argc, char *argv[]) {
                 exit(1);
             }
             ldid::DiskFolder folder(path + "/");
-            path += "/" + Sign("", folder, key, requirements, ldid::fun([&](const std::string &, const std::string &) -> std::string { return entitlements; }), flag_M, platform, dummy_).path;
+            path += "/" + Sign("", folder, flag_n, key, requirements, ldid::fun([&](const std::string &, const std::string &) -> std::string { return entitlements; }), flag_M, platform, dummy_).path;
         } else if (flag_S || flag_r || flag_s) {
             Map input(path, O_RDONLY, PROT_READ, MAP_PRIVATE);
 
