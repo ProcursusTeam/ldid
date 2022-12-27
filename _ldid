@@ -2,7 +2,6 @@
 
 _arguments \
 	'-S-[Add signature]:entitlements:_files' \
- 	'-n[Do not sign recursively]' \
 	'-Q-[Embed requirements]:requirements:_files' \
 	'(-S)-r[Remove signature]' \
 	'(-r)-h[Print signature information]' \
