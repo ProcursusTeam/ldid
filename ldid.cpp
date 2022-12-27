@@ -114,6 +114,7 @@
 #define _packed \
     __attribute__((packed))
 
+bool flag_U(false);
 std::string password;
 std::vector<std::string> cleanup;
 bool flag_H(false);
@@ -1823,7 +1824,7 @@ class Stuff {
             exit(1);
         }
 
-        if (!PKCS12_verify_mac(value_, "", 0) && password.empty()) {
+        if (!flag_U) {
             char passbuf[2048];
             UI_UTIL_read_pw_string(passbuf, 2048, "Enter password: ", 0);
             password = passbuf;
@@ -3546,6 +3547,7 @@ int main(int argc, char *argv[]) {
             break;
 
             case 'U':
+                flag_U = true;
                 password = argv[argi] + 2;
             break;
 
