@@ -1485,6 +1485,8 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
             }
         }
 
+        size = (size + 15) & ~(15);
+
         Baton baton;
         size_t alloc(allocate(mach_header, baton, size));
 
