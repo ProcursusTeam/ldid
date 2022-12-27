@@ -3064,7 +3064,7 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
     Expression nested("^(Frameworks/[^/]*\\.framework|PlugIns/[^/]*\\.appex(()|/[^/]*.app))/(" + failure + ")Info\\.plist$");
     std::map<std::string, Bundle> bundles;
 
-    if (!flag_n) {
+    if (flag_n) {
         folder.Find("", fun([&](const std::string &name) {
             if (!nested(name))
                 return;
