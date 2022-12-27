@@ -3074,7 +3074,7 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
         SubFolder subfolder(folder, bundle);
 
         State remote;
-        bundles[nested[1]] = Sign(root + bundle, subfolder, key, remote, "", Starts(name, "PlugIns/") ? alter :
+        bundles[nested[1]] = Sign(root + bundle, subfolder, key, remote, requirements, Starts(name, "PlugIns/") ? alter :
             static_cast<const Functor<std::string (const std::string &, const std::string &)> &>(fun([&](const std::string &, const std::string &) -> std::string { return entitlements; }))
         , merge, platform, progress);
         local.Merge(bundle, remote);
@@ -3130,7 +3130,7 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
                     case MH_CIGAM: case MH_CIGAM_64:
                         folder.Save(name, true, flag, fun([&](std::streambuf &save) {
                             Slots slots;
-                            Sign(header.bytes, size, data, hash, save, identifier, "", false, "", key, slots, length, 0, platform, Progression(progress, root + name));
+                            Sign(header.bytes, size, data, hash, save, identifier, entitlements, merge, requirements, key, slots, length, 0, platform, Progression(progress, root + name));
                         }));
                         return;
                 }
