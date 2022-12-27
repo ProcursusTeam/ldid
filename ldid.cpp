@@ -2969,7 +2969,7 @@ struct State {
     }
 };
 
-Bundle Sign(const std::string &root, Folder &parent, const std::string &key, State &local, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, bool merge, uint8_t platform, const Progress &progress, bool inRecursion) {
+Bundle Sign(const std::string &root, Folder &parent, const std::string &key, State &local, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, bool merge, uint8_t platform, const Progress &progress) {
     std::string executable;
     std::string identifier;
 
@@ -3064,23 +3064,25 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
     Expression nested("^(Frameworks/[^/]*\\.framework|PlugIns/[^/]*\\.appex(()|/[^/]*.app))/(" + failure + ")Info\\.plist$");
     std::map<std::string, Bundle> bundles;
 
-    folder.Find("", fun([&](const std::string &name) {
-        if (!nested(name))
-            return;
-        auto bundle(Split(name).dir);
-        if (mac) {
-            _assert(!bundle.empty());
-            bundle = Split(bundle.substr(0, bundle.size() - 1)).dir;
-        }
-        SubFolder subfolder(folder, bundle);
+    if (!flag_n) {
+        folder.Find("", fun([&](const std::string &name) {
+            if (!nested(name))
+                return;
+            auto bundle(Split(name).dir);
+            if (mac) {
+                _assert(!bundle.empty());
+                bundle = Split(bundle.substr(0, bundle.size() - 1)).dir;
+            }
+            SubFolder subfolder(folder, bundle);
 
-        State remote;
-        bundles[nested[1]] = Sign(root + bundle, subfolder, key, remote, "", Starts(name, "PlugIns/") ? alter :
-            static_cast<const Functor<std::string (const std::string &, const std::string &)> &>(fun([&](const std::string &, const std::string &) -> std::string { return entitlements; }))
-        , merge, platform, progress, true);
-        local.Merge(bundle, remote);
-    }), fun([&](const std::string &name, const Functor<std::string ()> &read) {
-    }));
+            State remote;
+            bundles[nested[1]] = Sign(root + bundle, subfolder, key, remote, "", Starts(name, "PlugIns/") ? alter :
+                static_cast<const Functor<std::string (const std::string &, const std::string &)> &>(fun([&](const std::string &, const std::string &) -> std::string { return entitlements; }))
+            , merge, platform, progress);
+            local.Merge(bundle, remote);
+        }), fun([&](const std::string &name, const Functor<std::string ()> &read) {
+        }));
+    }
 
     std::set<std::string> excludes;
 
@@ -3129,12 +3131,10 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
                     case FAT_CIGAM:
                     case MH_MAGIC: case MH_MAGIC_64:
                     case MH_CIGAM: case MH_CIGAM_64:
-                        if (!flag_n || !inRecursion) {
-                            folder.Save(name, true, flag, fun([&](std::streambuf &save) {
-                                Slots slots;
-                                Sign(header.bytes, size, data, hash, save, identifier, "", false, "", key, slots, length, 0, platform, Progression(progress, root + name));
-                            }));
-                        }
+                        folder.Save(name, true, flag, fun([&](std::streambuf &save) {
+                            Slots slots;
+                            Sign(header.bytes, size, data, hash, save, identifier, "", false, "", key, slots, length, 0, platform, Progression(progress, root + name));
+                        }));
                         return;
                 }
 
@@ -3259,14 +3259,12 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
 
     folder.Open(executable, fun([&](std::streambuf &buffer, size_t length, const void *flag) {
         progress(root + executable);
-        if (!flag_n || !inRecursion) {
-            folder.Save(executable, true, flag, fun([&](std::streambuf &save) {
-                Slots slots;
-                slots[1] = local.files.at(info);
-                slots[3] = local.files.at(signature);
-                bundle.hash = Sign(NULL, 0, buffer, local.files[executable], save, identifier, entitlements, merge, requirements, key, slots, length, 0, platform, Progression(progress, root + executable));
-            }));
-        }
+        folder.Save(executable, true, flag, fun([&](std::streambuf &save) {
+            Slots slots;
+            slots[1] = local.files.at(info);
+            slots[3] = local.files.at(signature);
+            bundle.hash = Sign(NULL, 0, buffer, local.files[executable], save, identifier, entitlements, merge, requirements, key, slots, length, 0, platform, Progression(progress, root + executable));
+        }));
     }));
 
     return bundle;
@@ -3274,7 +3272,7 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
 
 Bundle Sign(const std::string &root, Folder &folder, const std::string &key, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, bool merge, uint8_t platform, const Progress &progress) {
     State local;
-    return Sign(root, folder, key, local, requirements, alter, merge, platform, progress, false);
+    return Sign(root, folder, key, local, requirements, alter, merge, platform, progress);
 }
 
 #endif
