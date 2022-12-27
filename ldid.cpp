@@ -3548,7 +3548,7 @@ int main(int argc, char *argv[]) {
             break;
 
             case 'n':
-                flag_n = true;
+                flag_n = false;
             break;
 
             case 'M':
