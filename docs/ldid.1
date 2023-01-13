@@ -27,6 +27,7 @@
 .Op Fl q
 .Op Fl r | Fl S Ns Ar file.xml | Fl s
 .Op Fl u
+.Op Fl w
 .Op Fl arch Ar arch_type
 .Ar
 .Sh DESCRIPTION
@@ -142,6 +143,18 @@ This is a Procursus extension.
 .It Fl u
 If the binary was linked against UIKit, then print the UIKit version that the
 Mach-O binary was linked against.
+.It Fl w
+Shallow sign. Only the main binary of the specified bundle will be signed, as
+specified by
+.Ar CFBundleIdentifier
+in
+.Ar Info.plist .
+Any nested bundles and/or stray binaries will be completely
+left alone and interpreted at face-value. Applicable only when the signing
+target is a bundle directory, and not a specific Mach-O file.
+.Fl w
+can be used on any bundle, not just the root .app, including frameworks,
+appexes, and more.
 .El
 .Sh EXAMPLES
 To fakesign
