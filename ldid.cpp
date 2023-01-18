@@ -116,7 +116,7 @@
 
 bool flag_w(false);
 bool flag_U(false);
-std::string password;
+std::string password = "";
 std::vector<std::string> cleanup;
 bool flag_H(false);
 
@@ -1826,7 +1826,7 @@ class Stuff {
             exit(1);
         }
 
-        if (!flag_U) {
+        if (PKCS12_verify_mac(value_, "", 0) == 0 && !flag_U) {
             char passbuf[2048];
             UI_UTIL_read_pw_string(passbuf, 2048, "Enter password: ", 0);
             password = passbuf;

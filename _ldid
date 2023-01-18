@@ -2,7 +2,7 @@
 
 _arguments \
 	'-S-[Add signature]:entitlements:_files' \
- 	'-w[Shallow sign]' \   
+	'-w[Shallow sign]' \
 	'-Q-[Embed requirements]:requirements:_files' \
 	'(-S)-r[Remove signature]' \
 	'(-r)-h[Print signature information]' \
