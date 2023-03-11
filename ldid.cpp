@@ -3679,7 +3679,7 @@ int main(int argc, char *argv[]) {
             }
 
             if ((flag_e || flag_q || flag_h) && signature == NULL) {
-                fprintf(stderr, "ldid: -e, -q, and -h requre a signed binary\n");
+                fprintf(stderr, "ldid: -e, -q, and -h require a signed binary\n");
                 exit(1);
             }
 
