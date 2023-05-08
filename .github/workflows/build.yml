@@ -168,16 +168,13 @@ jobs:
           name: ldid_${{ env.OS }}_${{ env.ARCH }}
           path: ldid${{ env.EXT }}
 
-      - name: Upload Release Asset Linux/Windows
-        uses: actions/upload-release-asset@v1
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v1
         if: ${{ github.event_name == 'release' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ldid${{ env.EXT }}
-          asset_name: ldid_${{ env.OS }}_${{ env.ARCH }}${{ env.EXT }}
-          asset_content_type: application/octet-stream
+          files: ldid${{ env.EXT }}
 
   build-macos:
     name: Build
@@ -282,13 +279,10 @@ jobs:
           name: ldid_${{ matrix.os }}_${{ matrix.arch }}
           path: ldid
 
-      - name: Upload Release Asset macOS
-        uses: actions/upload-release-asset@v1
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v1
         if: ${{ github.event_name == 'release' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ldid
-          asset_name: ldid_${{ matrix.os }}_${{ matrix.arch }}
-          asset_content_type: application/octet-stream
+          files: ldid
