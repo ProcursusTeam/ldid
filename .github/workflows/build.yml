@@ -1,4 +1,4 @@
-name: Build
+name: CI
 
 on:
   push:
@@ -49,7 +49,7 @@ jobs:
           path: |
             ~/.cache/sccache
             ~/dep_src
-          key: build-linux-${{ matrix.triple }}-${{ env.GITHUB_SHA }}
+          key: build-linux-${{ matrix.triple }}-${{ github.sha }}
           restore-keys: |
             build-linux-${{ matrix.triple }}-
 
@@ -204,7 +204,7 @@ jobs:
           path: |
             ~/Library/Caches/Mozilla.sccache
             ~/dep_src
-          key: build-${{ matrix.os }}-${{ matrix.arch }}-${ { env.GITHUB_SHA } }
+          key: build-${{ matrix.os }}-${{ matrix.arch }}-${{ github.sha }}
           restore-keys: |
             build-${{ matrix.os }}-${{ matrix.arch }}-
 
