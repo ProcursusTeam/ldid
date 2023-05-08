@@ -5,7 +5,7 @@ on:
     paths:
       - '*.c'
       - '*.cpp'
-      - 'Maiefile'
+      - 'Makefile'
       - '.github/workflows/*'
   pull_request:
     paths:
