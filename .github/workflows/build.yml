@@ -22,6 +22,7 @@ env:
   LIBPLIST_VERSION: 2.2.0
   OPENSSL_VERSION: 3.0.5
   SCCACHE_VERSION: 0.3.0
+  TRE_COMMIT: b4dcf71e274aa2ad6a4d879d366eb20826adfecc
 
 jobs:
   build-linux:
@@ -142,15 +143,15 @@ jobs:
         if: ${{ env.OS == 'w64' }}
         run: |
           sudo apt-get install -y autopoint
-          wget -nc -O ${DOWNLOAD_PATH}/tre.tar.gz https://github.com/laurikari/tre/archive/refs/heads/master.tar.gz || true
-          tar xf ${DOWNLOAD_PATH}/tre.tar.gz -C ${DEP_PATH}
-          cd ${DEP_PATH}/tre-master
+          wget -nc -O ${DOWNLOAD_PATH}/tre-${TRE_COMMIT}.tar.gz https://github.com/laurikari/tre/archive/${TRE_COMMIT}.tar.gz || true
+          tar xf ${DOWNLOAD_PATH}/tre-${TRE_COMMIT}.tar.gz -C ${DEP_PATH}
+          cd ${DEP_PATH}/tre-${TRE_COMMIT}
           ./utils/autogen.sh
           ./configure --host=${TRIPLE} --prefix=/usr --without-cython --enable-static --disable-shared
           make -j$(nproc)
 
-          echo "CXXFLAGS=${CXXFLAGS} -I${DEP_PATH}/tre-master/lib" >> $GITHUB_ENV
-          echo "LIBS=${LIBS} ${DEP_PATH}/tre-master/lib/.libs/libtre.a" >> $GITHUB_ENV
+          echo "CXXFLAGS=${CXXFLAGS} -I${DEP_PATH}/tre-${TRE_COMMIT}/include/tre" >> $GITHUB_ENV
+          echo "LIBS=${LIBS} ${DEP_PATH}/tre-${TRE_COMMIT}/lib/.libs/libtre.a" >> $GITHUB_ENV
 
       - name: Build
         run: |
