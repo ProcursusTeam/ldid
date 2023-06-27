@@ -57,7 +57,11 @@
 
 #include <openssl/evp.h>
 
+#if LIBPLIST
 #include <plist/plist.h>
+#elif COREFOUNDATION
+#include <CoreFoundation/CoreFoundation.h>
+#endif
 
 #include "ldid.hpp"
 
@@ -617,6 +621,8 @@ static std::string der(const std::pair<std::string, std::string> &value) {
     return data.str();
 }
 
+#if LIBPLIST
+
 static std::string der(plist_t data) {
     switch (const auto type = plist_get_node_type(data)) {
         case PLIST_BOOLEAN: {
@@ -700,6 +706,68 @@ static std::string der(plist_t data) {
         } break;
     }
 }
+
+#elif COREFOUNDATION
+
+static std::string der(CFPropertyListRef data) {
+    // CFData, CFString, CFArray, CFDictionary, CFDate, CFBoolean, and CFNumber
+    CFTypeID type = CFGetTypeID(data);
+    if (type == CFBooleanGetTypeID()) {
+        uint8_t value(0);
+        value = data == kCFBooleanTrue;
+
+        std::stringbuf data;
+        put(data, 0x01);
+        der(data, 1);
+        put(data, value != 0 ? 1 : 0);
+        return data.str();
+    } else if (type == CFNumberGetTypeID()) {
+        uint64_t value;
+        CFNumberGetValue((CFNumberRef)data, CFNumberGetType((CFNumberRef)data), &value);
+        const auto length(bytes(value));
+
+        std::stringbuf data;
+        put(data, 0x02);
+        der(data, length);
+        put(data, value, length);
+        return data.str();
+    } else if (type == CFDataGetTypeID()) {
+        uint64_t length = CFDataGetLength((CFDataRef)data);
+        uint8_t *value = new uint8_t[length];
+        CFDataGetBytes((CFDataRef)data, CFRangeMake(0, CFDataGetLength((CFDataRef)data)), (UInt8 *)value);
+
+        _scope({ delete[] value; });
+        return der(0x04, (char *)value, length);
+    } else if (type == CFStringGetTypeID()) {
+        const char *value = CFStringGetCStringPtr((CFStringRef)data, kCFStringEncodingUTF8);
+        return der(0x0c, value);
+    } else if (type == CFArrayGetTypeID()) {
+        std::vector<std::string> values;
+        CFIndex size = CFArrayGetCount((CFArrayRef)data);
+        for (CFIndex i = 0; i < size; i++)
+            values.push_back(der(CFArrayGetValueAtIndex((CFArrayRef)data, i)));
+        return der(values);
+    } else if (type == CFDictionaryGetTypeID()) {
+        std::multiset<std::string> values;
+
+        CFIndex size = CFDictionaryGetCount((CFDictionaryRef)data);
+        CFTypeRef *keys = new CFTypeRef[size];
+        CFPropertyListRef *cfvalues = new CFPropertyListRef[size];
+        CFDictionaryGetKeysAndValues((CFDictionaryRef)data, keys, cfvalues);
+
+        for (CFIndex i = 0; i < size; i++) {
+            const char *key = CFStringGetCStringPtr((CFStringRef)(keys[i]), kCFStringEncodingUTF8);
+            values.insert(der(std::make_pair(key, der(cfvalues[i]))));
+        }
+
+        return der(values);
+    } else {
+        fprintf(stderr, "ldid: Invalid plist entry type\n");
+        exit(1);
+    }
+}
+
+#endif
 
 static inline uint16_t Swap_(uint16_t value) {
     return
@@ -1381,7 +1449,11 @@ class Map {
 
 namespace ldid {
 
+#if LIBPLIST
 static plist_t plist(const std::string &data);
+#elif COREFOUNDATION
+static CFPropertyListRef plist(const std::string &data);
+#endif
 
 void Analyze(const MachHeader &mach_header, const Functor<void (const char *data, size_t size)> &entitle) {
     _foreach (load_command, mach_header.GetLoadCommands())
@@ -2321,6 +2393,7 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
             }));
 
         if (!baton.entitlements_.empty() || !entitlements.empty()) {
+#if LIBPLIST
             auto combined(plist(baton.entitlements_));
             _scope({ plist_free(combined); });
             if (plist_get_node_type(combined) != PLIST_DICT) {
@@ -2348,13 +2421,43 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
                 _scope({ free(key); });
                 plist_dict_set_item(combined, key, plist_copy(value));
             }
+#elif COREFOUNDATION
+            auto entsdict(plist(baton.entitlements_));
+            if (CFGetTypeID(entsdict) != CFDictionaryGetTypeID()) {
+                fprintf(stderr, "ldid: Existing entitlements are in wrong format\n");
+                exit(1);
+            }
+            CFMutableDictionaryRef combined = CFDictionaryCreateMutableCopy(kCFAllocatorDefault, 0, (CFDictionaryRef)entsdict);
+
+            auto merging(plist(entitlements));
+            if (CFGetTypeID(merging) != CFDictionaryGetTypeID()) {
+                fprintf(stderr, "ldid: Entitlements need a root key of dict\n");
+                exit(1);
+            }
+
+            CFIndex dictsize = CFDictionaryGetCount((CFDictionaryRef)merging);
+            CFTypeRef *keys = new CFTypeRef[dictsize];
+            CFTypeRef *cfvalues = new CFTypeRef[dictsize];
+            CFDictionaryGetKeysAndValues((CFDictionaryRef)merging, keys, cfvalues);
+
+            for (CFIndex i = 0; i < dictsize; i++) {
+                CFDictionarySetValue(combined, keys[i], cfvalues[i]);
+            }
+#endif
 
             baton.derformat_ = der(combined);
 
+#if LIBPLIST
             char *xml(NULL);
             uint32_t size;
             plist_to_xml(combined, &xml, &size);
             _scope({ free(xml); });
+#elif COREFOUNDATION
+            auto created(CFPropertyListCreateXMLData(kCFAllocatorDefault, combined));
+            _scope({ CFRelease(created); });
+            auto xml(reinterpret_cast<const char *>(CFDataGetBytePtr(created)));
+            auto size(CFDataGetLength(created));
+#endif
 
             baton.entitlements_.assign(xml, size);
         }
@@ -2410,6 +2513,7 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
             insert(blobs, CSSLOT_ENTITLEMENTS, CSMAGIC_EMBEDDED_ENTITLEMENTS, data);
 
             auto entitlements(plist(baton.entitlements_));
+#if LIBPLIST
             _scope({ plist_free(entitlements); });
             if (plist_get_node_type(entitlements) != PLIST_DICT) {
                 fprintf(stderr, "ldid: Entitlements should be a plist dicionary\n");
@@ -2424,6 +2528,21 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
                 plist_get_bool_val(item, &value);
                 return value != 0;
             });
+#elif COREFOUNDATION
+            if (CFGetTypeID(entitlements) != CFDictionaryGetTypeID()) {
+                fprintf(stderr, "ldid: Entitlements should be a plist dicionary\n");
+                exit(1);
+            }
+
+            const auto entitled([&](const char *key) {
+                CFStringRef cfkey = CFStringCreateWithCString(kCFAllocatorDefault, key, kCFStringEncodingUTF8);
+                auto item(CFDictionaryGetValue((CFDictionaryRef)entitlements, cfkey));
+                CFRelease(cfkey);
+                if (item == NULL || CFGetTypeID(item) != CFBooleanGetTypeID())
+                    return false;
+                return item == kCFBooleanTrue;
+            });
+#endif
 
             if (entitled("get-task-allow"))
                 execs |= kSecCodeExecSegAllowUnsigned;
@@ -2542,11 +2661,21 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
         }
 
         if (!key.empty()) {
+#if LIBPLIST
             auto plist(plist_new_dict());
             _scope({ plist_free(plist); });
 
             auto cdhashes(plist_new_array());
             plist_dict_set_item(plist, "cdhashes", cdhashes);
+#elif COREFOUNDATION
+            auto plist(CFDictionaryCreateMutable(kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
+            _scope({ CFRelease(plist); });
+
+            auto cdhashes(CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks));
+            _scope({ CFRelease(cdhashes); });
+
+            CFDictionarySetValue(plist, CFSTR("cdhashes"), cdhashes);
+#endif
 
             ldid::Hash hash;
 
@@ -2563,13 +2692,26 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
                 std::vector<char> cdhash(algorithm[hash], algorithm[hash] + algorithm.size_);
                 cdhash.resize(20);
 
+#if LIBPLIST
                 plist_array_append_item(cdhashes, plist_new_data(cdhash.data(), cdhash.size()));
+#elif COREFOUNDATION
+                auto value(CFDataCreate(kCFAllocatorDefault, reinterpret_cast<const UInt8 *>(cdhash.data()), cdhash.size()));
+                _scope({ CFRelease(value); });
+                CFArrayAppendValue(cdhashes, value);
+#endif
             }
 
+#if LIBPLIST
             char *xml(NULL);
             uint32_t size;
             plist_to_xml(plist, &xml, &size);
             _scope({ free(xml); });
+#elif COREFOUNDATION
+            auto created(CFPropertyListCreateXMLData(kCFAllocatorDefault, plist));
+            _scope({ CFRelease(created); });
+            auto xml(reinterpret_cast<const char *>(CFDataGetBytePtr(created)));
+            auto size(CFDataGetLength(created));
+#endif
 
             std::stringbuf data;
             const std::string &sign(blobs[CSSLOT_CODEDIRECTORY]);
@@ -2820,6 +2962,8 @@ static void copy(std::streambuf &source, std::streambuf &target, size_t length, 
     }
 }
 
+#if LIBPLIST
+
 static plist_t plist(const std::string &data) {
     if (data.empty())
         return plist_new_dict();
@@ -2859,6 +3003,46 @@ static std::string plist_s(plist_t node) {
     _scope({ free(data); });
     return data;
 }
+
+#elif COREFOUNDATION
+
+static CFPropertyListRef plist(const std::string &data) {
+    if (data.empty())
+        return CFDictionaryCreateMutable(kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    CFPropertyListRef plist(NULL);
+    CFDataRef cfdata = CFDataCreateWithBytesNoCopy(kCFAllocatorDefault, (const UInt8 *)data.data(), data.size(), kCFAllocatorNull);
+    plist = CFPropertyListCreateWithData(kCFAllocatorDefault, cfdata, kCFPropertyListMutableContainersAndLeaves, NULL, NULL);
+    if (plist == NULL) {
+        fprintf(stderr, "ldid: Failed to parse plist\n");
+        exit(1);
+    }
+    return plist;
+}
+
+static void plist_d(std::streambuf &buffer, size_t length, const Functor<void (CFPropertyListRef)> &code) {
+    std::stringbuf data;
+    copy(buffer, data, length, dummy_);
+    auto node(plist(data.str()));
+    _scope({ CFRelease(node); });
+    if (CFGetTypeID(node) != CFDictionaryGetTypeID()) {
+        fprintf(stderr, "ldid: Unexpected plist type. Expected <dict>\n");
+        exit(1);
+    }
+    code(node);
+}
+
+static std::string plist_s(CFPropertyListRef node) {
+    if (node == NULL)
+        return NULL;
+    if (CFGetTypeID(node) != CFStringGetTypeID()) {
+        fprintf(stderr, "ldid: Unexpected plist type. Expected <string>\n");
+        exit(1);
+    }
+    const char *data = CFStringGetCStringPtr((CFStringRef)node, kCFStringEncodingUTF8);
+    return data;
+}
+
+#endif
 
 enum Mode {
     NoMode,
@@ -2993,6 +3177,7 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
     }());
 
     folder.Open(info, fun([&](std::streambuf &buffer, size_t length, const void *flag) {
+#if LIBPLIST
         plist_d(buffer, length, fun([&](plist_t node) {
             plist_t nodebuf(plist_dict_get_item(node, "CFBundleExecutable"));
             if (nodebuf == NULL) {
@@ -3007,6 +3192,22 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
             }
             identifier = plist_s(nodebuf);
         }));
+#elif COREFOUNDATION
+        plist_d(buffer, length, fun([&](CFPropertyListRef node) {
+            CFPropertyListRef nodebuf(CFDictionaryGetValue((CFDictionaryRef)node, CFSTR("CFBundleExecutable")));
+            if (nodebuf == NULL) {
+                fprintf(stderr, "ldid: Cannot find key CFBundleExecutable\n");
+                exit(1);
+            }
+            executable = plist_s(nodebuf);
+            nodebuf = CFDictionaryGetValue((CFDictionaryRef)node, CFSTR("CFBundleIdentifier"));
+            if (nodebuf == NULL) {
+                fprintf(stderr, "ldid: Cannot find key CFBundleIdentifier\n");
+                exit(1);
+            }
+            identifier = plist_s(nodebuf);
+        }));
+#endif
     }));
 
     if (mac && info == "Info.plist")
@@ -3153,12 +3354,22 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
         local.links[name] = read();
     }));
 
+#if LIBPLIST
     auto plist(plist_new_dict());
     _scope({ plist_free(plist); });
+#elif COREFOUNDATION
+    auto plist(CFDictionaryCreateMutable(kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
+    _scope({ CFRelease(plist); });
+#endif
 
     for (const auto &version : versions) {
+#if LIBPLIST
         auto files(plist_new_dict());
         plist_dict_set_item(plist, ("files" + version.first).c_str(), files);
+#elif COREFOUNDATION
+        auto files(CFDictionaryCreateMutable(kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
+        CFDictionarySetValue(plist, CFStringCreateWithCString(kCFAllocatorDefault, ("files" + version.first).c_str(), kCFStringEncodingUTF8), files);
+#endif
 
         for (const auto &rule : version.second)
             rule.Compile();
@@ -3169,9 +3380,15 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
             for (const auto &rule : version.second)
                 if (rule(hash.first)) {
                     if (!old && mac && excludes.find(hash.first) != excludes.end());
-                    else if (old && rule.mode_ == NoMode)
+                    else if (old && rule.mode_ == NoMode) {
+#if LIBPLIST
                         plist_dict_set_item(files, hash.first.c_str(), plist_new_data(reinterpret_cast<const char *>(hash.second.sha1_), sizeof(hash.second.sha1_)));
-                    else if (rule.mode_ != OmitMode) {
+#elif COREFOUNDATION
+                        CFDataRef data = CFDataCreate(kCFAllocatorDefault, reinterpret_cast<const UInt8 *>(hash.second.sha1_), sizeof(hash.second.sha1_));
+                        CFDictionarySetValue(files, CFStringCreateWithCString(kCFAllocatorDefault, hash.first.c_str(), kCFStringEncodingUTF8), data);
+#endif
+                    } else if (rule.mode_ != OmitMode) {
+#if LIBPLIST
                         auto entry(plist_new_dict());
                         plist_dict_set_item(entry, "hash", plist_new_data(reinterpret_cast<const char *>(hash.second.sha1_), sizeof(hash.second.sha1_)));
                         if (!old)
@@ -3179,6 +3396,18 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
                         if (rule.mode_ == OptionalMode)
                             plist_dict_set_item(entry, "optional", plist_new_bool(true));
                         plist_dict_set_item(files, hash.first.c_str(), entry);
+#elif COREFOUNDATION
+                        auto entry(CFDictionaryCreateMutable(kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
+                        CFDataRef data = CFDataCreate(kCFAllocatorDefault, reinterpret_cast<const UInt8 *>(hash.second.sha1_), sizeof(hash.second.sha1_));
+                        CFDictionarySetValue(entry, CFSTR("hash"), data);
+                        if (!old) {
+                            CFDataRef data2 = CFDataCreate(kCFAllocatorDefault, reinterpret_cast<const UInt8 *>(hash.second.sha256_), sizeof(hash.second.sha256_));
+                            CFDictionarySetValue(entry, CFSTR("hash2"), data2);
+                        }
+                        if (rule.mode_ == OptionalMode)
+                            CFDictionarySetValue(entry, CFSTR("optional"), kCFBooleanTrue);
+                        CFDictionarySetValue(files, CFStringCreateWithCString(kCFAllocatorDefault, hash.first.c_str(), kCFStringEncodingUTF8), entry);
+#endif
                     }
 
                     break;
@@ -3189,11 +3418,19 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
                 for (const auto &rule : version.second)
                     if (rule(link.first)) {
                         if (rule.mode_ != OmitMode) {
+#if LIBPLIST
                             auto entry(plist_new_dict());
                             plist_dict_set_item(entry, "symlink", plist_new_string(link.second.c_str()));
                             if (rule.mode_ == OptionalMode)
                                 plist_dict_set_item(entry, "optional", plist_new_bool(true));
                             plist_dict_set_item(files, link.first.c_str(), entry);
+#elif COREFOUNDATION
+                            auto entry(CFDictionaryCreateMutable(kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
+                            CFDictionarySetValue(entry, CFSTR("symlink"), CFStringCreateWithCString(kCFAllocatorDefault, link.second.c_str(), kCFStringEncodingUTF8));
+                            if (rule.mode_ == OptionalMode)
+                                CFDictionarySetValue(entry, CFSTR("optional"), kCFBooleanTrue);
+                            CFDictionarySetValue(files, CFStringCreateWithCString(kCFAllocatorDefault, link.first.c_str(), kCFStringEncodingUTF8), entry);
+#endif
                         }
 
                         break;
@@ -3201,58 +3438,114 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
 
         if (!old && mac)
             for (const auto &bundle : bundles) {
+#if LIBPLIST
                 auto entry(plist_new_dict());
                 plist_dict_set_item(entry, "cdhash", plist_new_data(reinterpret_cast<const char *>(bundle.second.hash.sha256_), sizeof(bundle.second.hash.sha256_)));
                 plist_dict_set_item(entry, "requirement", plist_new_string("anchor apple generic"));
                 plist_dict_set_item(files, bundle.first.c_str(), entry);
+#elif COREFOUNDATION
+                auto entry(CFDictionaryCreateMutable(kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
+                auto data(CFDataCreate(kCFAllocatorDefault, reinterpret_cast<const UInt8 *>(bundle.second.hash.sha256_), sizeof(bundle.second.hash.sha256_)));
+                CFDictionarySetValue(entry, CFSTR("cdhash"), data);
+                CFDictionarySetValue(entry, CFSTR("requirement"), CFSTR("anchor apple generic"));
+                CFDictionarySetValue(files, CFStringCreateWithCString(kCFAllocatorDefault, bundle.first.c_str(), kCFStringEncodingUTF8), entry);
+#endif
             }
     }
 
     for (const auto &version : versions) {
+#if LIBPLIST
         auto rules(plist_new_dict());
         plist_dict_set_item(plist, ("rules" + version.first).c_str(), rules);
+#elif COREFOUNDATION
+        auto rules(CFDictionaryCreateMutable(kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
+        CFDictionarySetValue(plist, CFStringCreateWithCString(kCFAllocatorDefault, ("rules" + version.first).c_str(), kCFStringEncodingUTF8), rules);
+#endif
 
         std::multiset<const Rule *, RuleCode> ordered;
         for (const auto &rule : version.second)
             ordered.insert(&rule);
 
         for (const auto &rule : ordered)
-            if (rule->weight_ == 1 && rule->mode_ == NoMode)
+            if (rule->weight_ == 1 && rule->mode_ == NoMode) {
+#if LIBPLIST
                 plist_dict_set_item(rules, rule->code_.c_str(), plist_new_bool(true));
-            else {
+#elif COREFOUNDATION
+                CFDictionarySetValue(rules, CFStringCreateWithCString(kCFAllocatorDefault, rule->code_.c_str(), kCFStringEncodingUTF8), kCFBooleanTrue);
+#endif
+            } else {
+#if LIBPLIST
                 auto entry(plist_new_dict());
                 plist_dict_set_item(rules, rule->code_.c_str(), entry);
+#elif COREFOUNDATION
+                auto entry(CFDictionaryCreateMutable(kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
+                CFDictionarySetValue(rules, CFStringCreateWithCString(kCFAllocatorDefault, rule->code_.c_str(), kCFStringEncodingUTF8), entry);
+#endif
 
                 switch (rule->mode_) {
                     case NoMode:
                         break;
                     case OmitMode:
+#if LIBPLIST
                         plist_dict_set_item(entry, "omit", plist_new_bool(true));
+#elif COREFOUNDATION
+                        CFDictionarySetValue(entry, CFSTR("omit"), kCFBooleanTrue);
+#endif
                         break;
                     case OptionalMode:
+#if LIBPLIST
                         plist_dict_set_item(entry, "optional", plist_new_bool(true));
+#elif COREFOUNDATION
+                        CFDictionarySetValue(entry, CFSTR("optional"), kCFBooleanTrue);
+#endif
                         break;
                     case NestedMode:
+#if LIBPLIST
                         plist_dict_set_item(entry, "nested", plist_new_bool(true));
+#elif COREFOUNDATION
+                        CFDictionarySetValue(entry, CFSTR("nested"), kCFBooleanTrue);
+#endif
                         break;
                     case TopMode:
+#if LIBPLIST
                         plist_dict_set_item(entry, "top", plist_new_bool(true));
+#elif COREFOUNDATION
+                        CFDictionarySetValue(entry, CFSTR("top"), kCFBooleanTrue);
+#endif
                         break;
                 }
 
+#if LIBPLIST
                 if (rule->weight_ >= 10000)
                     plist_dict_set_item(entry, "weight", plist_new_uint(rule->weight_));
                 else if (rule->weight_ != 1)
                     plist_dict_set_item(entry, "weight", plist_new_real(rule->weight_));
+#elif COREFOUNDATION
+                if (rule->weight_ >= 10000) {
+                    SInt64 weight = rule->weight_;
+                    CFDictionarySetValue(entry, CFSTR("weight"), CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt64Type, &weight));
+                } else if (rule->weight_ != 1) {
+                    Float64 weightreal = rule->weight_;
+                    CFDictionarySetValue(entry, CFSTR("weight"), CFNumberCreate(kCFAllocatorDefault, kCFNumberFloat64Type, &weightreal));
+                }
+#endif
             }
     }
 
     folder.Save(signature, true, NULL, fun([&](std::streambuf &save) {
         HashProxy proxy(local.files[signature], save);
+
+#if LIBPLIST
         char *xml(NULL);
         uint32_t size;
         plist_to_xml(plist, &xml, &size);
         _scope({ free(xml); });
+#elif COREFOUNDATION
+        auto created(CFPropertyListCreateXMLData(kCFAllocatorDefault, plist));
+        _scope({ CFRelease(created); });
+        auto xml(reinterpret_cast<const char *>(CFDataGetBytePtr(created)));
+        auto size(CFDataGetLength(created));
+#endif
         put(proxy, xml, size);
     }));
 

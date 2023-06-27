@@ -20,8 +20,14 @@ MANDIR   ?= $(PREFIX)/share/man
 SRC      := ldid.cpp
 LIBS     ?=
 
+ifeq ($(COREFOUNDATION),1)
+CXXFLAGS      += -DCOREFOUNDATION
+LIBPLIST_LIBS += -framework CoreFoundation
+else
+CXXFLAGS += -DLIBPLIST
 LIBPLIST_INCLUDES  ?= $(shell pkg-config --cflags libplist-2.0)
 LIBPLIST_LIBS      ?= $(shell pkg-config --libs libplist-2.0)
+endif
 
 ifeq ($(shell uname -s),FreeBSD)
 LIBCRYPTO_INCLUDES ?= -I/usr/include
