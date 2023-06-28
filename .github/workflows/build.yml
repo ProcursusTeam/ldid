@@ -22,6 +22,8 @@ env:
   LIBPLIST_VERSION: 2.2.0
   OPENSSL_VERSION: 3.0.5
   SCCACHE_VERSION: 0.3.0
+  TRE_COMMIT: b4dcf71e274aa2ad6a4d879d366eb20826adfecc
+  MMAN_COMMIT: 2d1c576e62b99e85d99407e1a88794c6e44c3310
 
 jobs:
   build-linux:
@@ -127,30 +129,30 @@ jobs:
       - name: Build mman-win32
         if: ${{ env.OS == 'w64' }}
         run: |
-          wget -nc -O ${DOWNLOAD_PATH}/mman-win32.tar.gz https://github.com/alitrack/mman-win32/archive/refs/heads/master.tar.gz || true
-          tar xf ${DOWNLOAD_PATH}/mman-win32.tar.gz -C ${DEP_PATH}
-          cd ${DEP_PATH}/mman-win32-master
+          wget -nc -O ${DOWNLOAD_PATH}/mman-win32-${MMAN_COMMIT}.tar.gz https://github.com/alitrack/mman-win32/archive/${MMAN_COMMIT}.tar.gz || true
+          tar xf ${DOWNLOAD_PATH}/mman-win32-${MMAN_COMMIT}.tar.gz -C ${DEP_PATH}
+          cd ${DEP_PATH}/mman-win32-${MMAN_COMMIT}
           ./configure --prefix=/ --disable-shared --enable-static --cross-prefix="${TRIPLE}-"
           make -j$(nproc)
           mkdir -p include/sys/
           ln -s ../../mman.h include/sys/
 
-          echo "CXXFLAGS=${CXXFLAGS} -I${DEP_PATH}/mman-win32-master/include" >> $GITHUB_ENV
-          echo "LIBS=${LIBS} ${DEP_PATH}/mman-win32-master/libmman.a" >> $GITHUB_ENV
+          echo "CXXFLAGS=${CXXFLAGS} -I${DEP_PATH}/mman-win32-${MMAN_COMMIT}/include" >> $GITHUB_ENV
+          echo "LIBS=${LIBS} ${DEP_PATH}/mman-win32-${MMAN_COMMIT}/libmman.a" >> $GITHUB_ENV
 
       - name: Build tre
         if: ${{ env.OS == 'w64' }}
         run: |
           sudo apt-get install -y autopoint
-          wget -nc -O ${DOWNLOAD_PATH}/tre.tar.gz https://github.com/laurikari/tre/archive/refs/heads/master.tar.gz || true
-          tar xf ${DOWNLOAD_PATH}/tre.tar.gz -C ${DEP_PATH}
-          cd ${DEP_PATH}/tre-master
+          wget -nc -O ${DOWNLOAD_PATH}/tre-${TRE_COMMIT}.tar.gz https://github.com/laurikari/tre/archive/${TRE_COMMIT}.tar.gz || true
+          tar xf ${DOWNLOAD_PATH}/tre-${TRE_COMMIT}.tar.gz -C ${DEP_PATH}
+          cd ${DEP_PATH}/tre-${TRE_COMMIT}
           ./utils/autogen.sh
           ./configure --host=${TRIPLE} --prefix=/usr --without-cython --enable-static --disable-shared
           make -j$(nproc)
 
-          echo "CXXFLAGS=${CXXFLAGS} -I${DEP_PATH}/tre-master/lib" >> $GITHUB_ENV
-          echo "LIBS=${LIBS} ${DEP_PATH}/tre-master/lib/.libs/libtre.a" >> $GITHUB_ENV
+          echo "CXXFLAGS=${CXXFLAGS} -I${DEP_PATH}/tre-${TRE_COMMIT}/include/tre" >> $GITHUB_ENV
+          echo "LIBS=${LIBS} ${DEP_PATH}/tre-${TRE_COMMIT}/lib/.libs/libtre.a" >> $GITHUB_ENV
 
       - name: Build
         run: |
