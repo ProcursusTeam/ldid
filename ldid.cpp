@@ -2080,7 +2080,7 @@ class HashBuffer :
     {
         sha1_ = EVP_MD_CTX_new();
         sha256_ = EVP_MD_CTX_new();
-        
+
         EVP_DigestInit_ex(sha1_, EVP_get_digestbyname("sha1"), nullptr);
         EVP_DigestInit_ex(sha256_, EVP_get_digestbyname("sha256"), nullptr);
     }
@@ -2088,7 +2088,7 @@ class HashBuffer :
     ~HashBuffer() {
         EVP_DigestFinal_ex(sha1_, reinterpret_cast<uint8_t *>(hash_.sha1_), nullptr);
         EVP_DigestFinal_ex(sha256_, reinterpret_cast<uint8_t *>(hash_.sha256_), nullptr);
-        
+
         EVP_MD_CTX_free(sha1_);
         EVP_MD_CTX_free(sha256_);
     }
@@ -3679,7 +3679,7 @@ int main(int argc, char *argv[]) {
             }
 
             if ((flag_e || flag_q || flag_h) && signature == NULL) {
-                fprintf(stderr, "ldid: -e, -q, and -h requre a signed binary\n");
+                fprintf(stderr, "ldid: -e, -q, and -h require a signed binary\n");
                 exit(1);
             }
 
