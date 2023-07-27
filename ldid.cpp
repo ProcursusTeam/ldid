@@ -3619,6 +3619,29 @@ int main(int argc, char *argv[]) {
                 ldid::Unsign(input.data(), input.size(), output, dummy_);
             else {
                 std::string identifier(flag_I ?: split.base.c_str());
+                if (flag_s) {
+                    FatHeader fat_header(input.data(), input.size());
+                    _foreach (mach_header, fat_header.GetMachHeaders()) {
+                        struct linkedit_data_command *signature(NULL);
+
+                        _foreach (load_command, mach_header.GetLoadCommands())
+                            if (mach_header.Swap(load_command->cmd) == LC_CODE_SIGNATURE)
+                                signature = reinterpret_cast<struct linkedit_data_command *>(load_command);
+
+                        uint32_t data = mach_header.Swap(signature->dataoff);
+
+                        uint8_t *top = reinterpret_cast<uint8_t *>(mach_header.GetBase());
+                        uint8_t *blob = top + data;
+                        struct SuperBlob *super = reinterpret_cast<struct SuperBlob *>(blob);
+
+                        for (size_t index(0); index != Swap(super->count); ++index)
+                            if (Swap(super->index[index].type) == CSSLOT_CODEDIRECTORY) {
+                                uint32_t begin = Swap(super->index[index].offset);
+                                struct CodeDirectory *directory = reinterpret_cast<struct CodeDirectory *>(blob + begin + sizeof(Blob));
+                                identifier = (const char *)(blob + begin + Swap(directory->identOffset));
+                            }
+                    }
+                }
                 ldid::Sign(input.data(), input.size(), output, identifier, entitlements, flag_M, requirements, key, slots, flags, platform, dummy_);
             }
 
