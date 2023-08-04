@@ -1342,6 +1342,12 @@ class Map {
         _syscall(fstat(file, &stat));
         size_ = stat.st_size;
 
+#ifdef MAP_RESILIENT_CODESIGN
+        data_ = mmap(NULL, size_, pflag, mflag | MAP_RESILIENT_CODESIGN, file, 0);
+        if (data_ != MAP_FAILED)
+            return;
+#endif
+
         data_ = mmap(NULL, size_, pflag, mflag, file, 0);
         if (data_ == MAP_FAILED) {
             fprintf(stderr, "ldid: mmap: %s\n", strerror(errno));
