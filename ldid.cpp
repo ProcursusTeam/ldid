@@ -551,6 +551,7 @@ static const uint8_t PageShift_(0x0c);
 static const uint32_t PageSize_(1 << PageShift_);
 
 static inline unsigned bytes(uint64_t value) {
+    if (!value) return 1;
     return (64 - __builtin_clzll(value) + 7) / 8;
 }
 
