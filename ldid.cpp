@@ -3307,7 +3307,7 @@ static void usage(const char *argv0) {
     fprintf(stderr, "            host | kill | library-validation | restrict | runtime | linker-signed]] [-D] [-d]\n");
     fprintf(stderr, "            [-Enum:file] [-e] [-H[sha1 | sha256]] [-h] [-Iname]\n");
     fprintf(stderr, "            [-Kkey.p12 [-Upassword]] [-M] [-P[num]] [-Qrequirements.xml] [-q]\n");
-    fprintf(stderr, "            [-r | -Sfile.xml | -s] [-w] [-u] [-arch arch_type] file ...\n");
+    fprintf(stderr, "            [-r | -Sfile.xml | -s] [-w] [-u] [-tTeamID] [-arch arch_type] file ...\n");
     fprintf(stderr, "Common Options:\n");
     fprintf(stderr, "   -S[file.xml]  Pseudo-sign using the entitlements in file.xml\n");
     fprintf(stderr, "   -w            Shallow sign\n");
