@@ -119,6 +119,7 @@ bool flag_U(false);
 std::string password = "";
 std::vector<std::string> cleanup;
 bool flag_H(false);
+const char *flag_t(NULL);
 
 template <typename Type_>
 struct Iterator_ {
@@ -2268,6 +2269,10 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
         get(common, name, NID_commonName);
     }
 
+    if (flag_t != NULL) {
+        printf("ldid: Using team ID %s\n", flag_t);
+        team = flag_t;
+    }
 
     std::stringbuf backing;
 
@@ -3577,6 +3582,10 @@ int main(int argc, char *argv[]) {
 
             case 'u': {
                 flag_u = true;
+            } break;
+
+            case 't': {
+                flag_t = argv[argi] + 2;
             } break;
 
             case 'I': {
