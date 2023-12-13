@@ -55,6 +55,6 @@ install: all
 	done
 
 clean:
-	rm -rf ldid *.o
+	rm -rf ldid$(EXT) *.o
 
 .PHONY: all clean install
