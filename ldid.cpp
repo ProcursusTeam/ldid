@@ -2270,7 +2270,6 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
     }
 
     if (flag_t != NULL) {
-        printf("ldid: Using team ID %s\n", flag_t);
         team = flag_t;
     }
 
