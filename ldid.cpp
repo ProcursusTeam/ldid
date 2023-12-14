@@ -465,6 +465,10 @@ struct encryption_info_command {
 #define BIND_OPCODE_DO_BIND_ADD_ADDR_IMM_SCALED      0xb0
 #define BIND_OPCODE_DO_BIND_ULEB_TIMES_SKIPPING_ULEB 0xc0
 
+#define MAXSEGALIGN   15
+#define MINSEGALIGN32 2
+#define MINSEGALIGN64 3
+
 struct : ldid::Progress {
     virtual void operator()(const std::string &value) const {
     }
@@ -813,6 +817,8 @@ class MachHeader :
     struct mach_header *mach_header_;
     struct load_command *load_command_;
 
+    uint32_t align_ = MAXSEGALIGN;
+
   public:
     MachHeader(void *base, size_t size) :
         Data(base, size)
@@ -849,6 +855,29 @@ class MachHeader :
             fprintf(stderr, "ldid: Unsupported Mach-O type\n");
             exit(1);
         }
+
+        uint32_t minalign = bits64_ ? MINSEGALIGN64 : MINSEGALIGN32;
+        ForSection(ldid::fun([&](const char *segment, void *lc, const char *section, void *, size_t) {
+            if (section == NULL) {
+                uint64_t vmaddr = 0;
+                if (bits64_) {
+                    vmaddr = ((struct segment_command_64 *)lc)->vmaddr;
+                } else {
+                    vmaddr = ((struct segment_command *)lc)->vmaddr;
+                }
+                if (vmaddr) {
+                    uint64_t segalign = 1;
+                    uint32_t tempalign = 0;
+                    while ((segalign & vmaddr) == 0) {
+                        segalign = segalign << 1;
+                        tempalign++;
+                    }
+                    tempalign = tempalign < minalign ? minalign : tempalign;
+
+                    align_ = tempalign < align_ ? tempalign : align_;
+                }
+            }
+        }));
     }
 
     bool Bits64() const {
@@ -887,25 +916,29 @@ class MachHeader :
         return load_commands;
     }
 
-    void ForSection(const ldid::Functor<void (const char *, const char *, void *, size_t)> &code) const {
+    void ForSection(const ldid::Functor<void (const char *, void *, const char *, void *, size_t)> &code) const {
         _foreach (load_command, GetLoadCommands())
             switch (Swap(load_command->cmd)) {
                 case LC_SEGMENT: {
                     auto segment(reinterpret_cast<struct segment_command *>(load_command));
-                    code(segment->segname, NULL, GetOffset<void>(segment->fileoff), segment->filesize);
+                    code(segment->segname, load_command, NULL, GetOffset<void>(segment->fileoff), segment->filesize);
                     auto section(reinterpret_cast<struct section *>(segment + 1));
                     for (uint32_t i(0), e(Swap(segment->nsects)); i != e; ++i, ++section)
-                        code(segment->segname, section->sectname, GetOffset<void>(segment->fileoff + section->offset), section->size);
+                        code(segment->segname, load_command, section->sectname, GetOffset<void>(segment->fileoff + section->offset), section->size);
                 } break;
 
                 case LC_SEGMENT_64: {
                     auto segment(reinterpret_cast<struct segment_command_64 *>(load_command));
-                    code(segment->segname, NULL, GetOffset<void>(segment->fileoff), segment->filesize);
+                    code(segment->segname, load_command, NULL, GetOffset<void>(segment->fileoff), segment->filesize);
                     auto section(reinterpret_cast<struct section_64 *>(segment + 1));
                     for (uint32_t i(0), e(Swap(segment->nsects)); i != e; ++i, ++section)
-                        code(segment->segname, section->sectname, GetOffset<void>(segment->fileoff + section->offset), section->size);
+                        code(segment->segname, load_command, section->sectname, GetOffset<void>(segment->fileoff + section->offset), section->size);
                 } break;
             }
+    }
+
+    uint32_t GetAlign() const {
+        return align_;
     }
 
     template <typename Target_>
@@ -919,6 +952,7 @@ class FatMachHeader :
 {
   private:
     fat_arch *fat_arch_;
+    uint32_t align_ = MAXSEGALIGN + 1;
 
   public:
     FatMachHeader(void *base, size_t size, fat_arch *fat_arch) :
@@ -927,8 +961,21 @@ class FatMachHeader :
     {
     }
 
+    FatMachHeader(void *base, size_t size, fat_arch *fat_arch, uint32_t align) :
+        MachHeader(base, size),
+        fat_arch_(fat_arch),
+        align_(align)
+    {
+    }
+
     fat_arch *GetFatArch() const {
         return fat_arch_;
+    }
+
+    uint32_t GetAlign() const {
+        if (align_ > MAXSEGALIGN)
+            return MachHeader::GetAlign();
+        return align_;
     }
 };
 
@@ -958,7 +1005,8 @@ class FatHeader :
             for (arch = 0; arch != fat_narch; ++arch) {
                 uint32_t arch_offset = Swap(fat_arch->offset);
                 uint32_t arch_size = Swap(fat_arch->size);
-                mach_headers_.push_back(FatMachHeader((uint8_t *) base + arch_offset, arch_size, fat_arch));
+                uint32_t align = Swap(fat_arch->align);
+                mach_headers_.push_back(FatMachHeader((uint8_t *) base + arch_offset, arch_size, fat_arch, align));
                 ++fat_arch;
             }
         }
@@ -1496,27 +1544,9 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
         Baton baton;
         size_t alloc(allocate(mach_header, baton, size));
 
-        auto *fat_arch(mach_header.GetFatArch());
         uint32_t align;
 
-        if (fat_arch != NULL)
-            align = source.Swap(fat_arch->align);
-        else switch (mach_header.GetCPUType()) {
-            case CPU_TYPE_POWERPC:
-            case CPU_TYPE_POWERPC64:
-            case CPU_TYPE_X86:
-            case CPU_TYPE_X86_64:
-                align = 0xc;
-                break;
-            case CPU_TYPE_ARM:
-            case CPU_TYPE_ARM64:
-            case CPU_TYPE_ARM64_32:
-                align = 0xe;
-                break;
-            default:
-                align = 0x0;
-                break;
-        }
+        align = mach_header.GetAlign();
 
         const char *arch(NULL);
         switch (mach_header.GetCPUType()) {
@@ -2312,7 +2342,7 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
         _foreach (slot, slots)
             special = std::max(special, slot.first);
 
-        mach_header.ForSection(fun([&](const char *segment, const char *section, void *data, size_t size) {
+        mach_header.ForSection(fun([&](const char *segment, void *lc, const char *section, void *data, size_t size) {
             if (strcmp(segment, "__TEXT") == 0 && section != NULL && strcmp(section, "__info_plist") == 0)
                 special = std::max(special, CSSLOT_INFOSLOT);
         }));
@@ -2455,7 +2485,7 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
 
         Slots posts(slots);
 
-        mach_header.ForSection(fun([&](const char *segment, const char *section, void *data, size_t size) {
+        mach_header.ForSection(fun([&](const char *segment, void *lc, const char *section, void *data, size_t size) {
             if (strcmp(segment, "__TEXT") == 0 && section != NULL && strcmp(section, "__info_plist") == 0) {
                 auto &slot(posts[CSSLOT_INFOSLOT]);
                 for (Algorithm *algorithm : GetAlgorithms())
