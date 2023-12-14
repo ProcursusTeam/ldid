@@ -897,7 +897,19 @@ class MachHeader :
     }
 
     uint32_t GetCPUSubtype() const {
-        return Swap(mach_header_->cpusubtype) & 0xff;
+        return Swap(mach_header_->cpusubtype);
+    }
+
+    const char *GetCPUTypeString() const {
+        uint32_t type = GetCPUType();
+        uint32_t subtype = GetCPUSubtype();
+
+        for (int i = 0; archs[i].name != NULL; i++) {
+            if (archs[i].cputype == type && archs[i].cpusubtype == subtype) {
+                return archs[i].name;
+            }
+        }
+        return archs[0].name; // "any"
     }
 
     struct load_command *GetLoadCommand() const {
@@ -1548,30 +1560,7 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
 
         align = mach_header.GetAlign();
 
-        const char *arch(NULL);
-        switch (mach_header.GetCPUType()) {
-            case CPU_TYPE_POWERPC:
-                arch = "ppc";
-                break;
-            case CPU_TYPE_POWERPC64:
-                arch = "ppc64";
-                break;
-            case CPU_TYPE_X86:
-                arch = "i386";
-                break;
-            case CPU_TYPE_X86_64:
-                arch = "x86_64";
-                break;
-            case CPU_TYPE_ARM:
-                arch = "arm";
-                break;
-            case CPU_TYPE_ARM64:
-                arch = "arm64";
-                break;
-            case CPU_TYPE_ARM64_32:
-                arch = "arm64_32";
-                break;
-        }
+        const char *arch(mach_header.GetCPUTypeString());
 
         offset = Align(offset, 1 << align);
 
