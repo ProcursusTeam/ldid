@@ -1599,8 +1599,8 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
             auto &mach_header(allocation.mach_header_);
 
             fat_arch fat_arch;
-            fat_arch.cputype = Swap(mach_header->cputype);
-            fat_arch.cpusubtype = Swap(mach_header->cpusubtype);
+            fat_arch.cputype = Swap(mach_header.GetCPUType());
+            fat_arch.cpusubtype = Swap(mach_header.GetCPUSubtype());
             fat_arch.offset = Swap(uint32_t(allocation.offset_));
             fat_arch.size = Swap(uint32_t(allocation.limit_ + allocation.alloc_));
             fat_arch.align = Swap(allocation.align_);
