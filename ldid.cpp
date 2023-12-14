@@ -1677,7 +1677,7 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
             linkedit_data_command signature;
             signature.cmd = mach_header.Swap(LC_CODE_SIGNATURE);
             signature.cmdsize = mach_header.Swap(uint32_t(sizeof(signature)));
-            signature.dataoff = mach_header.Swap(allocation.limit_);
+            signature.dataoff = mach_header.Swap(uint32_t(allocation.limit_));
             signature.datasize = mach_header.Swap(allocation.alloc_);
             commands.push_back(std::string(reinterpret_cast<const char *>(&signature), sizeof(signature)));
         }
