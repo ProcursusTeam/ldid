@@ -3903,7 +3903,7 @@ int main(int argc, char *argv[]) {
                     PKCS7_free(p7);
                 }
 
-                if (Swap(directory->teamIDOffset) > 0)
+                if (Swap(directory->version) >= 0x20200 && Swap(directory->teamIDOffset) > 0)
                     printf("TeamIdentifier=%s\n", blob + best->second.offset + Swap(directory->teamIDOffset));
                 else
                     printf("TeamIdentifier=not set\n");
