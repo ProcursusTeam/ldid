@@ -1633,7 +1633,7 @@ static void Allocate(const void *idata, size_t isize, std::streambuf &output, co
         std::vector<std::string> commands;
 
         _foreach (load_command, mach_header.GetLoadCommands()) {
-            std::string copy(reinterpret_cast<const char *>(load_command), load_command->cmdsize);
+            std::string copy(reinterpret_cast<const char *>(load_command), mach_header.Swap(load_command->cmdsize));
 
             switch (mach_header.Swap(load_command->cmd)) {
                 case LC_CODE_SIGNATURE:
