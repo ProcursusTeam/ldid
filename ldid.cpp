@@ -2270,6 +2270,10 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
     }
 
     if (flag_t != NULL) {
+        if (strlen(flag_t) != 10) {
+            fprintf(stderr, "ldid: Team ID must be 10 characters long\n");
+            exit(1);
+        }
         team = flag_t;
     }
 
