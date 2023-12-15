@@ -1118,13 +1118,28 @@ struct CodeDirectory {
     uint8_t platform;
     uint8_t pageSize;
     uint32_t spare2;
+    // version = 0x20000
+    char end_earliest[0];
+
+    // version = 0x20100
     uint32_t scatterOffset;
+    char end_withScatter[0];
+    
+    // version = 0x20200
     uint32_t teamIDOffset;
+    char end_withTeam[0];
+
+    // version = 0x20300
     uint32_t spare3;
     uint64_t codeLimit64;
+    char end_withCodeLimit64[0];
+
+    // version = 0x20400
     uint64_t execSegBase;
     uint64_t execSegLimit;
     uint64_t execSegFlags;
+    char end_withExecSeg[0];
+
 #if 0 // version = 0x20500
     uint32_t runtime;
     uint32_t preEncryptOffset;
@@ -2496,8 +2511,10 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
                 special = std::max(special, slot.first);
             uint32_t normal((limit + PageSize_ - 1) / PageSize_);
 
+            uint32_t version(0x20100);
+            size_t cdsize(offsetof(CodeDirectory, end_withScatter));
+
             CodeDirectory directory;
-            directory.version = Swap(uint32_t(0x00020400));
             directory.flags = Swap(uint32_t(flags));
             directory.nSpecialSlots = Swap(special);
             directory.codeLimit = Swap(uint32_t(limit > UINT32_MAX ? UINT32_MAX : limit));
@@ -2508,13 +2525,36 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
             directory.pageSize = PageShift_;
             directory.spare2 = Swap(uint32_t(0));
             directory.scatterOffset = Swap(uint32_t(0));
-            directory.spare3 = Swap(uint32_t(0));
-            directory.codeLimit64 = Swap(uint64_t(limit > UINT32_MAX ? limit : 0));
-            directory.execSegBase = Swap(uint64_t(left));
-            directory.execSegLimit = Swap(uint64_t(right - left));
-            directory.execSegFlags = Swap(execs);
 
-            uint32_t offset(sizeof(Blob) + sizeof(CodeDirectory));
+            if (!team.empty()) {
+                version = 0x20200; 
+                cdsize = offsetof(CodeDirectory, end_withTeam);
+            }
+
+            directory.spare3 = Swap(uint32_t(0));
+            if (limit > UINT32_MAX) {
+                directory.codeLimit64 = Swap(uint64_t(limit));
+                version = 0x20300;
+                cdsize = offsetof(CodeDirectory, end_withCodeLimit64);
+            } else {
+                directory.codeLimit64 = Swap(uint64_t(0));
+            }
+
+            if (right != 0) {
+                directory.execSegBase = Swap(uint64_t(left));
+                directory.execSegLimit = Swap(uint64_t(right - left));
+                directory.execSegFlags = Swap(execs);
+                version = 0x20400;
+                cdsize = offsetof(CodeDirectory, end_withExecSeg);
+            } else {
+                directory.execSegBase = Swap(uint64_t(0));
+                directory.execSegLimit = Swap(uint64_t(0));
+                directory.execSegFlags = Swap(0);
+            }
+
+            directory.version = Swap(version);
+
+            uint32_t offset(sizeof(Blob) + cdsize);
 
             directory.identOffset = Swap(uint32_t(offset));
             offset += identifier.size() + 1;
@@ -2530,7 +2570,7 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
             directory.hashOffset = Swap(uint32_t(offset));
             offset += normal * algorithm.size_;
 
-            put(data, &directory, sizeof(directory));
+            put(data, &directory, cdsize);
 
             put(data, identifier.c_str(), identifier.size() + 1);
             if (!team.empty())
