@@ -44,6 +44,11 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+# if SMARTCARD
+#  define OPENSSL_SUPPRESS_DEPRECATED
+/* We need to use engines, which are deprecated */
+# endif
+
 #include <openssl/opensslv.h>
 # if OPENSSL_VERSION_MAJOR >= 3
 #  include <openssl/provider.h>
@@ -1867,7 +1872,7 @@ class P12Signer : public ldid::Signer {
     STACK_OF(X509) *ca_;
 
   public:
-    P12Signer(BIO *bio) :
+    P12Signer(BIO *bio, std::vector<std::string> certs) :
         value_(d2i_PKCS12_bio(bio, NULL)),
         key_(NULL),
         cert_(NULL),
@@ -1888,7 +1893,7 @@ class P12Signer : public ldid::Signer {
             fprintf(stderr, "ldid: An error occured while parsing: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
-        if (key_ == NULL || cert_ == NULL) {
+        if (key_ == NULL || (cert_ == NULL && certs.empty())) {
             fprintf(stderr, "ldid: An error occured while parsing: %s\nYour p12 cert might not be valid\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
@@ -1898,6 +1903,22 @@ class P12Signer : public ldid::Signer {
         if (ca_ == NULL) {
             fprintf(stderr, "ldid: An error occured while parsing: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
+        }
+
+        if (!certs.empty()) {
+            cert_ = d2i_X509_bio(Buffer(Map(certs[0], false)), NULL);
+            certs.erase(certs.begin());
+            _foreach (certid, certs) {
+                X509 *cert = d2i_X509_bio(Buffer(Map(certid, false)), NULL);
+                if (cert == NULL) {
+                    fprintf(stderr, "ldid: An error occured while parsing: %s\n", ERR_error_string(ERR_get_error(), NULL));
+                    exit(1);
+                }
+                if (sk_X509_push(ca_, cert) == 0) {
+                    fprintf(stderr, "ldid: An error occured while loading: %s\n", ERR_error_string(ERR_get_error(), NULL));
+                    exit(1);
+                }
+            }
         }
     }
 
@@ -1932,16 +1953,63 @@ class P11Signer : public ldid::Signer {
     EVP_PKEY *key_;
     X509 *cert_;
     STACK_OF(X509) *ca_;
+    bool supportLoadCert = false;
+
+    X509 *loadcert(std::string cert_id) {
+        if (cert_id.compare(0, 7, "pkcs11:") == 0) {
+            const char *cmd_name = "LOAD_CERT_CTRL";
+            struct {
+                const char *cert_id;
+                X509 *cert;
+            } params;
+
+            params.cert_id = cert_id.c_str();
+            params.cert = NULL;
+
+            if (!supportLoadCert) {
+                if (ENGINE_ctrl(e_, ENGINE_CTRL_GET_CMD_FROM_NAME, 0, (void *)cmd_name, NULL) == 0) {
+                    fprintf(stderr, "ldid: Engine does not support loading certificate: %s\n", ERR_error_string(ERR_get_error(), NULL));
+                    exit(1);
+                }
+                supportLoadCert = true;
+            }
+
+            if (ENGINE_ctrl_cmd(e_, cmd_name, 0, &params, NULL, 1) == 0) {
+                fprintf(stderr, "ldid: Engine cannot load certificate: %s\n", ERR_error_string(ERR_get_error(), NULL));
+                exit(1);
+            }
+
+            if (params.cert == NULL) {
+                fprintf(stderr, "ldid: An error occured while loading: %s\n", ERR_error_string(ERR_get_error(), NULL));
+                exit(1);
+            }
+
+            return params.cert;
+        } else {
+            X509 *cert = d2i_X509_bio(Buffer(Map(cert_id, false)), NULL);
+            if (cert == NULL) {
+                fprintf(stderr, "ldid: An error occured while loading: %s\n", ERR_error_string(ERR_get_error(), NULL));
+                exit(1);
+            }
+
+            return cert;
+        }
+    }
 
   public:
     P11Signer(std::string uri)
-        : P11Signer(uri, uri) {}
+        : P11Signer(uri, {}) {}
 
-    P11Signer(std::string keyuri, std::string certuri) :
+    P11Signer(std::string keyuri, std::vector<std::string> certs) :
         key_(NULL),
         cert_(NULL),
-        ca_(NULL)
+        ca_(sk_X509_new_null())
     {
+        if (ca_ == NULL) {
+            fprintf(stderr, "ldid: An error occured while loading: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            exit(1);
+        }
+
         e_ = ENGINE_by_id("pkcs11");
         if (!e_) {
             fprintf(stderr, "ldid: An error occured while loading pkcs11 engine: %s\n", ERR_error_string(ERR_get_error(), NULL));
@@ -1952,7 +2020,7 @@ class P11Signer : public ldid::Signer {
             fprintf(stderr, "ldid: Failed to initialize pkcs11 engine: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
-        ENGINE_free(e_);
+        ENGINE_free(e_); // for ENGINE_by_id()
 
         key_ = ENGINE_load_private_key(e_, keyuri.c_str(), NULL, NULL);
         if (key_ == NULL){
@@ -1960,37 +2028,17 @@ class P11Signer : public ldid::Signer {
             exit(1);
         }
 
-        const char *cmd_name = "LOAD_CERT_CTRL";
-        struct {
-            const char *cert_id;
-            X509 *cert;
-        } params;
-
-        params.cert_id = certuri.c_str();
-        params.cert = NULL;
-
-        if (ENGINE_ctrl(e_, ENGINE_CTRL_GET_CMD_FROM_NAME, 0, (void *)cmd_name, NULL) == 0) {
-            fprintf(stderr, "ldid: Engine does not support loading certificate: %s\n", ERR_error_string(ERR_get_error(), NULL));
-            exit(1);
-        }
-
-        if (ENGINE_ctrl_cmd(e_, cmd_name, 0, &params, NULL, 1) == 0) {
-            fprintf(stderr, "ldid: Engine cannot load certificate: %s\n", ERR_error_string(ERR_get_error(), NULL));
-            exit(1);
-        }
-
-        cert_ = params.cert;
-
-        if (cert_ == NULL) {
-            fprintf(stderr, "ldid: An error occured while loading: %s\n", ERR_error_string(ERR_get_error(), NULL));
-            exit(1);
-        }
-
-        if (ca_ == NULL)
-            ca_ = sk_X509_new_null();
-        if (ca_ == NULL) {
-            fprintf(stderr, "ldid: An error occured while loading: %s\n", ERR_error_string(ERR_get_error(), NULL));
-            exit(1);
+        if (certs.empty()) {
+            cert_ = loadcert(keyuri);
+        } else {
+            cert_ = loadcert(certs[0]);
+            certs.erase(certs.begin());
+            _foreach (certid, certs) {
+                if (sk_X509_push(ca_, loadcert(certid)) == 0) {
+                    fprintf(stderr, "ldid: An error occured while loading: %s\n", ERR_error_string(ERR_get_error(), NULL));
+                    exit(1);
+                }
+            }
         }
     }
 
@@ -1998,10 +2046,7 @@ class P11Signer : public ldid::Signer {
         sk_X509_pop_free(ca_, X509_free);
         X509_free(cert_);
         EVP_PKEY_free(key_);
-        if (e_) {
-            ENGINE_finish(e_);
-            ENGINE_free(e_);
-        }
+        ENGINE_finish(e_); // for ENGINE_init()
     }
 
     operator EVP_PKEY *() const {
@@ -3506,6 +3551,7 @@ int main(int argc, char *argv[]) {
     Map entitlements;
     Map requirements;
     std::string key;
+    std::vector<std::string> certs;
     ldid::Signer *signer = new NoSigner();
     ldid::Slots slots;
 
@@ -3714,6 +3760,11 @@ int main(int argc, char *argv[]) {
                     key = argv[argi] + 2;
             break;
 
+            case 'X':
+                if (argv[argi][2] != '\0')
+                    certs.push_back(argv[argi] + 2);
+            break;
+
             case 'T': break;
 
             case 'u': {
@@ -3739,14 +3790,16 @@ int main(int argc, char *argv[]) {
         return 0;
 
     if (!key.empty()) {
-#if SMARTCARD
+        delete signer;
         if (key.compare(0, 7, "pkcs11:") == 0) {
-            signer = new P11Signer(key);
-        } else
+#if SMARTCARD
+            signer = new P11Signer(key, certs);
+#else
+            fprintf(stderr, "ldid: Smartcard support is not enabled\n");
+            exit(1);
 #endif
-        {
-            signer = new P12Signer(Buffer(Map(key, O_RDONLY)));
-        }
+        } else
+            signer = new P12Signer(Buffer(Map(key, O_RDONLY, PROT_READ, MAP_PRIVATE)), certs);
     }
 
     size_t filei(0), filee(0);
@@ -4049,13 +4102,15 @@ int main(int argc, char *argv[]) {
         ++filei;
     }
 
-# if OPENSSL_VERSION_MAJOR >= 3
-    OSSL_PROVIDER_unload(legacy);
-    OSSL_PROVIDER_unload(deflt);
-# endif
+    delete signer;
 
 # if SMARTCARD
     ENGINE_cleanup();
+# endif
+
+# if OPENSSL_VERSION_MAJOR >= 3
+    OSSL_PROVIDER_unload(legacy);
+    OSSL_PROVIDER_unload(deflt);
 # endif
 
     return filee;

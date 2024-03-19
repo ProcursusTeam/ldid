@@ -161,6 +161,7 @@ struct Bundle {
 
 class Signer {
   public:
+    virtual ~Signer() {};
     virtual operator EVP_PKEY *() const = 0;
     virtual operator X509 *() const = 0;
     virtual operator STACK_OF(X509) *() const = 0;

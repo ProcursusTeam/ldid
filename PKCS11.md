@@ -17,8 +17,8 @@ yubico-piv-tool -s 9c -a import-certificate -i cert.crt.pem
 yubico-piv-tool -s 9c -a import-key -i key.pem
 yubico-piv-tool -s 9c -a set-chuid
 ```
-3. You can use `p11tool --list-privkeys --login` to identify the URI for the slot (make sure that `type` is not in the URI, as seperate URIs for the cert and private key are not currently supported from the command line)
+3. You can use `p11tool --list-privkeys --login` and `p11tool --list-certs --login` to help identify the URIs for the private key and certificate
 
 ## Sign
-1. `ldid -K'pkcs11:model=YubiKey%20YK5;id=%02' -Sents.xml ls.bin`
+1. `ldid -K'pkcs11:object=Private%20key%20for%20Digital%20Signature;type=private' -X'pkcs11:object=X.509%20Certificate%20for%20Digital%20Signature;type=cert' -Sents.xml ls.bin`
 2. If the correct PKCS#11 module is not being loaded, try setting `PKCS11_MODULE_PATH` in your environment (ex. `export PKCS11_MODULE_PATH="/usr/local/lib/p11-kit-proxy.so"` or `PKCS11_MODULE_PATH="/usr/local/lib/libykcs11.so"`)

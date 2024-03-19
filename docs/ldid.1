@@ -20,7 +20,7 @@
 .Op Fl H Ns Op Ar sha1 | Ar sha256
 .Op Fl h
 .Op Fl I Ns Ar name
-.Op Fl K Ns Ar file Op Fl U Ns Ar password
+.Op Fl K Ns Ar file Oo Fl U Ns Ar password Oc Op Fl X Ns Ar file
 .Op Fl M
 .Op Fl P Ns Op Ar num
 .Op Fl Q Ns Ar requirements
@@ -108,6 +108,8 @@ If the
 has a password, you will be prompted for it,
 or you can specify from the command line with
 .Fl U .
+To specify the certificate separate from the private key, use
+.Fl X .
 .It Fl M
 When used with
 .Fl S ,
@@ -160,6 +162,18 @@ target is a bundle directory, and not a specific Mach-O file.
 .Fl w
 can be used on any bundle, not just the root .app, including frameworks,
 appexes, and more.
+.It Fl X Ns Ar file
+Adds
+.Ar file 
+as a certificate to be used when signing.
+The first
+.Ar file
+must be the certificate for the signing key, each additional will be added as part of the chain.
+Must be either
+.Ar DER
+encoded certificate or
+.Ar pkcs11:
+URI.
 .El
 .Sh EXAMPLES
 To fakesign
