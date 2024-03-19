@@ -20,7 +20,7 @@
 .Op Fl H Ns Op Ar sha1 | Ar sha256
 .Op Fl h
 .Op Fl I Ns Ar name
-.Op Fl K Ns Ar key.p12 Op Fl U Ns Ar password
+.Op Fl K Ns Ar file Op Fl U Ns Ar password
 .Op Fl M
 .Op Fl P Ns Op Ar num
 .Op Fl Q Ns Ar requirements
@@ -93,14 +93,19 @@ hash types, flags, CDHash, and CodeDirectory version to
 Set the identifier used in the binaries signature to
 .Ar name .
 If not specified, the basename of the binary is used.
-.It Fl K Ns Ar key.p12
+.It Fl K Ns Ar file
 Sign using the identity in
-.Ar key.p12 .
+.Ar file .
+Must be either a
+.Ar p12
+or
+.Ar pkcs11:
+URI.
 This will give the binary a valid signature so that it can be run
 on a system with signature validation.
-If
-.Ar key.p12
-has a password you will be prompted for it,
+If the
+.Ar p12
+has a password, you will be prompted for it,
 or you can specify from the command line with
 .Fl U .
 .It Fl M

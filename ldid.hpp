@@ -11,6 +11,8 @@
 #include <string>
 #include <vector>
 
+#include <openssl/x509.h>
+
 namespace ldid {
 
 // I wish Apple cared about providing quality toolchains :/
@@ -157,11 +159,19 @@ struct Bundle {
     Hash hash;
 };
 
-Bundle Sign(const std::string &root, Folder &folder, const std::string &key, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, bool merge, uint8_t platform, const Progress &progress);
+class Signer {
+  public:
+    virtual operator EVP_PKEY *() const = 0;
+    virtual operator X509 *() const = 0;
+    virtual operator STACK_OF(X509) *() const = 0;
+    virtual operator bool () const = 0;
+};
+
+Bundle Sign(const std::string &root, Folder &folder, const Signer &signer, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, bool merge, uint8_t platform, const Progress &progress);
 
 typedef std::map<uint32_t, Hash> Slots;
 
-Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, bool merge, const std::string &requirements, const std::string &key, const Slots &slots, uint32_t flags, uint8_t platform, const Progress &progress);
+Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, bool merge, const std::string &requirements, const Signer &signer, const Slots &slots, uint32_t flags, uint8_t platform, const Progress &progress);
 
 }
 
