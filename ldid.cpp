@@ -44,6 +44,11 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+# if SMARTCARD
+#  define OPENSSL_SUPPRESS_DEPRECATED
+/* We need to use engines, which are deprecated */
+# endif
+
 #include <openssl/opensslv.h>
 # if OPENSSL_VERSION_MAJOR >= 3
 #  include <openssl/provider.h>
@@ -54,8 +59,11 @@
 #include <openssl/pkcs7.h>
 #include <openssl/pkcs12.h>
 #include <openssl/ui.h>
-
 #include <openssl/evp.h>
+
+# if SMARTCARD
+#  include <openssl/engine.h>
+# endif
 
 #include <plist/plist.h>
 
@@ -1835,7 +1843,28 @@ class Buffer {
     }
 };
 
-class Stuff {
+class NoSigner : public ldid::Signer {
+  public:
+    NoSigner() {};
+
+    operator EVP_PKEY *() const {
+        return NULL;
+    }
+
+    operator X509 *() const {
+        return NULL;
+    }
+
+    operator STACK_OF(X509) *() const {
+        return NULL;
+    }
+
+    operator bool () const {
+        return false;
+    }
+};
+
+class P12Signer : public ldid::Signer {
   private:
     PKCS12 *value_;
     EVP_PKEY *key_;
@@ -1843,8 +1872,10 @@ class Stuff {
     STACK_OF(X509) *ca_;
 
   public:
-    Stuff(BIO *bio) :
+    P12Signer(BIO *bio, std::vector<std::string> certs) :
         value_(d2i_PKCS12_bio(bio, NULL)),
+        key_(NULL),
+        cert_(NULL),
         ca_(NULL)
     {
         if (value_ == NULL){
@@ -1862,33 +1893,40 @@ class Stuff {
             fprintf(stderr, "ldid: An error occured while parsing: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
-        if (key_ == NULL || cert_ == NULL){
+        if (key_ == NULL || (cert_ == NULL && certs.empty())) {
             fprintf(stderr, "ldid: An error occured while parsing: %s\nYour p12 cert might not be valid\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
 
         if (ca_ == NULL)
             ca_ = sk_X509_new_null();
-        if (ca_ == NULL){
+        if (ca_ == NULL) {
             fprintf(stderr, "ldid: An error occured while parsing: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
+
+        if (!certs.empty()) {
+            cert_ = d2i_X509_bio(Buffer(Map(certs[0], false)), NULL);
+            certs.erase(certs.begin());
+            _foreach (certid, certs) {
+                X509 *cert = d2i_X509_bio(Buffer(Map(certid, false)), NULL);
+                if (cert == NULL) {
+                    fprintf(stderr, "ldid: An error occured while parsing: %s\n", ERR_error_string(ERR_get_error(), NULL));
+                    exit(1);
+                }
+                if (sk_X509_push(ca_, cert) == 0) {
+                    fprintf(stderr, "ldid: An error occured while loading: %s\n", ERR_error_string(ERR_get_error(), NULL));
+                    exit(1);
+                }
+            }
+        }
     }
 
-    Stuff(const std::string &data) :
-        Stuff(Buffer(data))
-    {
-    }
-
-    ~Stuff() {
+    ~P12Signer() {
         sk_X509_pop_free(ca_, X509_free);
         X509_free(cert_);
         EVP_PKEY_free(key_);
         PKCS12_free(value_);
-    }
-
-    operator PKCS12 *() const {
-        return value_;
     }
 
     operator EVP_PKEY *() const {
@@ -1902,7 +1940,132 @@ class Stuff {
     operator STACK_OF(X509) *() const {
         return ca_;
     }
+
+    operator bool () const {
+        return true;
+    }
 };
+
+#if SMARTCARD
+class P11Signer : public ldid::Signer {
+  private:
+    ENGINE *e_;
+    EVP_PKEY *key_;
+    X509 *cert_;
+    STACK_OF(X509) *ca_;
+    bool supportLoadCert = false;
+
+    X509 *loadcert(std::string cert_id) {
+        if (cert_id.compare(0, 7, "pkcs11:") == 0) {
+            const char *cmd_name = "LOAD_CERT_CTRL";
+            struct {
+                const char *cert_id;
+                X509 *cert;
+            } params;
+
+            params.cert_id = cert_id.c_str();
+            params.cert = NULL;
+
+            if (!supportLoadCert) {
+                if (ENGINE_ctrl(e_, ENGINE_CTRL_GET_CMD_FROM_NAME, 0, (void *)cmd_name, NULL) == 0) {
+                    fprintf(stderr, "ldid: Engine does not support loading certificate: %s\n", ERR_error_string(ERR_get_error(), NULL));
+                    exit(1);
+                }
+                supportLoadCert = true;
+            }
+
+            if (ENGINE_ctrl_cmd(e_, cmd_name, 0, &params, NULL, 1) == 0) {
+                fprintf(stderr, "ldid: Engine cannot load certificate: %s\n", ERR_error_string(ERR_get_error(), NULL));
+                exit(1);
+            }
+
+            if (params.cert == NULL) {
+                fprintf(stderr, "ldid: An error occured while loading: %s\n", ERR_error_string(ERR_get_error(), NULL));
+                exit(1);
+            }
+
+            return params.cert;
+        } else {
+            X509 *cert = d2i_X509_bio(Buffer(Map(cert_id, false)), NULL);
+            if (cert == NULL) {
+                fprintf(stderr, "ldid: An error occured while loading: %s\n", ERR_error_string(ERR_get_error(), NULL));
+                exit(1);
+            }
+
+            return cert;
+        }
+    }
+
+  public:
+    P11Signer(std::string uri)
+        : P11Signer(uri, {}) {}
+
+    P11Signer(std::string keyuri, std::vector<std::string> certs) :
+        key_(NULL),
+        cert_(NULL),
+        ca_(sk_X509_new_null())
+    {
+        if (ca_ == NULL) {
+            fprintf(stderr, "ldid: An error occured while loading: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            exit(1);
+        }
+
+        e_ = ENGINE_by_id("pkcs11");
+        if (!e_) {
+            fprintf(stderr, "ldid: An error occured while loading pkcs11 engine: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            exit(1);
+        }
+        
+        if (!ENGINE_init(e_)) {
+            fprintf(stderr, "ldid: Failed to initialize pkcs11 engine: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            exit(1);
+        }
+        ENGINE_free(e_); // for ENGINE_by_id()
+
+        key_ = ENGINE_load_private_key(e_, keyuri.c_str(), NULL, NULL);
+        if (key_ == NULL){
+            fprintf(stderr, "ldid: An error occured while loading: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            exit(1);
+        }
+
+        if (certs.empty()) {
+            cert_ = loadcert(keyuri);
+        } else {
+            cert_ = loadcert(certs[0]);
+            certs.erase(certs.begin());
+            _foreach (certid, certs) {
+                if (sk_X509_push(ca_, loadcert(certid)) == 0) {
+                    fprintf(stderr, "ldid: An error occured while loading: %s\n", ERR_error_string(ERR_get_error(), NULL));
+                    exit(1);
+                }
+            }
+        }
+    }
+
+    ~P11Signer() {
+        sk_X509_pop_free(ca_, X509_free);
+        X509_free(cert_);
+        EVP_PKEY_free(key_);
+        ENGINE_finish(e_); // for ENGINE_init()
+    }
+
+    operator EVP_PKEY *() const {
+        return key_;
+    }
+
+    operator X509 *() const {
+        return cert_;
+    }
+
+    operator STACK_OF(X509) *() const {
+        return ca_;
+    }
+
+    operator bool () const {
+        return true;
+    }
+};
+#endif
 
 class Octet {
   private:
@@ -1976,7 +2139,7 @@ class Signature {
     PKCS7 *value_;
 
   public:
-    Signature(const Stuff &stuff, const Buffer &data, const std::string &xml, const ldid::Hash &hash) {
+    Signature(const ldid::Signer &signer, const Buffer &data, const std::string &xml, const ldid::Hash &hash) {
         value_ = PKCS7_new();
         if (value_ == NULL){
             fprintf(stderr, "ldid: An error occured while getting creating PKCS7 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
@@ -1989,7 +2152,7 @@ class Signature {
             exit(1);
         }
 
-        STACK_OF(X509) *certs(stuff);
+        STACK_OF(X509) *certs(signer);
         for (unsigned i(0), e(sk_X509_num(certs)); i != e; i++) {
             if (PKCS7_add_certificate(value_, sk_X509_value(certs, e - i - 1)) == 0) {
                 fprintf(stderr, "ldid: An error occured while signing: %s\n", ERR_error_string(ERR_get_error(), NULL));
@@ -2001,7 +2164,7 @@ class Signature {
         _assert(attributes != NULL);
         _scope({ sk_X509_ATTRIBUTE_pop_free(attributes, X509_ATTRIBUTE_free); });
 
-        auto info(PKCS7_sign_add_signer(value_, stuff, stuff, NULL, PKCS7_NOSMIMECAP));
+        auto info(PKCS7_sign_add_signer(value_, signer, signer, NULL, PKCS7_NOSMIMECAP));
         if (info == NULL){
             fprintf(stderr, "ldid: An error occured while signing: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
@@ -2270,16 +2433,15 @@ static void req(std::streambuf &buffer, uint8_t (&&data)[Size_]) {
     put(buffer, zeros, 3 - (Size_ + 3) % 4);
 }
 
-Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, bool merge, const std::string &requirements, const std::string &key, const Slots &slots, uint32_t flags, uint8_t platform, const Progress &progress) {
+Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::string &identifier, const std::string &entitlements, bool merge, const std::string &requirements, const ldid::Signer &signer, const Slots &slots, uint32_t flags, uint8_t platform, const Progress &progress) {
     Hash hash;
 
 
     std::string team;
     std::string common;
 
-    if (!key.empty()) {
-        Stuff stuff(key);
-        auto name(X509_get_subject_name(stuff));
+    if (signer) {
+        auto name(X509_get_subject_name(signer));
         if (name == NULL){
             fprintf(stderr, "ldid: Your certificate might not be valid: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
@@ -2412,7 +2574,7 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
         for (Algorithm *algorithm : GetAlgorithms())
             alloc = Align(alloc + directory + (special + normal) * algorithm->size_, 16);
 
-        if (!key.empty()) {
+        if (signer) {
             alloc += sizeof(struct BlobIndex);
             alloc += sizeof(struct Blob);
             alloc += certificate;
@@ -2567,7 +2729,7 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
             ++total;
         }
 
-        if (!key.empty()) {
+        if (signer) {
             auto plist(plist_new_dict());
             _scope({ plist_free(plist); });
 
@@ -2600,10 +2762,9 @@ Hash Sign(const void *idata, size_t isize, std::streambuf &output, const std::st
             std::stringbuf data;
             const std::string &sign(blobs[CSSLOT_CODEDIRECTORY]);
 
-            Stuff stuff(key);
             Buffer bio(sign);
 
-            Signature signature(stuff, sign, std::string(xml, size), hash);
+            Signature signature(signer, sign, std::string(xml, size), hash);
             Buffer result(signature);
             std::string value(result);
             put(data, value.data(), value.size());
@@ -2970,7 +3131,7 @@ struct RuleCode {
     }
 };
 
-static Hash Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, Hash &hash, std::streambuf &save, const std::string &identifier, const std::string &entitlements, bool merge, const std::string &requirements, const std::string &key, const Slots &slots, size_t length, uint32_t flags, uint8_t platform, const Progress &progress) {
+static Hash Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, Hash &hash, std::streambuf &save, const std::string &identifier, const std::string &entitlements, bool merge, const std::string &requirements, const ldid::Signer &signer, const Slots &slots, size_t length, uint32_t flags, uint8_t platform, const Progress &progress) {
     // XXX: this is a miserable fail
     std::stringbuf temp;
     put(temp, prefix, size);
@@ -2980,7 +3141,7 @@ static Hash Sign(const uint8_t *prefix, size_t size, std::streambuf &buffer, Has
     auto data(temp.str());
 
     HashProxy proxy(hash, save);
-    return Sign(data.data(), data.size(), proxy, identifier, entitlements, merge, requirements, key, slots, flags, platform, progress);
+    return Sign(data.data(), data.size(), proxy, identifier, entitlements, merge, requirements, signer, slots, flags, platform, progress);
 }
 
 struct State {
@@ -2995,7 +3156,7 @@ struct State {
     }
 };
 
-Bundle Sign(const std::string &root, Folder &parent, const std::string &key, State &local, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, bool merge, uint8_t platform, const Progress &progress) {
+Bundle Sign(const std::string &root, Folder &parent, const ldid::Signer &signer, State &local, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, bool merge, uint8_t platform, const Progress &progress) {
     std::string executable;
     std::string identifier;
 
@@ -3102,7 +3263,7 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
             SubFolder subfolder(folder, bundle);
 
             State remote;
-            bundles[nested[1]] = Sign(root + bundle, subfolder, key, remote, requirements, Starts(name, "PlugIns/") ? alter :
+            bundles[nested[1]] = Sign(root + bundle, subfolder, signer, remote, requirements, Starts(name, "PlugIns/") ? alter :
                 static_cast<const Functor<std::string (const std::string &, const std::string &)> &>(fun([&](const std::string &, const std::string &) -> std::string { return entitlements; }))
             , merge, platform, progress);
             local.Merge(bundle, remote);
@@ -3160,7 +3321,7 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
                         case MH_CIGAM: case MH_CIGAM_64:
                             folder.Save(name, true, flag, fun([&](std::streambuf &save) {
                                 Slots slots;
-                                Sign(header.bytes, size, data, hash, save, identifier, entitlements, merge, requirements, key, slots, length, 0, platform, Progression(progress, root + name));
+                                Sign(header.bytes, size, data, hash, save, identifier, entitlements, merge, requirements, signer, slots, length, 0, platform, Progression(progress, root + name));
                             }));
                             return;
                     }
@@ -3291,16 +3452,16 @@ Bundle Sign(const std::string &root, Folder &parent, const std::string &key, Sta
             Slots slots;
             slots[1] = local.files.at(info);
             slots[3] = local.files.at(signature);
-            bundle.hash = Sign(NULL, 0, buffer, local.files[executable], save, identifier, entitlements, merge, requirements, key, slots, length, 0, platform, Progression(progress, root + executable));
+            bundle.hash = Sign(NULL, 0, buffer, local.files[executable], save, identifier, entitlements, merge, requirements, signer, slots, length, 0, platform, Progression(progress, root + executable));
         }));
     }));
 
     return bundle;
 }
 
-Bundle Sign(const std::string &root, Folder &folder, const std::string &key, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, bool merge, uint8_t platform, const Progress &progress) {
+Bundle Sign(const std::string &root, Folder &folder, const ldid::Signer &signer, const std::string &requirements, const Functor<std::string (const std::string &, const std::string &)> &alter, bool merge, uint8_t platform, const Progress &progress) {
     State local;
-    return Sign(root, folder, key, local, requirements, alter, merge, platform, progress);
+    return Sign(root, folder, signer, local, requirements, alter, merge, platform, progress);
 }
 
 #endif
@@ -3347,6 +3508,10 @@ int main(int argc, char *argv[]) {
     OSSL_PROVIDER *deflt = OSSL_PROVIDER_load(NULL, "default");
 # endif
 
+# if SMARTCARD
+    ENGINE_load_builtin_engines();
+# endif
+
     union {
         uint16_t word;
         uint8_t byte[2];
@@ -3385,7 +3550,9 @@ int main(int argc, char *argv[]) {
 
     Map entitlements;
     Map requirements;
-    Map key;
+    std::string key;
+    std::vector<std::string> certs;
+    ldid::Signer *signer = new NoSigner();
     ldid::Slots slots;
 
     std::vector<std::string> files;
@@ -3590,7 +3757,12 @@ int main(int argc, char *argv[]) {
 
             case 'K':
                 if (argv[argi][2] != '\0')
-                    key.open(argv[argi] + 2, O_RDONLY, PROT_READ, MAP_PRIVATE);
+                    key = argv[argi] + 2;
+            break;
+
+            case 'X':
+                if (argv[argi][2] != '\0')
+                    certs.push_back(argv[argi] + 2);
             break;
 
             case 'T': break;
@@ -3617,6 +3789,19 @@ int main(int argc, char *argv[]) {
     if (files.empty())
         return 0;
 
+    if (!key.empty()) {
+        delete signer;
+        if (key.compare(0, 7, "pkcs11:") == 0) {
+#if SMARTCARD
+            signer = new P11Signer(key, certs);
+#else
+            fprintf(stderr, "ldid: Smartcard support is not enabled\n");
+            exit(1);
+#endif
+        } else
+            signer = new P12Signer(Buffer(Map(key, O_RDONLY, PROT_READ, MAP_PRIVATE)), certs);
+    }
+
     size_t filei(0), filee(0);
     _foreach (file, files) try {
         std::string path(file);
@@ -3633,7 +3818,7 @@ int main(int argc, char *argv[]) {
                 exit(1);
             }
             ldid::DiskFolder folder(path + "/");
-            path += "/" + Sign("", folder, key, requirements, ldid::fun([&](const std::string &, const std::string &) -> std::string { return entitlements; }), flag_M, platform, dummy_).path;
+            path += "/" + Sign("", folder, *signer, requirements, ldid::fun([&](const std::string &, const std::string &) -> std::string { return entitlements; }), flag_M, platform, dummy_).path;
         } else if (flag_S || flag_r || flag_s) {
             Map input(path, O_RDONLY, PROT_READ, MAP_PRIVATE);
 
@@ -3668,7 +3853,7 @@ int main(int argc, char *argv[]) {
                             }
                     }
                 }
-                ldid::Sign(input.data(), input.size(), output, identifier, entitlements, flag_M, requirements, key, slots, flags, platform, dummy_);
+                ldid::Sign(input.data(), input.size(), output, identifier, entitlements, flag_M, requirements, *signer, slots, flags, platform, dummy_);
             }
 
             input.clear();
@@ -3916,6 +4101,12 @@ int main(int argc, char *argv[]) {
         ++filee;
         ++filei;
     }
+
+    delete signer;
+
+# if SMARTCARD
+    ENGINE_cleanup();
+# endif
 
 # if OPENSSL_VERSION_MAJOR >= 3
     OSSL_PROVIDER_unload(legacy);

@@ -31,6 +31,10 @@ LIBCRYPTO_INCLUDES ?= $(shell pkg-config --cflags libcrypto)
 LIBCRYPTO_LIBS     ?= $(shell pkg-config --libs libcrypto)
 endif
 
+ifeq ($(SMARTCARD),1)
+CPPFLAGS += -DSMARTCARD
+endif
+
 MANPAGE_LANGS := zh_TW zh_CN
 
 EXT ?=
