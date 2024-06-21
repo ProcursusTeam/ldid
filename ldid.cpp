@@ -3230,6 +3230,7 @@ int main(int argc, char *argv[]) {
     bool flag_r(false);
     bool flag_e(false);
     bool flag_q(false);
+    bool flag_k(false);
 
     bool flag_H(false);
     bool flag_h(false);
@@ -3397,6 +3398,10 @@ int main(int argc, char *argv[]) {
 
             case 'M':
                 flag_M = true;
+            break;
+
+            case 'k':
+                flag_k = true;
             break;
 
             case 'K':
@@ -3578,7 +3583,26 @@ int main(int argc, char *argv[]) {
                     if (Swap(super->index[index].type) == CSSLOT_REQUIREMENTS) {
                         uint32_t begin = Swap(super->index[index].offset);
                         struct Blob *requirement = reinterpret_cast<struct Blob *>(blob + begin);
+                        // XXX: this is obviously wrong. but like, -Q is also wrong?!
+                        // maybe I can fix all of this just by fixing both -q and -Q?
                         fwrite(requirement, 1, Swap(requirement->length), stdout);
+                    }
+            }
+
+            if (flag_k) {
+                _assert(signature != NULL);
+
+                uint32_t data = mach_header.Swap(signature->dataoff);
+
+                uint8_t *top = reinterpret_cast<uint8_t *>(mach_header.GetBase());
+                uint8_t *blob = top + data;
+                struct SuperBlob *super = reinterpret_cast<struct SuperBlob *>(blob);
+
+                for (size_t index(0); index != Swap(super->count); ++index)
+                    if (Swap(super->index[index].type) == CSSLOT_SIGNATURESLOT) {
+                        uint32_t begin = Swap(super->index[index].offset);
+                        struct Blob *signature = reinterpret_cast<struct Blob *>(blob + begin);
+                        fwrite(signature + 1, 1, Swap(signature->length) - sizeof(*signature), stdout);
                     }
             }
 
