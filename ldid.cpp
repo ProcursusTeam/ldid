@@ -3609,26 +3609,34 @@ int main(int argc, char *argv[]) {
             if (flag_s) {
                 _assert(signature != NULL);
 
+                auto algorithms(GetAlgorithms());
+
                 uint32_t data = mach_header.Swap(signature->dataoff);
 
                 uint8_t *top = reinterpret_cast<uint8_t *>(mach_header.GetBase());
                 uint8_t *blob = top + data;
                 struct SuperBlob *super = reinterpret_cast<struct SuperBlob *>(blob);
 
-                for (size_t index(0); index != Swap(super->count); ++index)
-                    if (Swap(super->index[index].type) == CSSLOT_CODEDIRECTORY) {
+                for (size_t index(0); index != Swap(super->count); ++index) {
+                    auto type(Swap(super->index[index].type));
+                    if ((type == CSSLOT_CODEDIRECTORY || type >= CSSLOT_ALTERNATE) && type != CSSLOT_SIGNATURESLOT) {
                         uint32_t begin = Swap(super->index[index].offset);
+                        uint32_t end = index + 1 == Swap(super->count) ? Swap(super->blob.length) : Swap(super->index[index + 1].offset);
                         struct CodeDirectory *directory = reinterpret_cast<struct CodeDirectory *>(blob + begin + sizeof(Blob));
+                        auto type(directory->hashType);
+                        _assert(type > 0 && type <= algorithms.size());
+                        auto &algorithm(*algorithms[type - 1]);
 
-                        uint8_t (*hashes)[LDID_SHA1_DIGEST_LENGTH] = reinterpret_cast<uint8_t (*)[LDID_SHA1_DIGEST_LENGTH]>(blob + begin + Swap(directory->hashOffset));
+                        uint8_t *hashes = reinterpret_cast<uint8_t *>(blob + begin + Swap(directory->hashOffset));
                         uint32_t pages = Swap(directory->nCodeSlots);
 
                         if (pages != 1)
                             for (size_t i = 0; i != pages - 1; ++i)
-                                LDID_SHA1(top + PageSize_ * i, PageSize_, hashes[i]);
+                                algorithm(hashes + i * algorithm.size_, top + PageSize_ * i, PageSize_);
                         if (pages != 0)
-                            LDID_SHA1(top + PageSize_ * (pages - 1), ((data - 1) % PageSize_) + 1, hashes[pages - 1]);
+                            algorithm(hashes + (pages - 1) * algorithm.size_, top + PageSize_ * (pages - 1), ((data - 1) % PageSize_) + 1);
                     }
+                }
             }
 
             if (flag_h) {
