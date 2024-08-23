@@ -3630,11 +3630,11 @@ int main(int argc, char *argv[]) {
                         uint8_t *hashes = reinterpret_cast<uint8_t *>(blob + begin + Swap(directory->hashOffset));
                         uint32_t pages = Swap(directory->nCodeSlots);
 
-                        if (pages != 1)
+                        if (pages != 0) {
                             for (size_t i = 0; i != pages - 1; ++i)
                                 algorithm(hashes + i * algorithm.size_, top + PageSize_ * i, PageSize_);
-                        if (pages != 0)
                             algorithm(hashes + (pages - 1) * algorithm.size_, top + PageSize_ * (pages - 1), ((data - 1) % PageSize_) + 1);
+                        }
                     }
                 }
             }
