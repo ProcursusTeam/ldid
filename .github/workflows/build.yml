@@ -164,17 +164,19 @@ jobs:
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         with:
-          name: ldid_${{ env.OS }}_${{ env.ARCH }}
+          name: ldid_${{ env.OS }}_${{ env.ARCH }}${{ env.EXT }}
           path: ldid${{ env.EXT }}
 
       - name: Upload release asset
-        uses: softprops/action-gh-release@v1
+        uses: svenstaro/upload-release-action@v2
         if: ${{ github.event_name == 'release' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: ldid${{ env.EXT }}
+          file: ldid${{ env.EXT }}
+          asset_name: ldid_${{ env.OS }}_${{ env.ARCH }}${{ env.EXT }}
 
   build-macos:
     name: Build
@@ -273,14 +275,16 @@ jobs:
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         with:
           name: ldid_${{ matrix.os }}_${{ matrix.arch }}
           path: ldid
 
       - name: Upload release asset
-        uses: softprops/action-gh-release@v1
+        uses: svenstaro/upload-release-action@v2
         if: ${{ github.event_name == 'release' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: ldid
+          file: ldid
+          asset_name: ldid_${{ matrix.os }}_${{ matrix.arch }}
