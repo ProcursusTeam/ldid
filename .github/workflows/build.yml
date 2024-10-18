@@ -41,10 +41,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Restore or cache dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cache/sccache
@@ -163,7 +163,7 @@ jobs:
           ${TRIPLE}-strip ldid${EXT}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ldid_${{ env.OS }}_${{ env.ARCH }}
           path: ldid${{ env.EXT }}
@@ -178,7 +178,7 @@ jobs:
 
   build-macos:
     name: Build
-    runs-on: macos-11
+    runs-on: macos-latest
     strategy:
       matrix:
         include:
@@ -194,10 +194,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Restore or cache dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/Library/Caches/Mozilla.sccache
@@ -223,7 +223,7 @@ jobs:
 
       - name: Setup toolchain
         run: |
-          brew install libtool autoconf automake
+          brew install automake
           wget -nc -P ${DOWNLOAD_PATH} https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/sccache-v${SCCACHE_VERSION}-x86_64-apple-darwin.tar.gz
           tar xf ${DOWNLOAD_PATH}/sccache-v${SCCACHE_VERSION}-x86_64-apple-darwin.tar.gz -C ${HOME}
           chmod +x ${HOME}/sccache-v${SCCACHE_VERSION}-x86_64-apple-darwin/sccache
@@ -272,7 +272,7 @@ jobs:
           strip ldid
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ldid_${{ matrix.os }}_${{ matrix.arch }}
           path: ldid
