@@ -19,10 +19,10 @@ on:
       - created
 
 env:
-  LIBPLIST_VERSION: 2.2.0
-  OPENSSL_VERSION: 3.0.5
-  SCCACHE_VERSION: 0.3.0
-  TRE_COMMIT: b4dcf71e274aa2ad6a4d879d366eb20826adfecc
+  LIBPLIST_VERSION: 2.3.0
+  OPENSSL_VERSION: 3.3.1
+  SCCACHE_VERSION: 0.8.1
+  TRE_COMMIT: 98fd7804256763da06c6c8b13a7918eb7611bf4b
   MMAN_COMMIT: 2d1c576e62b99e85d99407e1a88794c6e44c3310
 
 jobs:
@@ -151,7 +151,7 @@ jobs:
           ./configure --host=${TRIPLE} --prefix=/usr --without-cython --enable-static --disable-shared
           make -j$(nproc)
 
-          echo "CXXFLAGS=${CXXFLAGS} -I${DEP_PATH}/tre-${TRE_COMMIT}/include/tre" >> $GITHUB_ENV
+          echo "CXXFLAGS=${CXXFLAGS} -DUSE_LOCAL_TRE_H -I${DEP_PATH}/tre-${TRE_COMMIT}/local_includes" >> $GITHUB_ENV
           echo "LIBS=${LIBS} ${DEP_PATH}/tre-${TRE_COMMIT}/lib/.libs/libtre.a" >> $GITHUB_ENV
 
       - name: Build
