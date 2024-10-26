@@ -1885,7 +1885,7 @@ class P12Signer : public ldid::Signer {
 
         if (PKCS12_verify_mac(value_, "", 0) == 0 && !flag_U) {
             char passbuf[2048];
-            UI_UTIL_read_pw_string(passbuf, 2048, "Enter password: ", 0);
+            EVP_read_pw_string(passbuf, 2048, "Enter password: ", 0);
             password = passbuf;
         }
 
