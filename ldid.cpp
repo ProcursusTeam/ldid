@@ -215,6 +215,7 @@ struct mach_header {
 #define MH_DYLINKER   0x7
 #define MH_BUNDLE     0x8
 #define MH_DYLIB_STUB 0x9
+#define MH_DSYM       0xa
 
 struct load_command {
     uint32_t cmd;
@@ -3306,9 +3307,11 @@ Bundle Sign(const std::string &root, Folder &parent, const ldid::Signer &signer,
                 struct {
                     uint32_t magic;
                     uint32_t count;
+                    uint32_t pad;
+                    uint32_t filetype;
                 };
 
-                uint8_t bytes[8];
+                uint8_t bytes[16];
             } header;
 
             auto size(most(data, &header.bytes, sizeof(header.bytes)));
@@ -3318,11 +3321,15 @@ Bundle Sign(const std::string &root, Folder &parent, const ldid::Signer &signer,
                     switch (Swap(header.magic)) {
                         case FAT_MAGIC:
                             // Java class file format
-                            if (Swap(header.count) >= 40)
+                            if (Swap(header.count) >= 40) {
                                 break;
-                        case FAT_CIGAM:
+                            } else {
                         case MH_MAGIC: case MH_MAGIC_64:
                         case MH_CIGAM: case MH_CIGAM_64:
+                                if (Swap(header.filetype == MH_DSYM))
+                                    break;
+                            }
+                        case FAT_CIGAM:
                             folder.Save(name, true, flag, fun([&](std::streambuf &save) {
                                 Slots slots;
                                 Sign(header.bytes, size, data, hash, save, identifier, entitlements, merge, requirements, signer, slots, length, 0, platform, Progression(progress, root + name));
