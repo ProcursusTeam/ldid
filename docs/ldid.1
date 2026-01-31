@@ -26,6 +26,7 @@
 .Op Fl Q Ns Ar requirements
 .Op Fl q
 .Op Fl r | Fl S Ns Ar file.xml | Fl s
+.Op Fl t Ns Ar TeamID
 .Op Fl u
 .Op Fl w
 .Op Fl arch Ar arch_type
@@ -133,6 +134,9 @@ Embed the requirements found in
 Print embedded requirements of the binaries.
 .It Fl r
 Remove the signature from the Mach-O.
+.It Fl t Ns Ar TeamID
+Override the private key's TeamID with an invalid one.
+Must be 10 characters long.
 .It Fl S Ns Op Ar file.xml
 Pseudo-sign the Mach-O binaries.
 If

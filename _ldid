@@ -15,4 +15,5 @@ _arguments \
 	'-K-[Signing private key]:key:_files' \
 	'-P-[Set as platform]:number' \
 	'-U-[Password for -K]' \
+	'-T-[Set team identifier]:identifier' \
 	'*: :_files'
