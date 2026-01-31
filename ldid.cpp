@@ -3777,10 +3777,6 @@ int main(int argc, char *argv[]) {
 
             case 't': {
                 flag_t = argv[argi] + 2;
-                if (strlen(flag_t) != 10) {
-                    fprintf(stderr, "ldid: Team ID must be 10 characters long\n");
-                    exit(1);
-                }
             } break;
 
             case 'I': {
