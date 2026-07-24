@@ -1825,7 +1825,7 @@ class Buffer {
         Buffer()
     {
         if (i2d_PKCS7_bio(bio_, pkcs) == 0){
-            fprintf(stderr, "ldid: An error occured while getting the PKCS7 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            fprintf(stderr, "ldid: An error occurred while getting the PKCS7 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
     }
@@ -1881,7 +1881,7 @@ class P12Signer : public ldid::Signer {
         ca_(NULL)
     {
         if (value_ == NULL){
-            fprintf(stderr, "ldid: An error occured while getting the PKCS12 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            fprintf(stderr, "ldid: An error occurred while getting the PKCS12 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
 
@@ -1892,18 +1892,18 @@ class P12Signer : public ldid::Signer {
         }
 
         if (PKCS12_parse(value_, password.c_str(), &key_, &cert_, &ca_) <= 0){
-            fprintf(stderr, "ldid: An error occured while parsing: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            fprintf(stderr, "ldid: An error occurred while parsing: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
         if (key_ == NULL || (cert_ == NULL && certs.empty())) {
-            fprintf(stderr, "ldid: An error occured while parsing: %s\nYour p12 cert might not be valid\n", ERR_error_string(ERR_get_error(), NULL));
+            fprintf(stderr, "ldid: An error occurred while parsing: %s\nYour p12 cert might not be valid\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
 
         if (ca_ == NULL)
             ca_ = sk_X509_new_null();
         if (ca_ == NULL) {
-            fprintf(stderr, "ldid: An error occured while parsing: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            fprintf(stderr, "ldid: An error occurred while parsing: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
 
@@ -1913,11 +1913,11 @@ class P12Signer : public ldid::Signer {
             _foreach (certid, certs) {
                 X509 *cert = d2i_X509_bio(Buffer(Map(certid, false)), NULL);
                 if (cert == NULL) {
-                    fprintf(stderr, "ldid: An error occured while parsing: %s\n", ERR_error_string(ERR_get_error(), NULL));
+                    fprintf(stderr, "ldid: An error occurred while parsing: %s\n", ERR_error_string(ERR_get_error(), NULL));
                     exit(1);
                 }
                 if (sk_X509_push(ca_, cert) == 0) {
-                    fprintf(stderr, "ldid: An error occured while loading: %s\n", ERR_error_string(ERR_get_error(), NULL));
+                    fprintf(stderr, "ldid: An error occurred while loading: %s\n", ERR_error_string(ERR_get_error(), NULL));
                     exit(1);
                 }
             }
@@ -1982,7 +1982,7 @@ class P11Signer : public ldid::Signer {
             }
 
             if (params.cert == NULL) {
-                fprintf(stderr, "ldid: An error occured while loading: %s\n", ERR_error_string(ERR_get_error(), NULL));
+                fprintf(stderr, "ldid: An error occurred while loading: %s\n", ERR_error_string(ERR_get_error(), NULL));
                 exit(1);
             }
 
@@ -1990,7 +1990,7 @@ class P11Signer : public ldid::Signer {
         } else {
             X509 *cert = d2i_X509_bio(Buffer(Map(cert_id, false)), NULL);
             if (cert == NULL) {
-                fprintf(stderr, "ldid: An error occured while loading: %s\n", ERR_error_string(ERR_get_error(), NULL));
+                fprintf(stderr, "ldid: An error occurred while loading: %s\n", ERR_error_string(ERR_get_error(), NULL));
                 exit(1);
             }
 
@@ -2008,13 +2008,13 @@ class P11Signer : public ldid::Signer {
         ca_(sk_X509_new_null())
     {
         if (ca_ == NULL) {
-            fprintf(stderr, "ldid: An error occured while loading: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            fprintf(stderr, "ldid: An error occurred while loading: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
 
         e_ = ENGINE_by_id("pkcs11");
         if (!e_) {
-            fprintf(stderr, "ldid: An error occured while loading pkcs11 engine: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            fprintf(stderr, "ldid: An error occurred while loading pkcs11 engine: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
         
@@ -2026,7 +2026,7 @@ class P11Signer : public ldid::Signer {
 
         key_ = ENGINE_load_private_key(e_, keyuri.c_str(), NULL, NULL);
         if (key_ == NULL){
-            fprintf(stderr, "ldid: An error occured while loading: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            fprintf(stderr, "ldid: An error occurred while loading: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
 
@@ -2037,7 +2037,7 @@ class P11Signer : public ldid::Signer {
             certs.erase(certs.begin());
             _foreach (certid, certs) {
                 if (sk_X509_push(ca_, loadcert(certid)) == 0) {
-                    fprintf(stderr, "ldid: An error occured while loading: %s\n", ERR_error_string(ERR_get_error(), NULL));
+                    fprintf(stderr, "ldid: An error occurred while loading: %s\n", ERR_error_string(ERR_get_error(), NULL));
                     exit(1);
                 }
             }
@@ -2144,20 +2144,20 @@ class Signature {
     Signature(const ldid::Signer &signer, const Buffer &data, const std::string &xml, const ldid::Hash &hash) {
         value_ = PKCS7_new();
         if (value_ == NULL){
-            fprintf(stderr, "ldid: An error occured while getting creating PKCS7 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            fprintf(stderr, "ldid: An error occurred while getting creating PKCS7 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
 
         if (PKCS7_set_type(value_, NID_pkcs7_signed) == 0 ||
            PKCS7_content_new(value_, NID_pkcs7_data) == 0) {
-            fprintf(stderr, "ldid: An error occured while getting creating PKCS7 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            fprintf(stderr, "ldid: An error occurred while getting creating PKCS7 file: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
 
         STACK_OF(X509) *certs(signer);
         for (unsigned i(0), e(sk_X509_num(certs)); i != e; i++) {
             if (PKCS7_add_certificate(value_, sk_X509_value(certs, e - i - 1)) == 0) {
-                fprintf(stderr, "ldid: An error occured while signing: %s\n", ERR_error_string(ERR_get_error(), NULL));
+                fprintf(stderr, "ldid: An error occurred while signing: %s\n", ERR_error_string(ERR_get_error(), NULL));
                 exit(1);
             }
         }
@@ -2168,7 +2168,7 @@ class Signature {
 
         auto info(PKCS7_sign_add_signer(value_, signer, signer, NULL, PKCS7_NOSMIMECAP));
         if (info == NULL){
-            fprintf(stderr, "ldid: An error occured while signing: %s\n", ERR_error_string(ERR_get_error(), NULL));
+            fprintf(stderr, "ldid: An error occurred while signing: %s\n", ERR_error_string(ERR_get_error(), NULL));
             exit(1);
         }
 
