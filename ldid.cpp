@@ -2202,14 +2202,13 @@ class Signature {
             // however, I don't want to rely on that or detect the bypass before it
             // so, instead, I create my own compatible attribute and re-serialize it :/
 
-            ASN1_STRING *seq(ASN1_STRING_new());
-            _assert(seq != NULL);
-            _scope({ ASN1_STRING_free(seq); });
-            seq->length = ASN1_item_i2d((ASN1_VALUE *) cdattr, &seq->data, ASN1_ITEM_rptr(APPLE_CDATTR));
+            unsigned char *buf = NULL;
+            int size = ASN1_item_i2d((ASN1_VALUE *) cdattr, &buf, ASN1_ITEM_rptr(APPLE_CDATTR));
+            _assert(size >= 0 && buf != NULL);
+            _scope({ OPENSSL_free(buf); });
 
             X509_ATTRIBUTE *attribute(NULL);
-            const unsigned char *data(seq->data);
-            _assert(d2i_X509_ATTRIBUTE(&attribute, &data, seq->length) != 0);
+            _assert(d2i_X509_ATTRIBUTE(&attribute, const_cast<const unsigned char **>(&buf), size) != 0);
             _assert(attribute != NULL);
             _assert(sk_X509_ATTRIBUTE_push(attributes, attribute) != 0);
         }
@@ -2391,7 +2390,7 @@ static void Commit(const std::string &path, const std::string &temp) {
 
 namespace ldid {
 
-static void get(std::string &value, X509_NAME *name, int nid) {
+static void get(std::string &value, const X509_NAME *name, int nid) {
     auto index(X509_NAME_get_index_by_NID(name, nid, -1));
     if (index < 0) {
         fprintf(stderr, "ldid: An error occursed while parsing the certificate: %s\n", ERR_error_string(ERR_get_error(), NULL));
@@ -4085,15 +4084,15 @@ int main(int argc, char *argv[]) {
                             for (int i = 0; i < sk_X509_num(certs); i++) {
                                 x = sk_X509_value(certs, i);
                                 int lastpos = -1;
-                                X509_NAME *nm = X509_get_subject_name(x);
-                                X509_NAME_ENTRY *e;
+                                const X509_NAME *nm = X509_get_subject_name(x);
+                                const X509_NAME_ENTRY *e;
 
                                 for (;;) {
                                     lastpos = X509_NAME_get_index_by_NID(nm, NID_commonName, lastpos);
                                     if (lastpos == -1)
                                         break;
                                     e = X509_NAME_get_entry(nm, lastpos);
-                                    ASN1_STRING *s = X509_NAME_ENTRY_get_data(e);
+                                    const ASN1_STRING *s = X509_NAME_ENTRY_get_data(e);
                                     printf("Authority=%s\n", reinterpret_cast<const char *>(ASN1_STRING_get0_data(s)));
                                 }
                             }
