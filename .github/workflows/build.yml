@@ -19,11 +19,11 @@ on:
       - created
 
 env:
-  LIBPLIST_VERSION: 2.3.0
-  OPENSSL_VERSION: 3.3.1
-  SCCACHE_VERSION: 0.8.1
-  TRE_COMMIT: 98fd7804256763da06c6c8b13a7918eb7611bf4b
-  MMAN_COMMIT: 2d1c576e62b99e85d99407e1a88794c6e44c3310
+  LIBPLIST_VERSION: 2.8.1
+  OPENSSL_VERSION: 3.5.9
+  SCCACHE_VERSION: 0.19.0
+  TRE_COMMIT: 71bfcaf0af3994384987c6c2679ed7d078ffe189
+  MMAN_COMMIT: 780b16cdbc8e845eaa2bef3baf762011f6a7036d
 
 jobs:
   build-linux:
@@ -41,10 +41,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Restore or cache dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/sccache
@@ -101,7 +101,7 @@ jobs:
           ./configure --host=${TRIPLE} --prefix=/usr --without-cython --enable-static --disable-shared
           make -j$(nproc)
 
-          echo "LIBPLIST_INCLUDES=-I${DEP_PATH}/libplist-${LIBPLIST_VERSION}/include" >> $GITHUB_ENV
+          echo "LIBPLIST_INCLUDES=-DLIBPLIST_STATIC -I${DEP_PATH}/libplist-${LIBPLIST_VERSION}/include" >> $GITHUB_ENV
           echo "LIBPLIST_LIBS=${DEP_PATH}/libplist-${LIBPLIST_VERSION}/src/.libs/libplist-2.0.a" >> $GITHUB_ENV
 
       - name: Build OpenSSL
@@ -151,7 +151,7 @@ jobs:
           ./configure --host=${TRIPLE} --prefix=/usr --without-cython --enable-static --disable-shared
           make -j$(nproc)
 
-          echo "CXXFLAGS=${CXXFLAGS} -DUSE_LOCAL_TRE_H -I${DEP_PATH}/tre-${TRE_COMMIT}/local_includes" >> $GITHUB_ENV
+          echo "CXXFLAGS=${CXXFLAGS} -I${DEP_PATH}/tre-${TRE_COMMIT}/include -I${DEP_PATH}/tre-${TRE_COMMIT}/include/tre" >> $GITHUB_ENV
           echo "LIBS=${LIBS} ${DEP_PATH}/tre-${TRE_COMMIT}/lib/.libs/libtre.a" >> $GITHUB_ENV
 
       - name: Build
@@ -163,7 +163,7 @@ jobs:
           ${TRIPLE}-strip ldid${EXT}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: ${{ github.event_name == 'workflow_dispatch' }}
         with:
           name: ldid_${{ env.OS }}_${{ env.ARCH }}${{ env.EXT }}
@@ -196,10 +196,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Restore or cache dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/Library/Caches/Mozilla.sccache
@@ -251,7 +251,7 @@ jobs:
           ./configure --host=${HOST_ARCH}-apple-darwin --without-cython --enable-static --disable-shared
           make -j$(sysctl -n hw.ncpu)
 
-          echo "LIBPLIST_INCLUDES=-I${DEP_PATH}/libplist-${LIBPLIST_VERSION}/include" >> $GITHUB_ENV
+          echo "LIBPLIST_INCLUDES=-DLIBPLIST_STATIC -I${DEP_PATH}/libplist-${LIBPLIST_VERSION}/include" >> $GITHUB_ENV
           echo "LIBPLIST_LIBS=${DEP_PATH}/libplist-${LIBPLIST_VERSION}/src/.libs/libplist-2.0.a" >> $GITHUB_ENV
 
       - name: Build OpenSSL
@@ -274,7 +274,7 @@ jobs:
           strip ldid
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: ${{ github.event_name == 'workflow_dispatch' }}
         with:
           name: ldid_${{ matrix.os }}_${{ matrix.arch }}
