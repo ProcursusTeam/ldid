@@ -1,7 +1,7 @@
 ifneq (,$(wildcard .git))
 VERSION  ?= $(shell git describe --tags)
 else
-VERSION  ?= 2.1.5-procursus7
+VERSION  ?= 2.1.5-procursus8
 endif
 
 CC       ?= cc
